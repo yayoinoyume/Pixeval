@@ -354,16 +354,17 @@ func (a *App) viewerInput(v *viewerState, ev ui.InputEvent) bool {
 }
 
 // viewerPage draws the detail view: a close row, the artwork beside the
-// scrollable info card, and the action bar under them. The room stays dark in
-// either theme, as a picture viewer should.
+// scrollable info card, and the action bar under them. It follows the window's
+// theme, so the light palette shows its own card and bar.
 func (a *App) viewerPage(c *ui.Context) {
 	v := a.viewer
 	if v == nil {
 		return
 	}
-	viewerTheme := designTheme(true, textScale(c))
+	dark := c.Theme().Dark
+	viewerTheme := designTheme(dark, textScale(c))
 	if c.Preferences().HighContrast {
-		applyHighContrast(viewerTheme, true)
+		applyHighContrast(viewerTheme, dark)
 	}
 	c.SetTheme(viewerTheme)
 	bmp, failed := a.viewerImage(v)
