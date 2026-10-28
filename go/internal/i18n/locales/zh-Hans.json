@@ -2,6 +2,7 @@
   "nav": {
     "home": "首页",
     "search": "搜索",
+    "subscriptions": "追更",
     "downloads": "下载",
     "history": "历史",
     "settings": "设置",
@@ -123,6 +124,26 @@
   "series": {
     "open": "系列",
     "loadFailed": "加载系列失败：%s"
+  },
+  "subs": {
+    "count": "%d 个追更订阅",
+    "check": "立即检查",
+    "downloadAll": "全部下载",
+    "empty": "还没有追更订阅",
+    "emptyHint": "在用户页或系列页点「追更」后，这里会显示新作",
+    "kindUser": "用户",
+    "kindSeries": "系列",
+    "rowDetail": "%s · 上次检查：%s",
+    "never": "从未检查",
+    "remove": "删除",
+    "newWorks": "新作 %d 个",
+    "checkDone": "检查完成：发现 %d 个新作",
+    "checkFailed": "检查失败：%s",
+    "newFound": "后台检查发现 %d 个新作",
+    "queued": "已把 %d 页加入下载队列",
+    "add": "追更",
+    "added": "已订阅",
+    "addFailed": "订阅列表已满，删掉一些再试"
   },
   "novel": {
     "loadFailed": "加载小说失败：%s",

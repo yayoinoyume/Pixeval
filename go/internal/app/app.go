@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -15,6 +16,7 @@ import (
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
+	"github.com/yayoinoyume/pixeval-go/internal/subscription"
 )
 
 // App holds the state of the window. Views are rebuilt from it on the main
@@ -85,6 +87,17 @@ type App struct {
 	// illustrationFn fetches one work's detail, which carries a novel body
 	// image's URL; tests replace it to avoid the network.
 	illustrationFn func(ctx context.Context, id int64) (*pixiv.Illustration, error)
+	// subsStore holds the followed users and series, loaded at start, and subs
+	// checks them on demand and every subscriptionInterval.
+	subsStore *subscription.Store
+	subs      *subscription.Service
+	// subsMu guards newWorks, subsChecking and subsMsg, which a check fills in
+	// off the main thread for the subscription page.
+	subsMu       sync.Mutex
+	newWorks     []pixiv.Illustration
+	subsChecking bool
+	// subsMsg is a check's result, which the subscription page toasts once.
+	subsMsg string
 	// notice is a message a background task left for the next frame to show.
 	notice string
 }
@@ -92,8 +105,16 @@ type App struct {
 func New() *App {
 	client := pixiv.NewClient()
 	settings := loadSettings()
+	subsStore := &subscription.Store{}
+	if err := loadSubscriptions(subsStore); err != nil {
+		log.Printf("subscriptions: %v", err)
+	}
+	subs := subscription.New(pixivFetcher{client: client})
+	subs.Store = subsStore
 	a := &App{
 		client:        client,
+		subsStore:     subsStore,
+		subs:          subs,
 		images:        imagex.New(client, imageDir()),
 		downloads:     download.New(client, settings.DownloadConcurrency),
 		downloadsDir:  settingsDownloadDir(settings),
@@ -121,6 +142,16 @@ func New() *App {
 		route:            routeHome,
 		homeFeeds:        newHomeFeeds(),
 		search:           &browseState{},
+	}
+	// The check runs on the timer goroutine, so it hands the works to the main
+	// thread; the subscription page toasts the result when it next draws.
+	subs.OnNew = func(works []pixiv.Illustration) {
+		a.update(func() {
+			a.subsMu.Lock()
+			a.newWorks = append(a.newWorks, works...)
+			a.subsMsg = a.tf("subs.newFound", len(works))
+			a.subsMu.Unlock()
+		})
 	}
 	a.loadLanguage()
 	return a
@@ -190,6 +221,8 @@ func (a *App) Start() {
 	// page on every change.
 	a.downloads.OnChange(func() { a.update(func() {}) })
 	go a.downloads.Start(context.Background())
+	// The subscription check looks for new works every subscriptionInterval.
+	a.subs.Start(context.Background(), subscriptionInterval)
 }
 
 // restoreSession adopts the saved token, refreshing it when expired. It runs
