@@ -30,8 +30,12 @@ func (r route) label() string {
 var navRoutes = []route{routeHome, routeSearch, routeDownloads, routeSettings}
 
 // View builds the shell: the navigation on the left, the page title and the
-// sign-in state above the page.
+// sign-in state above the page. The viewer takes the whole window instead.
 func (a *App) View(c *ui.Context) {
+	if a.viewer != nil {
+		a.viewerPage(c)
+		return
+	}
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
 		a.nav(c)
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
@@ -71,11 +75,6 @@ func (a *App) header(c *ui.Context) {
 }
 
 func (a *App) page(c *ui.Context) {
-	// The viewer covers the page under it.
-	if a.viewer != nil {
-		a.viewerPage(c)
-		return
-	}
 	switch a.route {
 	case routeHome:
 		a.homePage(c)
