@@ -1,6 +1,8 @@
 package pixiv
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -128,6 +130,10 @@ func TestGeneratePKCE(t *testing.T) {
 	}
 	if verifier == challenge {
 		t.Error("verifier equals challenge")
+	}
+	sum := sha256.Sum256([]byte(verifier))
+	if want := base64.RawURLEncoding.EncodeToString(sum[:]); challenge != want {
+		t.Errorf("challenge = %q, want S256 %q", challenge, want)
 	}
 	other, _, err := GeneratePKCE()
 	if err != nil {

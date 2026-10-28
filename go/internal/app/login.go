@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -72,12 +73,14 @@ func (a *App) ShowLogin() {
 	})
 	l.web, err = l.win.NewWebView(mygo.WebViewOptions{URL: pixiv.LoginURL(challenge)})
 	if err != nil {
-		// Without a web view the window has nothing to show.
-		log.Printf("pixiv login: %v", err)
-		l.win.Close()
+		// The window keeps the fallback: retry, or a pasted refresh token.
+		l.fail(fmt.Errorf("无法创建登录页面: %w", err))
 		return
 	}
 	l.web.Page().OnWillNavigate(l.navigated)
+	l.web.Page().OnDidFailLoad(func(e *mygo.LoadError) {
+		l.fail(errors.New(e.Description))
+	})
 	l.win.Invalidate()
 }
 
@@ -138,9 +141,16 @@ func (l *loginWindow) navigated(e *mygo.NavigateEvent) {
 // the reloaded page still exchanges.
 func (l *loginWindow) retry() {
 	l.mu.Lock()
+	if l.busy {
+		// An exchange is in flight: reloading would race its SaveToken.
+		l.mu.Unlock()
+		return
+	}
 	l.busy, l.errMsg = false, ""
 	l.mu.Unlock()
-	l.web.Page().LoadURL(pixiv.LoginURL(l.challenge))
+	if l.web != nil {
+		l.web.Page().LoadURL(pixiv.LoginURL(l.challenge))
+	}
 	l.win.Invalidate()
 }
 

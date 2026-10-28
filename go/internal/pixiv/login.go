@@ -70,7 +70,8 @@ func ParseCallback(rawURL string) (string, error) {
 		return "", fmt.Errorf("pixiv auth: %w", err)
 	}
 	if u.Scheme != "pixiv" || u.Host != "account" || strings.TrimSuffix(u.Path, "/") != "/login" {
-		return "", fmt.Errorf("pixiv auth: not a login callback: %s", rawURL)
+		// The query carries the code: name the URL without it.
+		return "", fmt.Errorf("pixiv auth: not a login callback: %s://%s%s", u.Scheme, u.Host, u.Path)
 	}
 	q := u.Query()
 	if e := q.Get("error"); e != "" {
