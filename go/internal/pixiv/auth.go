@@ -7,9 +7,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,11 +37,30 @@ type Token struct {
 }
 
 type TokenUser struct {
-	ID               int64            `json:"id"`
+	// ID is a string in the token response and a number elsewhere, so it takes
+	// either form.
+	ID               FlexInt64        `json:"id"`
 	Name             string           `json:"name"`
 	Account          string           `json:"account"`
 	IsPremium        bool             `json:"is_premium"`
 	ProfileImageUrls ProfileImageUrls `json:"profile_image_urls"`
+}
+
+// FlexInt64 reads a JSON number or a string holding one.
+type FlexInt64 int64
+
+func (f *FlexInt64) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	if s == "" || s == "null" {
+		*f = 0
+		return nil
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return fmt.Errorf("pixiv: %q is not an id: %w", s, err)
+	}
+	*f = FlexInt64(n)
+	return nil
 }
 
 // Expired reports whether the access token should be refreshed.

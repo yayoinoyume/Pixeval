@@ -48,7 +48,7 @@ func TestSaveLoadToken(t *testing.T) {
 		RefreshToken: "refresh",
 		ExpiresIn:    3600,
 		TokenType:    "bearer",
-		User:         TokenUser{ID: 42, Name: "name"},
+		User:         TokenUser{ID: FlexInt64(42), Name: "name"},
 	}
 	if err := SaveToken(path, saved); err != nil {
 		t.Fatalf("SaveToken: %v", err)
@@ -72,7 +72,7 @@ func TestSaveLoadToken(t *testing.T) {
 	if loaded.AccessToken != saved.AccessToken || loaded.RefreshToken != saved.RefreshToken {
 		t.Errorf("loaded token = %+v", loaded)
 	}
-	if loaded.User.ID != 42 || loaded.User.Name != "name" {
+	if int64(loaded.User.ID) != 42 || loaded.User.Name != "name" {
 		t.Errorf("loaded user = %+v", loaded.User)
 	}
 	if loaded.ExpiresAt.Before(time.Now().Add(50 * time.Minute)) {
@@ -167,5 +167,30 @@ func TestTokenExpired(t *testing.T) {
 		if got := c.token.Expired(); got != c.want {
 			t.Errorf("%s: Expired() = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// TestTokenUserIDAcceptsString checks the token response's string id, which is
+// what Pixiv sends and what a numeric field rejected.
+func TestTokenUserIDAcceptsString(t *testing.T) {
+	body := []byte(`{"access_token":"a","expires_in":3600,"refresh_token":"r","user":{"id":"12345","name":"n"}}`)
+	var tok Token
+	if err := json.Unmarshal(body, &tok); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if int64(tok.User.ID) != 12345 || tok.User.Name != "n" {
+		t.Fatalf("user %+v", tok.User)
+	}
+}
+
+// TestTokenUserIDAcceptsNumber keeps the number form working.
+func TestTokenUserIDAcceptsNumber(t *testing.T) {
+	body := []byte(`{"access_token":"a","user":{"id":12345,"name":"n"}}`)
+	var tok Token
+	if err := json.Unmarshal(body, &tok); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if int64(tok.User.ID) != 12345 {
+		t.Fatalf("id %d", tok.User.ID)
 	}
 }
