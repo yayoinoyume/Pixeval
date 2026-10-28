@@ -8,7 +8,9 @@
     "login": "登录",
     "logout": "退出",
     "loggedIn": "已登录：%s",
-    "placeholder": "%s（M1 占位）"
+    "placeholder": "%s（M1 占位）",
+    "user": "用户",
+    "series": "系列"
   },
   "home": {
     "recommended": "推荐",
@@ -21,7 +23,8 @@
     "loadFailed": "加载失败：%s",
     "coverFailed": "封面加载失败",
     "noWorks": "没有作品",
-    "save": "保存"
+    "save": "保存",
+    "back": "返回"
   },
   "search": {
     "placeholder": "搜索作品",
@@ -93,5 +96,16 @@
     "pageFailed": "无法创建登录页面",
     "refreshEmpty": "请先粘贴 refresh token",
     "saveFailed": "保存登录信息失败"
+  },
+  "user": {
+    "open": "作者",
+    "follow": "关注",
+    "following": "已关注",
+    "followFailed": "关注失败：%s",
+    "loadFailed": "加载用户失败：%s"
+  },
+  "series": {
+    "open": "系列",
+    "loadFailed": "加载系列失败：%s"
   }
 }

@@ -34,8 +34,14 @@ type App struct {
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
 	route   route
+	// backRoute is the page a user page or series page returns to.
+	backRoute route
 	// viewer is the full-screen illustration viewer, nil while it is closed.
 	viewer *viewerState
+	// userView is the user page shown, nil until one opens.
+	userView *userViewState
+	// seriesView is the series page shown, nil until one opens.
+	seriesView *seriesViewState
 	// homeTab is the home feed shown: recommended, following or ranking.
 	homeTab int
 	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
@@ -61,6 +67,9 @@ type App struct {
 	// bookmarkFn sets or clears a work's bookmark off the main thread; tests
 	// replace it to avoid the network.
 	bookmarkFn func(ctx context.Context, id int64, on bool) error
+	// followFn follows or unfollows a user off the main thread; tests replace
+	// it to avoid the network.
+	followFn func(ctx context.Context, id int64, on bool) error
 	// notice is a message a background task left for the next frame to show.
 	notice string
 }
@@ -83,6 +92,12 @@ func New() *App {
 				return client.AddBookmark(ctx, id, false)
 			}
 			return client.RemoveBookmark(ctx, id)
+		},
+		followFn: func(ctx context.Context, id int64, on bool) error {
+			if on {
+				return client.Follow(ctx, id, false)
+			}
+			return client.Unfollow(ctx, id)
 		},
 		route:     routeHome,
 		homeFeeds: newHomeFeeds(),
