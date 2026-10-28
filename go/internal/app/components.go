@@ -23,6 +23,13 @@ func iconButton(c *ui.Context, glyph *ui.SVG, label string, size float32, fg, ho
 	return b
 }
 
+// cardTextHeight is the room a card leaves for its title and author at the
+// current text scale: the two lines, their gap and the card's padding, plus a
+// little slack for line metrics.
+func cardTextHeight(t tokens) float64 {
+	return float64(t.SpaceS+t.SpaceM+2) + float64(t.TextSmall+t.TextTiny)*1.4 + 4
+}
+
 // cardShell is the frame shared by the work, novel and history cards: a
 // surface card that lifts its border and shadow when the pointer is over it.
 // It returns the card and its cover box; the caller adds the cover's contents,

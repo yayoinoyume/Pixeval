@@ -418,12 +418,13 @@ func (st *browseState) applyFilter() {
 	// The place and the tiles were laid out for the works shown until now.
 	st.masonry = widgets.MasonryState{}
 	st.tilesWidth = 0
+	st.tilesText = 0
 }
 
 // feedTiles returns the works a feed draws and the tiles they draw as: the
 // ones its applied filter passes, or all of them. The tiles are built again
 // while a filter is applied, since the passing set grows as pages load.
-func feedTiles(st *browseState, all []pixiv.Illustration, tiles []widgets.MasonryItem, width float64) ([]pixiv.Illustration, []widgets.MasonryItem) {
+func feedTiles(st *browseState, all []pixiv.Illustration, tiles []widgets.MasonryItem, width, textHeight float64) ([]pixiv.Illustration, []widgets.MasonryItem) {
 	items := all
 	if st.filterExpr != nil {
 		items = make([]pixiv.Illustration, 0, len(all))
@@ -433,11 +434,11 @@ func feedTiles(st *browseState, all []pixiv.Illustration, tiles []widgets.Masonr
 			}
 		}
 	}
-	if st.filterExpr != nil || width != st.tilesWidth {
-		st.tilesWidth = width
+	if st.filterExpr != nil || width != st.tilesWidth || textHeight != st.tilesText {
+		st.tilesWidth, st.tilesText = width, textHeight
 		tiles = make([]widgets.MasonryItem, len(items))
 		for i, w := range items {
-			tiles[i] = widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)}
+			tiles[i] = widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width, textHeight)}
 		}
 	}
 	return items, tiles

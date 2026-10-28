@@ -1,6 +1,10 @@
 package app
 
-import "github.com/egoist/mygo/ui"
+import (
+	"math"
+
+	"github.com/egoist/mygo/ui"
+)
 
 // The window's design tokens: one palette and one scale for every view. A view
 // reads them with themeOf(c); applyTheme installs the same values into the
@@ -175,7 +179,7 @@ func themeOf(c *ui.Context) tokens {
 	// the navigation, brand and buttons do not show two accents at once.
 	// designTheme leaves our own fill in place for an explicit theme.
 	if a := c.Theme().Accent; a.A != 0 && (a.R != t.AccentFill.R || a.G != t.AccentFill.G || a.B != t.AccentFill.B) {
-		t.Accent = a
+		t.Accent = readableAccent(a, t.Text, t.Surface)
 		t.AccentFill = a
 		t.AccentHover = c.Theme().AccentHover
 		t.AccentPressed = c.Theme().AccentPressed
@@ -188,6 +192,43 @@ func themeOf(c *ui.Context) tokens {
 		t.Focus = t.Accent
 	}
 	return t
+}
+
+// readableAccent is the accent for text and icons: the accent itself when it
+// has enough contrast on the surface, otherwise mixed toward the theme's text
+// until it does. Filled accents keep the raw color.
+func readableAccent(accent, text, bg ui.Color) ui.Color {
+	if contrastRatio(accent, bg) >= 4.5 {
+		return accent
+	}
+	for i := 1; i <= 20; i++ {
+		c := accent.Mix(text, float32(i)/20)
+		if contrastRatio(c, bg) >= 4.5 {
+			return c
+		}
+	}
+	return text
+}
+
+// contrastRatio is WCAG's contrast between two opaque colors.
+func contrastRatio(a, b ui.Color) float32 {
+	la, lb := luminance(a), luminance(b)
+	if la < lb {
+		la, lb = lb, la
+	}
+	return (la + 0.05) / (lb + 0.05)
+}
+
+// luminance is a color's relative luminance.
+func luminance(c ui.Color) float32 {
+	f := func(v uint8) float32 {
+		x := float32(v) / 255
+		if x <= 0.03928 {
+			return x / 12.92
+		}
+		return float32(math.Pow(float64((x+0.055)/1.055), 2.4))
+	}
+	return 0.2126*f(c.R) + 0.7152*f(c.G) + 0.0722*f(c.B)
 }
 
 // accentText is the text color on a filled accent, as mygo's own theme picks

@@ -22,9 +22,6 @@ const (
 	cardGap     = 12
 	coverWidth  = 480
 	coverHeight = 720
-	// cardText is the height the title and author take under a cover, with
-	// the card's own padding and room for the desktop's text scale.
-	cardText = 64
 )
 
 // browseView is what the view draws, read from the state in one go. The
@@ -77,9 +74,10 @@ type browseState struct {
 
 	// masonry is the feed's place, touched only by the view.
 	masonry widgets.MasonryState
-	// tilesWidth is the column width v.tiles were built for; the view rebuilds
-	// them when the setting changes.
+	// tilesWidth is the column width and tilesText the card text height
+	// v.tiles were built for; the view rebuilds them when either changes.
 	tilesWidth float64
+	tilesText  float64
 }
 
 // homeTabCount is the number of home tabs, one feed each.
@@ -188,9 +186,9 @@ func (a *App) loadMore(st *browseState) {
 	st.loading = true
 	gen, fetch := st.gen, st.fetch
 	st.mu.Unlock()
-	// Read the width on the main thread; the load goroutine must not touch
-	// the settings the view edits.
-	width := a.masonryWidth()
+	// Read the width and text height on the main thread; the load goroutine
+	// must not touch the settings the view edits.
+	width, textHeight := a.masonryWidth(), a.cardText
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
@@ -212,7 +210,7 @@ func (a *App) loadMore(st *browseState) {
 			st.err = err.Error()
 		default:
 			st.started = true
-			st.add(page.Items, width)
+			st.add(page.Items, width, textHeight)
 			st.next = page.NextURL
 		}
 		st.mu.Unlock()
@@ -223,10 +221,10 @@ func (a *App) loadMore(st *browseState) {
 
 // add appends a page's works to the feed, with the tiles they draw as. st.mu
 // must be held.
-func (st *browseState) add(items []pixiv.Illustration, width float64) {
+func (st *browseState) add(items []pixiv.Illustration, width, textHeight float64) {
 	for _, w := range items {
 		st.items = append(st.items, w)
-		st.tiles = append(st.tiles, widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)})
+		st.tiles = append(st.tiles, widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width, textHeight)})
 	}
 }
 
@@ -244,6 +242,7 @@ func (st *browseState) restart() {
 	st.gen++
 	st.items = nil
 	st.tiles = nil
+	st.tilesText = 0
 	st.next = ""
 	st.started = false
 	st.err = ""
@@ -254,11 +253,11 @@ func (st *browseState) restart() {
 
 // cardAspect is a cover's aspect with the title and author under it, so the
 // masonry leaves them room.
-func cardAspect(aspect, width float64) float64 {
+func cardAspect(aspect, width, textHeight float64) float64 {
 	if !(aspect > 0) {
 		aspect = 1
 	}
-	return width / (width/aspect + cardText)
+	return width / (width/aspect + textHeight)
 }
 
 // imageFailed reports whether a cover failed to load.
@@ -310,7 +309,9 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 		}
 	}
 	width := a.masonryWidth()
-	items, tiles := feedTiles(st, v.items, v.tiles, width)
+	textHeight := cardTextHeight(t)
+	a.cardText = textHeight
+	items, tiles := feedTiles(st, v.items, v.tiles, width, textHeight)
 	switch {
 	case len(items) > 0:
 		ui.Column(c).Grow(1).Padding(t.SpaceL, contentPadding, contentPadding, contentPadding).Children(func() {
