@@ -134,7 +134,8 @@
     "refreshHint": "Connexion manuelle : collez le refresh token obtenu sur la page de connexion web de Pixiv",
     "pageFailed": "Impossible de créer la page de connexion",
     "refreshEmpty": "Collez d'abord un refresh token",
-    "saveFailed": "Impossible d'enregistrer la connexion"
+    "saveFailed": "Impossible d'enregistrer la connexion",
+    "noWebView": "Aucune WebView disponible : connectez-vous avec un refresh token"
   },
   "user": {
     "open": "Auteur",

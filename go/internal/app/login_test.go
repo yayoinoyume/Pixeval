@@ -23,7 +23,8 @@ func TestLoginViewStates(t *testing.T) {
 	}{
 		{"idle", &loginWindow{app: New()}, nil, []string{retry, paste, busy}},
 		{"busy", &loginWindow{app: New(), busy: true}, []string{busy}, []string{retry, paste}},
-		{"error", &loginWindow{app: New(), errMsg: errMsg}, []string{errMsg, retry, paste}, []string{busy}},
+		// Without a page a retry can only fail again, so only the paste is left.
+		{"error", &loginWindow{app: New(), errMsg: errMsg}, []string{errMsg, paste}, []string{retry, busy}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -42,15 +43,50 @@ func TestLoginViewStates(t *testing.T) {
 	}
 }
 
+// TestLoginNoWebViewFallback checks the state ShowLogin leaves when the app
+// started without a webview: the no-webview message, the pasted-token entry,
+// and no retry that could only fail again.
+func TestLoginNoWebViewFallback(t *testing.T) {
+	a := New()
+	a.webviewOK = false
+	l := &loginWindow{app: a, errMsg: a.t("login.noWebView")}
+	tt := ui.NewTester(l.view, 480, 640)
+	if !tt.HasText(a.t("login.noWebView")) || !tt.HasText("用 refresh token 登录") {
+		t.Errorf("token fallback missing: %q", tt.Texts())
+	}
+	if tt.HasText("重试") {
+		t.Errorf("retry shown without a web view: %q", tt.Texts())
+	}
+}
+
+// TestLoginPromptWithoutWebView checks the signed-out prompt says the token
+// path works when the system has no webview, and stays quiet when it does.
+func TestLoginPromptWithoutWebView(t *testing.T) {
+	a := New()
+	a.webviewOK = false
+	tt := ui.NewTester(a.View, 1000, 700)
+	if !tt.HasText(a.t("login.noWebView")) {
+		t.Errorf("no-webview hint missing: %q", tt.Texts())
+	}
+	if _, ok := tt.Find("登录 Pixiv"); !ok {
+		t.Errorf("login button missing: %q", tt.Texts())
+	}
+	a.webviewOK = true
+	tt = ui.NewTester(a.View, 1000, 700)
+	if tt.HasText(a.t("login.noWebView")) {
+		t.Errorf("no-webview hint shown with a web view: %q", tt.Texts())
+	}
+	if _, ok := tt.Find("登录 Pixiv"); !ok {
+		t.Errorf("login button missing: %q", tt.Texts())
+	}
+}
+
 // TestLoginRetryWithoutWebView checks retry keeps the fallback when there is
-// no page to reload: the error and the pasted-token entry stay.
+// no page to reload.
 func TestLoginRetryWithoutWebView(t *testing.T) {
 	l := &loginWindow{app: New(), errMsg: "登录失败"}
-	tt := ui.NewTester(l.view, 480, 640)
-	if err := tt.Click("重试"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
-	if !tt.HasText("登录失败") || !tt.HasText("用 refresh token 登录") {
-		t.Errorf("fallback lost after retry: %q", tt.Texts())
+	l.retry()
+	if l.errMsg != "登录失败" {
+		t.Errorf("errMsg %q, want the error kept", l.errMsg)
 	}
 }

@@ -71,6 +71,12 @@ func (a *App) ShowLogin() {
 		MinHeight: 560,
 		Content:   ui.View(l.view),
 	})
+	if !a.webviewOK {
+		// No system webview means the page cannot load: skip a window bound
+		// to fail and offer the pasted refresh token at once.
+		l.fail(errors.New(a.t("login.noWebView")))
+		return
+	}
 	l.web, err = l.win.NewWebView(mygo.WebViewOptions{URL: pixiv.LoginURL(challenge)})
 	if err != nil {
 		// The window keeps the fallback: retry, or a pasted refresh token.
@@ -112,7 +118,8 @@ func (l *loginWindow) view(c *ui.Context) {
 			// A retry or a paste while a token is in flight would race it.
 			if !busy {
 				ui.Row(c).Gap(8).Children(func() {
-					if ui.Button(c, l.app.t("common.retry")).Clicked() {
+					// Without a page a retry can only fail again: leave the paste.
+					if l.web != nil && ui.Button(c, l.app.t("common.retry")).Clicked() {
 						l.retry()
 					}
 					if ui.Button(c, l.app.t("login.refreshAction")).Clicked() {
