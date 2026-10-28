@@ -73,7 +73,7 @@ func (a *App) Start() {
 	// applySession fills in the session when it lands.
 	go a.restoreSession()
 	// The feeds load once the window runs, not before it can draw them.
-	a.home.armed = true
+	a.home.arm()
 }
 
 // restoreSession adopts the saved token, refreshing it when expired. It runs
