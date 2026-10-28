@@ -109,16 +109,19 @@ func (l *loginWindow) view(c *ui.Context) {
 			if errMsg != "" {
 				ui.Text(c, errMsg).TextColor(t.Danger)
 			}
-			ui.Row(c).Gap(8).Children(func() {
-				if ui.Button(c, "重试").Clicked() {
-					l.retry()
-				}
-				if ui.Button(c, "用 refresh token 登录").Clicked() {
-					l.submitRefresh()
-				}
-			})
-			ui.Text(c, "手动登录：粘贴 Pixiv 网页登录拿到的 refresh token").TextColor(t.TextMuted)
-			ui.TextInput(c, &l.refresh)
+			// A retry or a paste while a token is in flight would race it.
+			if !busy {
+				ui.Row(c).Gap(8).Children(func() {
+					if ui.Button(c, "重试").Clicked() {
+						l.retry()
+					}
+					if ui.Button(c, "用 refresh token 登录").Clicked() {
+						l.submitRefresh()
+					}
+				})
+				ui.Text(c, "手动登录：粘贴 Pixiv 网页登录拿到的 refresh token").TextColor(t.TextMuted)
+				ui.TextInput(c, &l.refresh)
+			}
 		})
 	})
 }
@@ -140,6 +143,10 @@ func (l *loginWindow) navigated(e *mygo.NavigateEvent) {
 // retry reloads the login page. The verifier stays the same, so a code from
 // the reloaded page still exchanges.
 func (l *loginWindow) retry() {
+	if l.web == nil {
+		// No page to reload: keep the error and the pasted-token fallback.
+		return
+	}
 	l.mu.Lock()
 	if l.busy {
 		// An exchange is in flight: reloading would race its SaveToken.
@@ -148,9 +155,7 @@ func (l *loginWindow) retry() {
 	}
 	l.busy, l.errMsg = false, ""
 	l.mu.Unlock()
-	if l.web != nil {
-		l.web.Page().LoadURL(pixiv.LoginURL(l.challenge))
-	}
+	l.web.Page().LoadURL(pixiv.LoginURL(l.challenge))
 	l.win.Invalidate()
 }
 

@@ -67,7 +67,8 @@ func LoadToken(path string) (*Token, error) {
 func ParseCallback(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
-		return "", fmt.Errorf("pixiv auth: %w", err)
+		// The URL carries the code: report it without the value.
+		return "", errors.New("pixiv auth: invalid callback URL")
 	}
 	if u.Scheme != "pixiv" || u.Host != "account" || strings.TrimSuffix(u.Path, "/") != "/login" {
 		// The query carries the code: name the URL without it.

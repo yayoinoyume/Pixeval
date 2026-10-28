@@ -22,7 +22,7 @@ func TestLoginViewStates(t *testing.T) {
 		notWant []string
 	}{
 		{"idle", &loginWindow{}, nil, []string{retry, paste, busy}},
-		{"busy", &loginWindow{busy: true}, []string{busy, retry, paste}, nil},
+		{"busy", &loginWindow{busy: true}, []string{busy}, []string{retry, paste}},
 		{"error", &loginWindow{errMsg: errMsg}, []string{errMsg, retry, paste}, []string{busy}},
 	}
 	for _, c := range cases {
@@ -39,5 +39,18 @@ func TestLoginViewStates(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestLoginRetryWithoutWebView checks retry keeps the fallback when there is
+// no page to reload: the error and the pasted-token entry stay.
+func TestLoginRetryWithoutWebView(t *testing.T) {
+	l := &loginWindow{errMsg: "登录失败"}
+	tt := ui.NewTester(l.view, 480, 640)
+	if err := tt.Click("重试"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !tt.HasText("登录失败") || !tt.HasText("用 refresh token 登录") {
+		t.Errorf("fallback lost after retry: %q", tt.Texts())
 	}
 }

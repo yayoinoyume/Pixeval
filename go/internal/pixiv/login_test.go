@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -30,6 +31,13 @@ func TestParseCallback(t *testing.T) {
 		if _, err = ParseCallback(u); err == nil {
 			t.Errorf("ParseCallback(%q) = nil error, want error", u)
 		}
+	}
+
+	// Errors must not carry the code back into a log or a dialog.
+	if _, err = ParseCallback("https://app-api.pixiv.net/web/v1/users/auth/pixiv/callback?code=secret-code"); err == nil {
+		t.Error("ParseCallback of a foreign URL = nil error")
+	} else if strings.Contains(err.Error(), "secret-code") {
+		t.Errorf("error echoes the code: %v", err)
 	}
 }
 
