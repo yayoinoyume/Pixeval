@@ -256,6 +256,7 @@ func (a *App) goBack() {
 // applyTheme makes the window use the saved theme; the system's is the one
 // the frame starts with when the setting follows it.
 func (a *App) applyTheme(c *ui.Context) {
+	prefs := c.Preferences()
 	dark := c.Theme().Dark
 	if a.settings != nil {
 		switch a.settings.Theme {
@@ -265,10 +266,32 @@ func (a *App) applyTheme(c *ui.Context) {
 			dark = true
 		}
 	}
-	c.SetTheme(designTheme(dark))
+	theme := designTheme(dark, textScale(c))
+	if prefs.HighContrast {
+		applyHighContrast(theme, dark)
+	}
+	// Following the system keeps the desktop's accent; an explicit light or
+	// dark choice keeps the app's own blue.
+	if (a.settings == nil || a.settings.Theme == themeSystem) && prefs.Accent.A != 0 {
+		accent := prefs.Accent
+		theme.Accent = accent
+		if dark {
+			theme.AccentHover = accent.Mix(ui.RGB(255, 255, 255), 0.15)
+			theme.AccentPressed = accent.Mix(ui.RGB(0, 0, 0), 0.15)
+		} else {
+			theme.AccentHover = accent.Mix(ui.RGB(0, 0, 0), 0.08)
+			theme.AccentPressed = accent.Mix(ui.RGB(0, 0, 0), 0.16)
+		}
+		if prefs.HighContrast {
+			theme.Focus = accent
+		} else {
+			theme.Focus = accent.Alpha(0.65)
+		}
+	}
+	c.SetTheme(theme)
 	// The desktop asks for less motion: every widget animation jumps to its
 	// target, while the layouts themselves are still.
-	if c.Preferences().ReduceMotion {
+	if prefs.ReduceMotion {
 		c.DisableAnimations()
 	}
 }

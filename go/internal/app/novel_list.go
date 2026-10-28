@@ -289,27 +289,24 @@ func (a *App) novelCard(c *ui.Context, st *novelFeedState, items []pixiv.Novel, 
 	novel := items[i]
 	key := novel.CoverURL()
 	t := themeOf(c)
-	card := ui.Column(c).Fill().Background(t.Surface).Radius(t.RadiusL).
-		Border(1, t.Border).Clip().Focusable().
+	card, cover := cardShell(c)
+	card = card.Fill().Focusable().
 		Label(a.tf("a11y.card", novel.Title, novel.User.Name)).
 		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openNovel(novel.ID, novel.Title)
 	})
-	if card.Hovered() {
-		card = card.Border(1, t.Accent).Shadow(0, 8, 24, 0, t.Shadow)
-	}
+	cover.Children(func() {
+		if st.imageFailed(key) {
+			ui.Column(c).Fill().Center().Children(func() {
+				ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+			})
+			return
+		}
+		if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.novelImageReady(st, key)); bmp != nil {
+			ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", novel.Title))
+		}
+	})
 	card.Children(func() {
-		ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceAlt).Children(func() {
-			if st.imageFailed(key) {
-				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
-				})
-				return
-			}
-			if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.novelImageReady(st, key)); bmp != nil {
-				ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", novel.Title))
-			}
-		})
 		ui.Column(c).Padding(t.SpaceS, t.SpaceM, t.SpaceM, t.SpaceM).Gap(2).Children(func() {
 			ui.Text(c, novel.Title).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(1)
 			ui.Row(c).Gap(6).Children(func() {

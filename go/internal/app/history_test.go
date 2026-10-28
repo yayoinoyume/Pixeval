@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -233,5 +234,40 @@ func TestHistoryPageEntries(t *testing.T) {
 	tt = ui.NewTester(a.View, 1000, 700)
 	if !tt.HasText("还没有浏览记录") {
 		t.Errorf("empty state missing after clearing: %q", tt.Texts())
+	}
+}
+
+// TestHistoryGridFitsWidth checks the history grid chooses columns from the
+// page width rather than a fixed four, and keeps the cards near the masonry
+// width.
+func TestHistoryGridFitsWidth(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.settings.CardWidth = 240
+	cases := []struct {
+		name string
+		w, h int
+		cols int
+		card float32
+	}{
+		{"narrow", 960, 700, 3, 224},
+		{"wide", 1280, 820, 4, 245},
+		{"wider", 1600, 900, 5, 257.6},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var cols int
+			var card float32
+			tt := ui.NewTester(func(ctx *ui.Context) {
+				cols, card = a.historyGrid(ctx)
+			}, c.w, c.h)
+			tt.Frame()
+			if cols != c.cols {
+				t.Errorf("columns %d, want %d", cols, c.cols)
+			}
+			if math.Abs(float64(card-c.card)) > 0.01 {
+				t.Errorf("card width %v, want %v", card, c.card)
+			}
+		})
 	}
 }

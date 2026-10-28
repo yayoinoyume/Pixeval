@@ -308,7 +308,11 @@ func (a *App) viewerPage(c *ui.Context) {
 	if v == nil {
 		return
 	}
-	c.SetTheme(designTheme(true))
+	viewerTheme := designTheme(true, textScale(c))
+	if c.Preferences().HighContrast {
+		applyHighContrast(viewerTheme, true)
+	}
+	c.SetTheme(viewerTheme)
 	bmp, failed := a.viewerImage(v)
 	t := themeOf(c)
 	ui.Column(c).Fill().FillHeight().Background(t.ViewerBg).Children(func() {

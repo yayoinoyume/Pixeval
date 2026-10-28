@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
+	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 // fakeUpdater answers the settings page's update check without a feed.
@@ -124,4 +125,49 @@ func TestSettingsPageLanguageChoices(t *testing.T) {
 			t.Errorf("label of %q maps back to %q", tag, got)
 		}
 	}
+}
+
+// TestSettingsControlsNamed checks every settings control keeps the name its
+// row gives it, so a screen reader does not meet an anonymous select or input.
+func TestSettingsControlsNamed(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	a.client.SetToken(a.session)
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 700)
+	for _, label := range []string{"主题", "语言", "下载目录", "显示 R18"} {
+		tabToLabel(t, tt, label)
+	}
+	// A number input is a composite: its label is on the spin button, while
+	// the focus moves through its field and stepper buttons. Its label still
+	// reaches the accessibility tree, so the row and the control both name it.
+	for _, label := range []string{"下载并发", "瀑布流列宽"} {
+		if n := countText(tt.Texts(), label); n < 2 {
+			t.Errorf("%q has %d labels, want the row and the control: %q", label, n, tt.Texts())
+		}
+	}
+}
+
+// countText counts the labels that read exactly want.
+func countText(texts []string, want string) int {
+	n := 0
+	for _, s := range texts {
+		if s == want {
+			n++
+		}
+	}
+	return n
+}
+
+// tabToLabel tabs forward until the element named label has the focus.
+func tabToLabel(t *testing.T, tt *ui.Tester, label string) {
+	t.Helper()
+	for i := 0; i < 40; i++ {
+		if tt.Focused(label) {
+			return
+		}
+		tt.Key(0, ui.KeyTab)
+	}
+	t.Fatalf("tab did not reach %q: %q", label, tt.Texts())
 }

@@ -106,6 +106,9 @@ func (a *App) languageValue(label string) string {
 // its control on the right.
 type settingsRow func(label, hint string, control func())
 
+// settingsPad is the horizontal inset of a settings card's title and rows.
+const settingsPad float32 = 20
+
 // settingsPage draws the preferences as four cards, so a setting is found by
 // what it is about rather than by scanning one long column.
 func (a *App) settingsPage(c *ui.Context) {
@@ -121,13 +124,13 @@ func (a *App) settingsPage(c *ui.Context) {
 					a.settingsGroup(c, a.t("settings.groupAppearance"), func(row settingsRow) {
 						theme := a.themeLabel(s.Theme)
 						row(a.t("settings.theme"), "", func() {
-							if ui.Select(c, &theme, a.themeChoices()).Width(200).Height(36).Changed() {
+							if ui.Select(c, &theme, a.themeChoices()).Width(200).Height(36).Label(a.t("settings.theme")).Changed() {
 								s.Theme = a.themeValue(theme)
 							}
 						})
 						language := a.languageLabel(s.Language)
 						row(a.t("settings.language"), "", func() {
-							if ui.Select(c, &language, a.languageChoices()).Width(200).Height(36).Changed() {
+							if ui.Select(c, &language, a.languageChoices()).Width(200).Height(36).Label(a.t("settings.language")).Changed() {
 								s.Language = a.languageValue(language)
 								// The theme applies on the frame it changes in; the language
 								// applies at once too, like the rest of the page's controls.
@@ -139,11 +142,11 @@ func (a *App) settingsPage(c *ui.Context) {
 
 					a.settingsGroup(c, a.t("settings.groupDownloads"), func(row settingsRow) {
 						row(a.t("settings.downloadDir"), a.t("settings.downloadDirHint"), func() {
-							ui.TextInput(c, &s.DownloadDir).Width(360).Height(36)
+							ui.TextInput(c, &s.DownloadDir).Width(360).Height(36).Label(a.t("settings.downloadDir"))
 						})
 						concurrency := float64(s.DownloadConcurrency)
 						row(a.t("settings.concurrency"), "", func() {
-							ui.NumberInput(c, &concurrency, 1, 8, 1).Width(140).Height(36)
+							ui.NumberInput(c, &concurrency, 1, 8, 1).Width(140).Height(36).Label(a.t("settings.concurrency"))
 						})
 						s.DownloadConcurrency = int(concurrency)
 					})
@@ -154,7 +157,7 @@ func (a *App) settingsPage(c *ui.Context) {
 						})
 						width := s.CardWidth
 						row(a.t("settings.cardWidth"), "", func() {
-							ui.NumberInput(c, &width, 180, 360, 10).Width(140).Height(36)
+							ui.NumberInput(c, &width, 180, 360, 10).Width(140).Height(36).Label(a.t("settings.cardWidth"))
 						})
 						s.CardWidth = width
 					})
@@ -163,7 +166,7 @@ func (a *App) settingsPage(c *ui.Context) {
 						a.settingsToggleRow(c, a.t("settings.groupShortcuts"), &a.shortcutsOpen)
 						if a.shortcutsOpen {
 							ui.Text(c, a.t("shortcuts.hint")).FontSize(t.TextTiny).
-								TextColor(t.TextMuted).Padding(0, 20, t.SpaceM, 20).MaxLines(3)
+								TextColor(t.TextMuted).Padding(0, settingsPad, t.SpaceM, settingsPad).MaxLines(3)
 						}
 						ui.Box(c).Height(1).FillWidth().Background(t.Border)
 						row(a.t("settings.updates"), "", func() {
@@ -210,7 +213,7 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 	ui.Column(c).FillWidth().Background(t.Surface).Radius(t.RadiusL).
 		Border(1, t.Border).Clip().Children(func() {
 		ui.Text(c, title).FontSize(t.TextSmall).TextColor(t.TextMuted).
-			Padding(t.SpaceM, 20, t.SpaceXS, 20)
+			Padding(t.SpaceM, settingsPad, t.SpaceXS, settingsPad)
 		first := true
 		row := func(label, hint string, control func()) {
 			if !first {
@@ -226,7 +229,7 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 // settingsRow places the control at the end of a 44 high row.
 func (a *App) settingsRow(c *ui.Context, label, hint string, control func()) {
 	t := themeOf(c)
-	ui.Row(c).FillWidth().Height(44).Padding(0, 20).Gap(t.SpaceXL).
+	ui.Row(c).FillWidth().Height(44).Padding(0, settingsPad).Gap(t.SpaceXL).
 		AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(100).Gap(2).Children(func() {
 			ui.Text(c, label).FontSize(t.TextBody).TextColor(t.Text)
@@ -242,7 +245,7 @@ func (a *App) settingsRow(c *ui.Context, label, hint string, control func()) {
 // chevron that turns as the hint below opens.
 func (a *App) settingsToggleRow(c *ui.Context, label string, open *bool) {
 	t := themeOf(c)
-	b := ui.ButtonBase(c).Height(44).FillWidth().Padding(0, 20).Gap(t.SpaceS).
+	b := ui.ButtonBase(c).Height(44).FillWidth().Padding(0, settingsPad).Gap(t.SpaceS).
 		AlignItems(ui.Center).Justify(ui.Start)
 	if b.Hovered() {
 		b = b.Background(t.SurfaceAlt)
@@ -304,7 +307,7 @@ func (a *App) updateStatus(c *ui.Context) {
 		return
 	}
 	ui.Text(c, text).FontSize(t.TextSmall).TextColor(color).
-		Padding(0, 20, t.SpaceM, 20).MaxLines(2)
+		Padding(0, settingsPad, t.SpaceM, settingsPad).MaxLines(2)
 }
 
 // updateSnapshot reads the update state the page draws.

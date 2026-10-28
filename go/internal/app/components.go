@@ -22,6 +22,24 @@ func iconButton(c *ui.Context, glyph *ui.SVG, label string, size float32, fg, ho
 	return b
 }
 
+// cardShell is the frame shared by the work, novel and history cards: a
+// surface card that lifts its border and shadow when the pointer is over it.
+// It returns the card and its cover box; the caller adds the cover's contents,
+// the text block, and the card's label and click.
+func cardShell(c *ui.Context) (ui.Element, *ui.Element) {
+	t := themeOf(c)
+	card := ui.Column(c).Background(t.Surface).Radius(t.RadiusL).
+		Border(1, t.Border).Clip()
+	if card.Hovered() {
+		card = card.Border(1, t.Accent).Shadow(0, 8, 24, 0, t.Shadow)
+	}
+	var cover ui.Element
+	card.Children(func() {
+		cover = ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceAlt)
+	})
+	return card, &cover
+}
+
 // emptyState is the one shape every quiet page uses: a centered card with a
 // large glyph, a short title, a line of explanation and an optional action.
 func emptyState(c *ui.Context, glyph *ui.SVG, title, hint string, action func()) {

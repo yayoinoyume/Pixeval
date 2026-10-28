@@ -101,8 +101,8 @@ func designTokens(dark bool) tokens {
 		t.Accent = ui.Hex("#7fb0ff")
 		t.AccentSoft = ui.Hex("#1b2b46")
 		t.AccentFill = ui.Hex("#2f6fed")
-		t.AccentHover = ui.Hex("#3d7bfa")
-		t.AccentPressed = ui.Hex("#255cc4")
+		t.AccentHover = ui.Hex("#2a63d8")
+		t.AccentPressed = ui.Hex("#1f56b8")
 		t.AccentText = ui.Hex("#ffffff")
 
 		t.Danger = ui.Hex("#ff7b7b")
@@ -146,16 +146,48 @@ func designTokens(dark bool) tokens {
 	return t
 }
 
-// themeOf returns the tokens the current frame draws with.
+var (
+	darkTokens  = designTokens(true)
+	lightTokens = designTokens(false)
+)
+
+// tokensFor returns the cached palette for dark or light. The colors are
+// parsed once, not on every frame or every card.
+func tokensFor(dark bool) tokens {
+	if dark {
+		return darkTokens
+	}
+	return lightTokens
+}
+
+// themeOf returns the tokens the current frame draws with, adjusted for the
+// desktop's high contrast setting.
 func themeOf(c *ui.Context) tokens {
-	return designTokens(c.Theme().Dark)
+	t := tokensFor(c.Theme().Dark)
+	if c.Preferences().HighContrast {
+		t.Border = t.BorderStrong
+		t.TextMuted = t.TextMuted.Mix(t.Text, 0.45)
+		t.Focus = t.Accent
+	}
+	return t
+}
+
+// textScale is the desktop's text scale, 1 when it has none.
+func textScale(c *ui.Context) float32 {
+	if s := c.Preferences().TextScale; s > 0 {
+		return s
+	}
+	return 1
 }
 
 // designTheme is the tokens as the widgets' theme: controls take the alt
 // surface so they stand out on a card, and the accent fill is the primary
-// button's face.
-func designTheme(dark bool) *ui.Theme {
-	t := designTokens(dark)
+// button's face. FontSize follows the desktop's text scale.
+func designTheme(dark bool, scale float32) *ui.Theme {
+	t := tokensFor(dark)
+	if scale <= 0 {
+		scale = 1
+	}
 	return &ui.Theme{
 		Dark:           dark,
 		Background:     t.Bg,
@@ -180,6 +212,15 @@ func designTheme(dark bool) *ui.Theme {
 		ScrollbarWidth: 8,
 		Radius:         t.RadiusM,
 		Spacing:        4,
-		FontSize:       15,
+		FontSize:       t.TextBody * scale,
 	}
+}
+
+// applyHighContrast strengthens a theme for the desktop's high contrast
+// setting: darker borders and secondary text, and an opaque focus ring.
+func applyHighContrast(theme *ui.Theme, dark bool) {
+	t := tokensFor(dark)
+	theme.Border = t.BorderStrong
+	theme.TextMuted = t.TextMuted.Mix(t.Text, 0.45)
+	theme.Focus = t.Accent
 }
