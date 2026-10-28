@@ -219,9 +219,6 @@ func (a *App) browseCard(c *ui.Context, items []pixiv.Illustration, i int) {
 	})
 }
 
-// openViewer shows a work's pages; the viewer is a later milestone.
-func (a *App) openViewer(w *pixiv.Illustration, page int) {}
-
 // searchPage draws the search box and its results.
 func (a *App) searchPage(c *ui.Context) {
 	if a.session == nil {
