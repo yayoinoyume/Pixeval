@@ -68,7 +68,7 @@ func (a *App) Start() {
 		Content:   ui.View(a.View),
 	})
 	// The feeds load once the window runs, not before it can draw them.
-	a.home.armed = true
+	a.home.arm()
 }
 
 // restoreSession adopts the saved token before the window opens, refreshing
