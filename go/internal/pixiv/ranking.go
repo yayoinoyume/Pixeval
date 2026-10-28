@@ -34,7 +34,7 @@ func (c *Client) Ranking(ctx context.Context, mode RankMode, date string) (*Page
 	q := url.Values{}
 	q.Set("mode", string(mode))
 	q.Set("date", date)
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.illustPage(ctx, c.pageURL("/v1/illust/ranking", q))
 }
 
@@ -42,7 +42,7 @@ func (c *Client) Ranking(ctx context.Context, mode RankMode, date string) (*Page
 func (c *Client) Following(ctx context.Context) (*Page[Illustration], error) {
 	q := url.Values{}
 	q.Set("restrict", "public")
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.illustPage(ctx, c.pageURL("/v2/illust/follow", q))
 }
 

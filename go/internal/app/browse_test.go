@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -56,6 +57,39 @@ func waitBrowse(t *testing.T, st *browseState, what string, want func(v browseVi
 			t.Fatalf("feed did not %s: items=%d loading=%v err=%q", what, len(v.items), v.loading, v.err)
 		}
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestShowR18ReachesClient checks the saved setting is the client's R18
+// filter: on at startup, and again after the settings page saves it.
+func TestShowR18ReachesClient(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "pixeval-go", "settings.json")
+	saved := Default()
+	saved.ShowR18 = true
+	saved.DownloadDir = t.TempDir()
+	if err := Save(path, saved); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	a := New()
+	if !a.client.AllowR18 {
+		t.Error("AllowR18 off for a saved showR18=true")
+	}
+
+	a.settings.ShowR18 = false
+	a.saveSettings()
+	select {
+	case err := <-a.settingsSaved:
+		if err != nil {
+			t.Fatalf("saveSettings: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("settings save did not finish")
+	}
+	if a.client.AllowR18 {
+		t.Error("AllowR18 on after showR18 was turned off and saved")
 	}
 }
 

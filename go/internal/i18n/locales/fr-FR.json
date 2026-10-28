@@ -98,7 +98,7 @@
     "downloadDirHint": "Vide signifie le dossier par défaut, créé s'il n'existe pas",
     "concurrency": "Téléchargements simultanés",
     "showR18": "Afficher R18",
-    "showR18Hint": "Le filtre R18 arrivera en M2",
+    "showR18Hint": "Désactivé, les recommandations, abonnements, classements et recherches excluent les œuvres R18",
     "cardWidth": "Largeur des colonnes de la mosaïque",
     "language": "Langue",
     "langSystem": "Suivre le système",

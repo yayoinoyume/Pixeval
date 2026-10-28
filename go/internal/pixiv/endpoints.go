@@ -14,7 +14,7 @@ type illustList struct {
 // Recommended is the home feed of works Pixiv picked for the user.
 func (c *Client) Recommended(ctx context.Context) (*Page[Illustration], error) {
 	q := url.Values{}
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.illustPage(ctx, c.pageURL("/v1/illust/recommended", q))
 }
 
@@ -23,7 +23,7 @@ type SearchOptions struct {
 	Word      string
 	Sort      string // date_desc, date_asc, popular_desc
 	Target    string // partial_match_for_tags, exact_match_for_tags, title_and_caption
-	Filter    string
+	Filter    string // empty means the client's R18 filter
 	StartDate string
 	EndDate   string
 	MinWidth  int
@@ -43,11 +43,13 @@ func (c *Client) SearchIllustrations(ctx context.Context, opts SearchOptions) (*
 		opts.Target = "partial_match_for_tags"
 	}
 	if opts.Filter == "" {
-		opts.Filter = "for_android"
+		opts.Filter = c.filterParam()
 	}
 	q.Set("sort", opts.Sort)
 	q.Set("search_target", opts.Target)
-	q.Set("filter", opts.Filter)
+	if opts.Filter != "" {
+		q.Set("filter", opts.Filter)
+	}
 	if opts.StartDate != "" {
 		q.Set("start_date", opts.StartDate)
 	}

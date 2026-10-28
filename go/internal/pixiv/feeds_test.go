@@ -98,6 +98,52 @@ func TestRankingDefaultsToTodayInJapan(t *testing.T) {
 	}
 }
 
+// TestR18FilterFollowsAllowR18 checks the feed and search requests filter R18
+// out unless the client allows it.
+func TestR18FilterFollowsAllowR18(t *testing.T) {
+	endpoints := map[string]func(*Client) error{
+		"recommended": func(c *Client) error { _, err := c.Recommended(context.Background()); return err },
+		"following":   func(c *Client) error { _, err := c.Following(context.Background()); return err },
+		"ranking":     func(c *Client) error { _, err := c.Ranking(context.Background(), Day, "2026-10-28"); return err },
+		"search": func(c *Client) error {
+			_, err := c.SearchIllustrations(context.Background(), SearchOptions{Word: "x"})
+			return err
+		},
+	}
+	for _, allow := range []bool{false, true} {
+		for name, call := range endpoints {
+			var got recordedRequest
+			c := newWriteClient(t, recordInto(&got, `{"illusts":[],"next_url":""}`))
+			c.SetAllowR18(allow)
+			if err := call(c); err != nil {
+				t.Fatalf("%s (AllowR18=%v): %v", name, allow, err)
+			}
+			want := "for_android"
+			if allow {
+				want = ""
+			}
+			if q := got.query.Get("filter"); q != want {
+				t.Errorf("%s (AllowR18=%v): filter = %q, want %q", name, allow, q, want)
+			}
+		}
+	}
+}
+
+// TestSearchRespectsExplicitFilter checks a caller's own filter wins over the
+// client's R18 setting.
+func TestSearchRespectsExplicitFilter(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, `{"illusts":[],"next_url":""}`))
+	c.SetAllowR18(true)
+	opts := SearchOptions{Word: "x", Filter: "for_ios"}
+	if _, err := c.SearchIllustrations(context.Background(), opts); err != nil {
+		t.Fatalf("SearchIllustrations: %v", err)
+	}
+	if q := got.query.Get("filter"); q != "for_ios" {
+		t.Errorf("filter = %q, want for_ios", q)
+	}
+}
+
 func TestJSTDateUsesJapanZone(t *testing.T) {
 	// 20:00 UTC is already the next day in Japan.
 	utc := time.Date(2026, 10, 28, 20, 0, 0, 0, time.UTC)

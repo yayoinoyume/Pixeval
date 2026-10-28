@@ -98,7 +98,7 @@
     "downloadDirHint": "留空表示默认目录，不存在时自动创建",
     "concurrency": "下载并发",
     "showR18": "显示 R18",
-    "showR18Hint": "R18 过滤将在 M2 生效",
+    "showR18Hint": "关闭时推荐、关注、排行与搜索都会过滤掉 R18 作品",
     "cardWidth": "瀑布流列宽",
     "language": "语言",
     "langSystem": "跟随系统",
