@@ -38,6 +38,9 @@ type App struct {
 	backRoute route
 	// viewer is the full-screen illustration viewer, nil while it is closed.
 	viewer *viewerState
+	// comments is the open viewer's comment panel, and commentsOpen shows it.
+	comments     *commentState
+	commentsOpen bool
 	// userView is the user page shown, nil until one opens.
 	userView *userViewState
 	// seriesView is the series page shown, nil until one opens.
@@ -70,6 +73,10 @@ type App struct {
 	// followFn follows or unfollows a user off the main thread; tests replace
 	// it to avoid the network.
 	followFn func(ctx context.Context, id int64, on bool) error
+	// fetchCommentPage and addCommentFn answer the comment panel off the main
+	// thread; tests replace them to avoid the network.
+	fetchCommentPage func(ctx context.Context, illustID int64, offset int) (*pixiv.Page[pixiv.Comment], error)
+	addCommentFn     func(ctx context.Context, illustID int64, text string) (*pixiv.Comment, error)
 	// notice is a message a background task left for the next frame to show.
 	notice string
 }
@@ -99,9 +106,11 @@ func New() *App {
 			}
 			return client.Unfollow(ctx, id)
 		},
-		route:     routeHome,
-		homeFeeds: newHomeFeeds(),
-		search:    &browseState{},
+		fetchCommentPage: client.Comments,
+		addCommentFn:     client.AddComment,
+		route:            routeHome,
+		homeFeeds:        newHomeFeeds(),
+		search:           &browseState{},
 	}
 	a.loadLanguage()
 	return a

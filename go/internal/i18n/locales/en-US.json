@@ -44,6 +44,21 @@
     "close": "Close",
     "bookmarkFailed": "Bookmark failed: %s"
   },
+  "comments": {
+    "title": "Comments",
+    "empty": "No comments yet",
+    "loadMore": "Load more",
+    "placeholder": "Write a comment…",
+    "send": "Send",
+    "reply": "Reply",
+    "replyingTo": "Replying to @%s",
+    "cancel": "Cancel",
+    "justNow": "just now",
+    "minutesAgo": "%d minutes ago",
+    "hoursAgo": "%d hours ago",
+    "daysAgo": "%d days ago",
+    "sendFailed": "Comment failed to send: %s"
+  },
   "download": {
     "running": "Downloading",
     "done": "Done",
