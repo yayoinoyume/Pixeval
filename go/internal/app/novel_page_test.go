@@ -3,12 +3,15 @@ package app
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
+	"github.com/yayoinoyume/pixeval-go/internal/novel"
+	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 // novelBody is a body with two paragraphs and one ruby reading.
@@ -81,5 +84,84 @@ func TestNovelPageShowsRetry(t *testing.T) {
 		if !tt.HasText(want) {
 			t.Errorf("%q missing: %q", want, tt.Texts())
 		}
+	}
+}
+
+// novelImageBody has one body image on page 1 of work 42.
+const novelImageBody = "正文。\n[pixivimage:42-1]"
+
+// novelIllustration is the work a body image marker points at, with its page 1
+// original at bodyImageURL.
+const bodyImageURL = "https://i.pximg.net/img-original/img/2024/01/01/00/00/00/42_p0.jpg"
+
+func novelIllustration() *pixiv.Illustration {
+	return &pixiv.Illustration{MetaPages: []pixiv.MetaPage{
+		{ImageUrls: pixiv.ImageUrls{Original: bodyImageURL}},
+	}}
+}
+
+// bodyImage is the reference novelImageBody produces.
+var bodyImage = novel.Image{IllustID: 42, Page: 1}
+
+// TestNovelPageLoadsBodyImage checks a body image marker looks up the work's
+// page URL, and the page draws a block until the picture lands.
+func TestNovelPageLoadsBodyImage(t *testing.T) {
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelImageBody, nil })
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		return novelIllustration(), nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool {
+		return !v.loading && v.imageURLs[bodyImage] == bodyImageURL
+	})
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if !tt.HasText("正文。") {
+		t.Errorf("body missing: %q", tt.Texts())
+	}
+}
+
+// TestNovelPageFetchesBodyImageOnce checks a body image is looked up once, so
+// a retry or a second frame does not ask the API again.
+func TestNovelPageFetchesBodyImageOnce(t *testing.T) {
+	var mu sync.Mutex
+	calls := 0
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelImageBody, nil })
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return novelIllustration(), nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool {
+		return !v.loading && v.imageURLs[bodyImage] == bodyImageURL
+	})
+	ui.NewTester(a.View, 1000, 700)
+	a.loadNovelImages(a.novelView, []novel.Image{bodyImage})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if calls != 1 {
+		t.Errorf("fetched %d times, want 1", calls)
+	}
+}
+
+// TestNovelPageShowsUnsupportedUploadedImage checks an uploaded image, which
+// the app cannot fetch yet, reads as a note instead of a picture.
+func TestNovelPageShowsUnsupportedUploadedImage(t *testing.T) {
+	a := newNovelApp(func(context.Context, int64) (string, error) {
+		return "正文。\n[uploadedimage:555]", nil
+	})
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		t.Error("an uploaded image must not be fetched as an illustration")
+		return nil, errors.New("不应该拉取")
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if want := "正文图片暂不支持"; !tt.HasText(want) {
+		t.Errorf("%q missing: %q", want, tt.Texts())
 	}
 }
