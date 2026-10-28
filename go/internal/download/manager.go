@@ -1,23 +1,23 @@
-// Package download runs the app's download queue: a bounded number of image
-// downloads at a time, atomic files, retries, and pause/cancel per task.
+// Package download runs the app's bounded image download queue.
 package download
 
 import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
-// partSuffix marks the in-progress file. A finished download is renamed over
-// Dest, so a reader never sees a half-written image.
+// partSuffix marks the in-progress file, renamed over Dest when it is complete.
 const partSuffix = ".part"
 
-// defaultConcurrency is used when New gets a non-positive limit.
-const defaultConcurrency = 3
+// permanentStatuses will not change on a retry.
+var permanentStatuses = []string{"400 Bad Request", "401 Unauthorized", "403 Forbidden", "404 Not Found", "410 Gone"}
 
 // State is where a task sits in its lifecycle.
 type State int
@@ -30,8 +30,8 @@ const (
 	Canceled
 )
 
-// Task is one download. Bytes and Total stay zero until the body has arrived,
-// because pixiv.Client.GetImage returns the whole image at once.
+// Task is one download. Bytes and Total stay zero until the body arrives,
+// since pixiv.Client.GetImage returns the whole image at once.
 type Task struct {
 	ID        string
 	IllustID  int64
@@ -74,7 +74,7 @@ type entry struct {
 // New builds a manager. concurrency below 1 falls back to the default.
 func New(client *pixiv.Client, concurrency int) *Manager {
 	if concurrency < 1 {
-		concurrency = defaultConcurrency
+		concurrency = 3 // default when the caller does not care
 	}
 	return &Manager{
 		client:  client,
@@ -104,25 +104,22 @@ func (m *Manager) Add(tasks []Task) {
 	for _, e := range added {
 		m.launch(e)
 	}
+	m.changed()
 }
 
-// Start begins downloading; later calls do nothing.
+// Start begins downloading. A canceled run is restarted by the next call, which
+// takes the new ctx and relaunches whatever is still Queued.
 func (m *Manager) Start(ctx context.Context) {
 	m.mu.Lock()
-	if m.started {
+	if m.started && m.ctx.Err() == nil {
 		m.mu.Unlock()
 		return
 	}
 	m.started = true
 	m.ctx = ctx
-	queued := make([]*entry, 0, len(m.entries))
-	for _, e := range m.entries {
-		if e.task.State == Queued && !e.paused {
-			queued = append(queued, e)
-		}
-	}
+	entries := append([]*entry(nil), m.entries...)
 	m.mu.Unlock()
-	for _, e := range queued {
+	for _, e := range entries {
 		m.launch(e)
 	}
 }
@@ -183,12 +180,7 @@ func (m *Manager) Remove(id string) {
 		m.mu.Unlock()
 		return
 	}
-	for i, x := range m.entries {
-		if x == e {
-			m.entries = append(m.entries[:i], m.entries[i+1:]...)
-			break
-		}
-	}
+	m.entries = slices.DeleteFunc(m.entries, func(x *entry) bool { return x == e })
 	e.paused = true // keeps the worker from requeueing a dropped task
 	cancel, dest := e.cancel, e.task.Dest
 	m.mu.Unlock()
@@ -199,7 +191,8 @@ func (m *Manager) Remove(id string) {
 	m.changed()
 }
 
-// Snapshot copies the tasks in the order they were added.
+// Snapshot copies the tasks in the order added; finished ones stay until
+// Remove drops them.
 func (m *Manager) Snapshot() []Task {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -210,8 +203,8 @@ func (m *Manager) Snapshot() []Task {
 	return out
 }
 
-// OnChange registers a callback fired after any state change, on the worker
-// goroutine, so the caller must hop to its own thread.
+// OnChange registers a callback fired after any change, on the goroutine that
+// made it, so the caller must hop to its own thread.
 func (m *Manager) OnChange(f func()) {
 	m.mu.Lock()
 	m.onChange = f
@@ -224,18 +217,17 @@ func (m *Manager) Wait() { m.wg.Wait() }
 func finished(s State) bool { return s == Done || s == Failed || s == Canceled }
 
 func (m *Manager) findLocked(id string) *entry {
-	for _, e := range m.entries {
-		if e.task.ID == id {
-			return e
-		}
+	i := slices.IndexFunc(m.entries, func(e *entry) bool { return e.task.ID == id })
+	if i < 0 {
+		return nil
 	}
-	return nil
+	return m.entries[i]
 }
 
-// launch starts a worker for e unless one already owns it.
+// launch starts a worker for e unless one already owns it or the run is dead.
 func (m *Manager) launch(e *entry) {
 	m.mu.Lock()
-	if !m.started || e.running || e.paused || e.task.State != Queued {
+	if !m.started || m.ctx.Err() != nil || e.running || e.paused || e.task.State != Queued {
 		m.mu.Unlock()
 		return
 	}
@@ -250,8 +242,9 @@ func (m *Manager) worker(e *entry) {
 	defer m.finish(e)
 
 	m.mu.Lock()
-	dest, overwrite, state := e.task.Dest, e.task.Overwrite, e.task.State
+	dest, overwrite, state, parent := e.task.Dest, e.task.Overwrite, e.task.State, m.ctx
 	m.mu.Unlock()
+
 	if !overwrite && state == Queued {
 		if _, err := os.Stat(dest); err == nil {
 			m.update(e, func(t *Task) {
@@ -265,7 +258,8 @@ func (m *Manager) worker(e *entry) {
 
 	select {
 	case m.sem <- struct{}{}:
-	case <-m.ctx.Done():
+	case <-parent.Done():
+		m.update(e, func(t *Task) { t.State = Canceled })
 		return
 	}
 	defer func() { <-m.sem }()
@@ -275,8 +269,8 @@ func (m *Manager) worker(e *entry) {
 		m.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(m.ctx)
-	e.cancel = cancel
+	ctx, cancel := context.WithCancel(parent)
+	e.cancel = cancel // set with Running, so Cancel always reaches the attempt
 	e.task.State = Running
 	m.mu.Unlock()
 	m.changed()
@@ -286,41 +280,35 @@ func (m *Manager) worker(e *entry) {
 
 	m.mu.Lock()
 	e.cancel = nil
-	paused, state := e.paused, e.task.State
+	paused := e.paused
 	m.mu.Unlock()
 
-	switch {
-	case paused:
-		// Pause interrupted the attempt; the task waits for Resume.
-		os.Remove(dest + partSuffix)
-		m.update(e, func(t *Task) {
-			if t.State != Canceled {
-				t.State, t.Err = Queued, ""
-			}
-		})
-	case state == Canceled:
-		os.Remove(dest + partSuffix)
-	case err != nil:
-		m.update(e, func(t *Task) {
-			if t.State != Canceled {
-				t.State, t.Err = Failed, err.Error()
-			}
-		})
-	default:
-		m.update(e, func(t *Task) {
-			if t.State != Canceled {
-				t.State = Done
-			}
-		})
+	outcome, msg := Done, ""
+	if paused {
+		outcome = Queued // Resume starts it again.
+	} else if err != nil {
+		outcome, msg = Failed, err.Error()
 	}
+	if parent.Err() != nil {
+		outcome, msg = Canceled, ""
+	}
+	if outcome != Done {
+		os.Remove(dest + partSuffix)
+	}
+	m.update(e, func(t *Task) {
+		if t.State == Canceled && outcome != Canceled {
+			return // Cancel already had the last word.
+		}
+		t.State, t.Err = outcome, msg
+	})
 }
 
-// finish clears the running mark and restarts the task if Resume arrived while
-// the worker was still unwinding.
+// finish clears the running mark and requeues a task whose Resume arrived
+// while the worker was unwinding.
 func (m *Manager) finish(e *entry) {
 	m.mu.Lock()
 	e.running = false
-	retry := m.started && !e.paused && e.task.State == Queued
+	retry := m.started && m.ctx.Err() == nil && !e.paused && e.task.State == Queued
 	m.mu.Unlock()
 	if retry {
 		m.launch(e) // wg.Add before Done, so Wait cannot slip through
@@ -328,51 +316,62 @@ func (m *Manager) finish(e *entry) {
 	m.wg.Done()
 }
 
-// run performs the attempts for one task, retrying transient failures.
+// run performs the attempts for one task, retrying only what can succeed later.
 func (m *Manager) run(ctx context.Context, e *entry) error {
 	dest := e.task.Dest
 	part := dest + partSuffix
+	m.mu.Lock()
+	backoff := m.backoff
+	m.mu.Unlock()
 	for attempt := 1; ; attempt++ {
 		m.update(e, func(t *Task) { t.Attempts = attempt })
 		data, err := m.client.GetImage(ctx, e.task.URL)
 		if err == nil {
-			if werr := writeFile(dest, part, data); werr != nil {
-				return werr
+			if err = writeFile(ctx, dest, part, data); err == nil {
+				m.update(e, func(t *Task) {
+					t.Bytes, t.Total = int64(len(data)), int64(len(data))
+				})
+				return nil
 			}
-			m.update(e, func(t *Task) {
-				t.Bytes, t.Total = int64(len(data)), int64(len(data))
-			})
-			return nil
 		}
-		delay, retry := m.retryDelay(attempt)
-		if !retry || ctx.Err() != nil {
+		if ctx.Err() != nil || !retryable(err) || attempt > len(backoff) {
 			return err
 		}
 		select {
 		case <-ctx.Done():
 			return err
-		case <-time.After(delay):
+		case <-time.After(backoff[attempt-1]):
 		}
 	}
 }
 
-// retryDelay reports the wait before the next attempt, if another is allowed.
-func (m *Manager) retryDelay(attempt int) (time.Duration, bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if attempt > len(m.backoff) {
-		return 0, false
+// retryable reports whether another attempt can help. pixiv.GetImage only says
+// "image: <status>", so a status text is all there is to match on.
+// shortcut: string matching, upgrade once pixiv returns a typed status error.
+func retryable(err error) bool {
+	if err == nil {
+		return false
 	}
-	return m.backoff[attempt-1], true
+	for _, s := range permanentStatuses {
+		if strings.Contains(err.Error(), s) {
+			return false
+		}
+	}
+	return true
 }
 
 // writeFile writes part and renames it over dest, creating parent directories
-// first so a fresh download directory works.
-func writeFile(dest, part string, data []byte) error {
+// first. The ctx check before the rename keeps a Cancel that lands mid-write
+// from leaving a finished file behind.
+func writeFile(ctx context.Context, dest, part string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
 	if err := os.WriteFile(part, data, 0o644); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		os.Remove(part)
 		return err
 	}
 	if err := os.Rename(part, dest); err != nil {
