@@ -304,6 +304,10 @@ func (a *App) loginPrompt(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
 		ui.Text(c, a.t("login.prompt")).TextColor(t.TextMuted)
+		if !a.webviewOK {
+			// The window cannot show Pixiv's page, so name the path that works.
+			ui.Text(c, a.t("login.noWebView")).TextColor(t.TextMuted)
+		}
 		if ui.Button(c, a.t("login.title")).Clicked() {
 			a.ShowLogin()
 		}

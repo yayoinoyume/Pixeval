@@ -134,7 +134,8 @@
     "refreshHint": "手动登录：粘贴 Pixiv 网页登录拿到的 refresh token",
     "pageFailed": "无法创建登录页面",
     "refreshEmpty": "请先粘贴 refresh token",
-    "saveFailed": "保存登录信息失败"
+    "saveFailed": "保存登录信息失败",
+    "noWebView": "当前没有可用的 WebView，请用 refresh token 登录"
   },
   "user": {
     "open": "作者",

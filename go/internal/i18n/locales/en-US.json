@@ -134,7 +134,8 @@
     "refreshHint": "Manual sign-in: paste the refresh token from the Pixiv web sign-in",
     "pageFailed": "Cannot create the login page",
     "refreshEmpty": "Paste a refresh token first",
-    "saveFailed": "Cannot save the sign-in"
+    "saveFailed": "Cannot save the sign-in",
+    "noWebView": "No WebView is available here: sign in with a refresh token"
   },
   "user": {
     "open": "Author",

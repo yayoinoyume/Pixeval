@@ -40,7 +40,10 @@ type App struct {
 	paused map[string]bool
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
-	route   route
+	// webviewOK reports whether the system webview is there; without it the
+	// login window takes a pasted refresh token instead of Pixiv's page.
+	webviewOK bool
+	route     route
 	// backRoute is the page a user page or series page returns to.
 	backRoute route
 	// viewer is the full-screen illustration viewer, nil while it is closed.
@@ -241,6 +244,9 @@ func imageDir() string {
 }
 
 func (a *App) Start() {
+	// The shell draws native UI and needs no webview; the login window does,
+	// so ask once before it can open.
+	a.webviewOK = mygo.WebViewAvailable()
 	a.win = mygo.NewWindow(mygo.WindowOptions{
 		Title:     a.title(),
 		Width:     1280,
