@@ -41,8 +41,11 @@ type MasonryState struct {
 	// vh is the height of the view in the last frame, which AtEnd tells a
 	// content that fits from one whose layout is yet to come.
 	vh float32
-	// firstKey and lastKey are the keys rects were laid out for: when they
-	// change, the items were replaced, and the layout is computed again.
+	// windowW and windowH are the window size of the last frame, to lay the
+	// masonry out again once more after the window resized.
+	windowW, windowH float32
+	// firstKey and lastKey are the keys rects were laid out for, a sentinel
+	// for the items replaced rather than added to.
 	firstKey, lastKey any
 }
 
@@ -57,8 +60,11 @@ const masonryFallback = 400
 // screen above and below, are built.
 //
 // st keeps the place and the layout, or nil for a masonry that keeps none.
-// The layout is computed again when the number of items, their keys, or the
-// width of the container changes; items added keep the scroll where it is.
+// The layout is computed again when the number of items, the width of the
+// container, or the keys at either end change; the keys at either end are a
+// sentinel for the items replaced rather than added to, so a list whose keys
+// are all nil cannot tell a replacement. Items added keep the scroll where it
+// is.
 func Masonry(c *ui.Context, st *MasonryState, items []MasonryItem, columnWidth, gap float64, build func(i int)) {
 	if st == nil {
 		st = &MasonryState{}
@@ -67,21 +73,30 @@ func Masonry(c *ui.Context, st *MasonryState, items []MasonryItem, columnWidth, 
 	// The container is laid out after the view that fills it: its width is
 	// that of the last frame.
 	b := e.LayoutBounds()
+	winW, winH := c.Size()
 	width := b.W
+	needFrame := false
 	if width <= 0 {
 		// A container yet to be laid out, or one squeezed to no width: lay
 		// out for a width of its own without asking for another frame, as a
 		// frame that keeps it at no width would come again and again.
 		width = masonryFallback
 	}
+	if winW != st.windowW || winH != st.windowH {
+		st.windowW, st.windowH = winW, winH
+		needFrame = true
+	}
 	if st.layout(items, width, float32(columnWidth), float32(gap)) {
+		needFrame = true
+	}
+	if needFrame {
 		// The width laid out for was the one before this frame's layout, as
 		// after a resize: one more frame lays out the real one.
 		c.Invalidate()
 	}
 	vh := b.H
 	if vh <= 0 {
-		_, vh = c.Size()
+		vh = winH
 	}
 	if vh <= 0 {
 		vh = masonryFallback
