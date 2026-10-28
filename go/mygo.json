@@ -1,0 +1,6 @@
+{
+  "name": "Pixeval Go",
+  "identifier": "io.github.yayoinoyume.pixevalgo",
+  "version": "0.1.0",
+  "out": "build"
+}
