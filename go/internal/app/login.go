@@ -235,7 +235,5 @@ func (l *loginWindow) fail(err error) {
 // onLoggedIn runs once a token is saved. The token file is the session; the
 // shell redraws so it can show the signed-in user.
 func (a *App) onLoggedIn() {
-	if a.win != nil {
-		a.win.Update(func() {})
-	}
+	a.syncSession()
 }
