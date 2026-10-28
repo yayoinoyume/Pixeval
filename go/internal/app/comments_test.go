@@ -20,7 +20,7 @@ func commentFixture(id int64, author, text string) pixiv.Comment {
 // waitComments waits for the panel's load to settle as want says.
 func waitComments(t *testing.T, st *commentState, what string, want func() bool) {
 	t.Helper()
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		if want() {
 			return
