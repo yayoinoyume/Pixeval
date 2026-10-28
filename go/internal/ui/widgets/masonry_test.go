@@ -68,9 +68,7 @@ func TestMasonryColumnsAndRects(t *testing.T) {
 		{1200, 600, 5},
 	} {
 		tt.SetSize(tc.width, tc.height)
-		// The width comes from the frame before: a frame after the resize lays
-		// the new one out.
-		tt.Frame()
+		// The resize asks for the frame that lays out the new width.
 		if st.width != float32(tc.width) {
 			t.Fatalf("laid out for %v wide, not %d", st.width, tc.width)
 		}
