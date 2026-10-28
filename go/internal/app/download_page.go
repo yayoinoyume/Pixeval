@@ -78,18 +78,18 @@ func downloadFinished(s download.State) bool {
 	return s == download.Done || s == download.Failed || s == download.Canceled
 }
 
-func downloadStateLabel(s download.State) string {
+func (a *App) downloadStateLabel(s download.State) string {
 	switch s {
 	case download.Running:
-		return "下载中"
+		return a.t("download.running")
 	case download.Done:
-		return "完成"
+		return a.t("download.done")
 	case download.Failed:
-		return "失败"
+		return a.t("download.failed")
 	case download.Canceled:
-		return "取消"
+		return a.t("download.canceled")
 	default:
-		return "排队"
+		return a.t("download.queued")
 	}
 }
 
@@ -113,15 +113,15 @@ func (a *App) downloadsPage(c *ui.Context) {
 	tasks := a.downloads.Snapshot()
 	if len(tasks) == 0 {
 		ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
-			ui.Text(c, "还没有下载任务").TextColor(t.TextMuted)
-			ui.Text(c, "在查看器里点「下载」把作品加入队列").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.t("download.empty")).TextColor(t.TextMuted)
+			ui.Text(c, a.t("download.emptyHint")).FontSize(12).TextColor(t.TextMuted)
 		})
 		return
 	}
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fmt.Sprintf("%d 个任务", len(tasks))).Grow(1).TextColor(t.TextMuted)
-			if ui.Button(c, "清空已完成").Disabled(!anyDownloadDone(tasks)).Clicked() {
+			ui.Text(c, a.tf("download.count", len(tasks))).Grow(1).TextColor(t.TextMuted)
+			if ui.Button(c, a.t("download.clearDone")).Disabled(!anyDownloadDone(tasks)).Clicked() {
 				a.clearDoneDownloads()
 			}
 		})
@@ -138,14 +138,14 @@ func (a *App) downloadRow(c *ui.Context, task download.Task) {
 	t := c.Theme()
 	// A paused task reads as queued in a snapshot; only this page knows.
 	paused := task.State == download.Queued && a.paused[task.ID]
-	label := downloadStateLabel(task.State)
+	label := a.downloadStateLabel(task.State)
 	if paused {
-		label = "已暂停"
+		label = a.t("download.paused")
 	}
 	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			ui.Text(c, task.Title).MaxLines(1)
-			ui.Text(c, fmt.Sprintf("第 %d 页", task.Page+1)).FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.tf("download.page", task.Page+1)).FontSize(12).TextColor(t.TextMuted)
 			if task.State == download.Failed && task.Err != "" {
 				ui.Text(c, task.Err).FontSize(12).TextColor(t.Danger).MaxLines(1)
 			}
@@ -160,23 +160,23 @@ func (a *App) downloadRow(c *ui.Context, task download.Task) {
 			}
 		})
 		if task.State == download.Failed {
-			if ui.Button(c, "重试").Clicked() {
+			if ui.Button(c, a.t("common.retry")).Clicked() {
 				a.retryDownload(task)
 			}
 		}
 		if !downloadFinished(task.State) {
 			if paused {
-				if ui.Button(c, "恢复").Clicked() {
+				if ui.Button(c, a.t("download.resume")).Clicked() {
 					a.resumeDownload(task.ID)
 				}
-			} else if ui.Button(c, "暂停").Clicked() {
+			} else if ui.Button(c, a.t("download.pause")).Clicked() {
 				a.pauseDownload(task.ID)
 			}
-			if ui.Button(c, "取消").Clicked() {
+			if ui.Button(c, a.t("download.cancel")).Clicked() {
 				a.cancelDownload(task.ID)
 			}
 		}
-		if ui.Button(c, "移除").Clicked() {
+		if ui.Button(c, a.t("download.remove")).Clicked() {
 			a.removeDownload(task.ID)
 		}
 	})

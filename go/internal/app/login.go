@@ -64,7 +64,7 @@ func (a *App) ShowLogin() {
 	}
 	l := &loginWindow{app: a, verifier: verifier, challenge: challenge}
 	l.win = mygo.NewWindow(mygo.WindowOptions{
-		Title:     "登录 Pixiv",
+		Title:     a.t("login.title"),
 		Width:     520,
 		Height:    760,
 		MinWidth:  420,
@@ -74,7 +74,7 @@ func (a *App) ShowLogin() {
 	l.web, err = l.win.NewWebView(mygo.WebViewOptions{URL: pixiv.LoginURL(challenge)})
 	if err != nil {
 		// The window keeps the fallback: retry, or a pasted refresh token.
-		l.fail(fmt.Errorf("无法创建登录页面: %w", err))
+		l.fail(fmt.Errorf("%s: %w", a.t("login.pageFailed"), err))
 		return
 	}
 	l.web.Page().OnWillNavigate(l.navigated)
@@ -103,7 +103,7 @@ func (l *loginWindow) view(c *ui.Context) {
 			if busy {
 				ui.Row(c).Gap(8).Children(func() {
 					ui.Spinner(c)
-					ui.Text(c, "正在登录…")
+					ui.Text(c, l.app.t("login.busy"))
 				})
 			}
 			if errMsg != "" {
@@ -112,14 +112,14 @@ func (l *loginWindow) view(c *ui.Context) {
 			// A retry or a paste while a token is in flight would race it.
 			if !busy {
 				ui.Row(c).Gap(8).Children(func() {
-					if ui.Button(c, "重试").Clicked() {
+					if ui.Button(c, l.app.t("common.retry")).Clicked() {
 						l.retry()
 					}
-					if ui.Button(c, "用 refresh token 登录").Clicked() {
+					if ui.Button(c, l.app.t("login.refreshAction")).Clicked() {
 						l.submitRefresh()
 					}
 				})
-				ui.Text(c, "手动登录：粘贴 Pixiv 网页登录拿到的 refresh token").TextColor(t.TextMuted)
+				ui.Text(c, l.app.t("login.refreshHint")).TextColor(t.TextMuted)
 				ui.TextInput(c, &l.refresh)
 			}
 		})
@@ -187,7 +187,7 @@ func (l *loginWindow) exchange(code string) {
 func (l *loginWindow) submitRefresh() {
 	refresh := strings.TrimSpace(l.refresh)
 	if refresh == "" {
-		l.fail(fmt.Errorf("请先粘贴 refresh token"))
+		l.fail(errors.New(l.app.t("login.refreshEmpty")))
 		return
 	}
 	l.mu.Lock()
@@ -217,7 +217,7 @@ func (l *loginWindow) finish(t *pixiv.Token) {
 		err = pixiv.SaveToken(path, t)
 	}
 	if err != nil {
-		l.fail(fmt.Errorf("保存登录信息失败: %w", err))
+		l.fail(fmt.Errorf("%s: %w", l.app.t("login.saveFailed"), err))
 		return
 	}
 	l.win.Close()

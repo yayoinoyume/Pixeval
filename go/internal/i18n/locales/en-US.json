@@ -1,0 +1,97 @@
+{
+  "nav": {
+    "home": "Home",
+    "search": "Search",
+    "downloads": "Downloads",
+    "history": "History",
+    "settings": "Settings",
+    "login": "Sign in",
+    "logout": "Sign out",
+    "loggedIn": "Signed in: %s",
+    "placeholder": "%s (M1 placeholder)"
+  },
+  "home": {
+    "recommended": "Recommended",
+    "following": "Following",
+    "ranking": "Ranking"
+  },
+  "common": {
+    "retry": "Retry",
+    "loading": "Loading…",
+    "loadFailed": "Failed to load: %s",
+    "coverFailed": "Cover failed to load",
+    "noWorks": "No works",
+    "save": "Save"
+  },
+  "search": {
+    "placeholder": "Search works",
+    "action": "Search",
+    "hint": "Type a keyword to search"
+  },
+  "viewer": {
+    "imageFailed": "Image failed to load",
+    "bookmark": "Bookmark",
+    "bookmarked": "Bookmarked",
+    "download": "Download",
+    "noDownloadDir": "Cannot create the download directory",
+    "alreadyQueued": "Already in the download queue",
+    "queued": "Queued %d pages for download",
+    "prev": "Previous",
+    "next": "Next",
+    "close": "Close",
+    "bookmarkFailed": "Bookmark failed: %s"
+  },
+  "download": {
+    "running": "Downloading",
+    "done": "Done",
+    "failed": "Failed",
+    "canceled": "Canceled",
+    "queued": "Queued",
+    "paused": "Paused",
+    "empty": "No downloads yet",
+    "emptyHint": "Click Download in the viewer to queue a work",
+    "count": "%d tasks",
+    "clearDone": "Clear finished",
+    "page": "Page %d",
+    "resume": "Resume",
+    "pause": "Pause",
+    "cancel": "Cancel",
+    "remove": "Remove"
+  },
+  "settings": {
+    "theme": "Theme",
+    "themeSystem": "Follow system",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "downloadDir": "Download folder",
+    "downloadDirHint": "Empty means the default folder, created when missing",
+    "concurrency": "Download concurrency",
+    "showR18": "Show R18",
+    "showR18Hint": "The R18 filter arrives in M2",
+    "cardWidth": "Masonry column width",
+    "language": "Language",
+    "langSystem": "Follow system",
+    "langZh": "中文",
+    "langEn": "English",
+    "saveFailed": "Save failed: %s",
+    "saved": "Saved",
+    "pathFailed": "Cannot save settings: %s"
+  },
+  "history": {
+    "empty": "No history yet",
+    "emptyHint": "Works you open are recorded here",
+    "count": "%d entries",
+    "clear": "Clear history",
+    "openFailed": "Failed to open work: %s"
+  },
+  "login": {
+    "title": "Sign in to Pixiv",
+    "prompt": "Sign in to Pixiv to start browsing",
+    "busy": "Signing in…",
+    "refreshAction": "Sign in with a refresh token",
+    "refreshHint": "Manual sign-in: paste the refresh token from the Pixiv web sign-in",
+    "pageFailed": "Cannot create the login page",
+    "refreshEmpty": "Paste a refresh token first",
+    "saveFailed": "Cannot save the sign-in"
+  }
+}

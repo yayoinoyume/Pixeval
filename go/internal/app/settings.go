@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+
+	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 )
 
 // The theme values Settings.Theme saves.
@@ -19,6 +21,7 @@ const (
 // config directory.
 type Settings struct {
 	Theme               string  `json:"theme"`
+	Language            string  `json:"language"`
 	DownloadDir         string  `json:"downloadDir"`
 	DownloadConcurrency int     `json:"downloadConcurrency"`
 	ShowR18             bool    `json:"showR18"`
@@ -33,6 +36,7 @@ func Default() *Settings {
 	}
 	return &Settings{
 		Theme:               themeSystem,
+		Language:            i18n.LangAuto,
 		DownloadDir:         dir,
 		DownloadConcurrency: downloadConcurrency,
 		ShowR18:             false,
@@ -89,6 +93,11 @@ func (s *Settings) normalize() {
 	case themeSystem, themeLight, themeDark:
 	default:
 		s.Theme = themeSystem
+	}
+	switch s.Language {
+	case i18n.LangAuto, i18n.LangZhHans, i18n.LangEnUS:
+	default:
+		s.Language = i18n.LangAuto
 	}
 	if s.DownloadConcurrency < 1 || s.DownloadConcurrency > 8 {
 		s.DownloadConcurrency = downloadConcurrency

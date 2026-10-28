@@ -78,8 +78,6 @@ const (
 	homeTabRanking
 )
 
-var homeTabLabels = []string{"推荐", "关注", "排行"}
-
 // armHome sets a home tab's fetch and lets it load, once. The first page is
 // fetched as the tab draws it; a tab already armed keeps its pages and place.
 func (a *App) armHome(tab int) {
@@ -286,8 +284,8 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 	v := st.snapshot()
 	if v.err != "" {
 		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "加载失败："+v.err).TextColor(t.Danger).Grow(1)
-			if ui.Button(c, "重试").Clicked() {
+			ui.Text(c, a.tf("common.loadFailed", v.err)).TextColor(t.Danger).Grow(1)
+			if ui.Button(c, a.t("common.retry")).Clicked() {
 				st.retry()
 			}
 		})
@@ -297,9 +295,9 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 		}
 	}
 	if len(v.items) == 0 {
-		msg := "没有作品"
+		msg := a.t("common.noWorks")
 		if !v.started {
-			msg = "加载中…"
+			msg = a.t("common.loading")
 		}
 		ui.Column(c).Grow(1).Center().Children(func() {
 			ui.Text(c, msg).TextColor(t.TextMuted)
@@ -335,7 +333,7 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 		ui.Box(c).Grow(1).FillWidth().Radius(8).Background(t.Surface).Clip().Children(func() {
 			if st.imageFailed(key) {
 				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, "封面加载失败").FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, a.t("common.coverFailed")).FontSize(12).TextColor(t.TextMuted)
 				})
 				return
 			}
@@ -357,15 +355,15 @@ func (a *App) searchPage(c *ui.Context) {
 	st := a.search
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		ui.Row(c).Gap(8).Padding(12).Children(func() {
-			ui.TextInput(c, &st.query).Grow(1).Placeholder("搜索作品")
-			if ui.Button(c, "搜索").Clicked() {
+			ui.TextInput(c, &st.query).Grow(1).Placeholder(a.t("search.placeholder"))
+			if ui.Button(c, a.t("search.action")).Clicked() {
 				a.startSearch(st)
 			}
 		})
 		if !st.isArmed() {
 			t := c.Theme()
 			ui.Column(c).Grow(1).Center().Children(func() {
-				ui.Text(c, "输入关键词开始搜索").TextColor(t.TextMuted)
+				ui.Text(c, a.t("search.hint")).TextColor(t.TextMuted)
 			})
 			return
 		}
