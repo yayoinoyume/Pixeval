@@ -142,7 +142,8 @@ func (a *App) downloadRow(c *ui.Context, task download.Task) {
 	if paused {
 		label = a.t("download.paused")
 	}
-	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).
+		Label(a.tf("a11y.download", task.Title)).Children(func() {
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			ui.Text(c, task.Title).MaxLines(1)
 			ui.Text(c, a.tf("download.page", task.Page+1)).FontSize(12).TextColor(t.TextMuted)

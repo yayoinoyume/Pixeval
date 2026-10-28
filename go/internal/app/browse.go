@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"time"
 
@@ -64,6 +63,9 @@ type browseState struct {
 	// the first submitted word for search.
 	query string
 	armed bool
+	// focusQuery asks the search box for the keyboard focus on the next
+	// frame, which the window's search shortcut sets.
+	focusQuery bool
 
 	// filterText is the expression being typed, filterExpr the one applied
 	// (nil shows every work) and filterErr why the last apply failed. The
@@ -249,23 +251,6 @@ func (st *browseState) restart() {
 	st.mu.Unlock()
 }
 
-// startSearch replaces the results with a search for the box's word.
-func (a *App) startSearch(st *browseState) {
-	word := strings.TrimSpace(st.query)
-	if word == "" {
-		return
-	}
-	st.restart()
-	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
-		if next := st.cursor(); next != "" {
-			return a.client.NextIllustrations(ctx, next)
-		}
-		return a.client.SearchIllustrations(ctx, pixiv.SearchOptions{Word: word})
-	})
-	st.masonry = widgets.MasonryState{}
-	a.loadMore(st)
-}
-
 // cardAspect is a cover's aspect with the title and author under it, so the
 // masonry leaves them room.
 func cardAspect(aspect, width float64) float64 {
@@ -349,7 +334,9 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 	work := items[i]
 	key := work.CoverURL()
 	t := c.Theme()
-	ui.Column(c).Fill().Gap(4).Padding(2).Cursor(ui.CursorPointer).OnClick(func() {
+	ui.Column(c).Fill().Gap(4).Padding(2).Focusable().
+		Label(a.tf("a11y.card", work.Title, work.User.Name)).
+		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openViewer(&items[i], 0)
 	}).ContextMenu(func(m *ui.Menu) {
 		// Right click opens the author's page: the card's click is the work.
@@ -365,35 +352,10 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 				return
 			}
 			if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.imageReady(st, key)); bmp != nil {
-				ui.Image(c, bmp).Fill()
+				ui.Image(c, bmp).Fill().Label(a.tf("a11y.cover", work.Title))
 			}
 		})
 		ui.Text(c, work.Title).MaxLines(1)
 		ui.Text(c, work.User.Name).FontSize(12).TextColor(t.TextMuted).MaxLines(1)
-	})
-}
-
-// searchPage draws the search box and its results.
-func (a *App) searchPage(c *ui.Context) {
-	if a.session == nil {
-		a.loginPrompt(c)
-		return
-	}
-	st := a.search
-	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Row(c).Gap(8).Padding(12).Children(func() {
-			ui.TextInput(c, &st.query).Grow(1).Placeholder(a.t("search.placeholder"))
-			if ui.Button(c, a.t("search.action")).Clicked() {
-				a.startSearch(st)
-			}
-		})
-		if !st.isArmed() {
-			t := c.Theme()
-			ui.Column(c).Grow(1).Center().Children(func() {
-				ui.Text(c, a.t("search.hint")).TextColor(t.TextMuted)
-			})
-			return
-		}
-		a.browsePage(c, st)
 	})
 }

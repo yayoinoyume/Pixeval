@@ -12,7 +12,8 @@
     "placeholder": "%s (заглушка M1)",
     "user": "Пользователь",
     "series": "Серия",
-    "novel": "Новелла"
+    "novel": "Новелла",
+    "region": "Navigation"
   },
   "home": {
     "recommended": "Рекомендации",
@@ -28,6 +29,15 @@
     "save": "Сохранить",
     "back": "Назад"
   },
+  "a11y": {
+    "card": "%s, by %s",
+    "cover": "Cover of %s",
+    "avatar": "Avatar of %s",
+    "comment": "Comment by %s",
+    "subscription": "Subscription: %s",
+    "download": "Download: %s",
+    "novelImage": "Novel illustration"
+  },
   "search": {
     "placeholder": "Поиск работ",
     "action": "Поиск",
@@ -35,6 +45,7 @@
   },
   "viewer": {
     "imageFailed": "Ошибка загрузки изображения",
+    "image": "Illustration: %s (page %d of %d)",
     "bookmark": "Добавить в закладки",
     "bookmarked": "В закладках",
     "download": "Скачать",
@@ -164,5 +175,8 @@
     "placeholder": "Фильтр работ, например bookmarks>100",
     "action": "Применить",
     "invalid": "Недопустимый фильтр: %s"
+  },
+  "shortcuts": {
+    "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
   }
 }

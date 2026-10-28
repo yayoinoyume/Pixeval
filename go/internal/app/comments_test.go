@@ -52,6 +52,9 @@ func TestCommentsPanelRenders(t *testing.T) {
 			t.Errorf("%q not shown: %q", want, tt.Texts())
 		}
 	}
+	if _, ok := tt.Find("作者甲 的评论"); !ok {
+		t.Errorf("the comment has no label: %q", tt.Texts())
+	}
 }
 
 // TestCommentsSendClearsDraftAndReloads checks sending posts the draft and
@@ -91,6 +94,9 @@ func TestCommentsSendClearsDraftAndReloads(t *testing.T) {
 		t.Fatalf("Click: %v", err)
 	}
 	waitComments(t, st, "reload after sending", func() bool {
+		// The send lands off the main thread, so the composer clears on a
+		// frame the test asks for.
+		tt.Frame()
 		st.mu.Lock()
 		defer st.mu.Unlock()
 		return !st.sending && st.draft == "" && len(st.items) == 1

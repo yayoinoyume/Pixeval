@@ -12,7 +12,8 @@
     "placeholder": "%s (espace réservé M1)",
     "user": "Utilisateur",
     "series": "Séries",
-    "novel": "Roman"
+    "novel": "Roman",
+    "region": "Navigation"
   },
   "home": {
     "recommended": "Recommandés",
@@ -28,6 +29,15 @@
     "save": "Enregistrer",
     "back": "Retour"
   },
+  "a11y": {
+    "card": "%s, by %s",
+    "cover": "Cover of %s",
+    "avatar": "Avatar of %s",
+    "comment": "Comment by %s",
+    "subscription": "Subscription: %s",
+    "download": "Download: %s",
+    "novelImage": "Novel illustration"
+  },
   "search": {
     "placeholder": "Rechercher des œuvres",
     "action": "Rechercher",
@@ -35,6 +45,7 @@
   },
   "viewer": {
     "imageFailed": "Échec du chargement de l'image",
+    "image": "Illustration: %s (page %d of %d)",
     "bookmark": "Ajouter aux favoris",
     "bookmarked": "Ajouté aux favoris",
     "download": "Télécharger",
@@ -164,5 +175,8 @@
     "placeholder": "Filtrer les œuvres, p. ex. bookmarks>100",
     "action": "Appliquer",
     "invalid": "Filtre invalide : %s"
+  },
+  "shortcuts": {
+    "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
   }
 }

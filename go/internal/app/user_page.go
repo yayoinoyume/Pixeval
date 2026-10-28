@@ -143,7 +143,8 @@ func (a *App) userPage(c *ui.Context) {
 func (a *App) userAvatar(c *ui.Context, v *userViewState, s userPageView) {
 	url := s.user.ProfileImageUrls.Px50x50
 	box := ui.Box(c).Width(avatarSize).Height(avatarSize).Shrink(0).
-		Radius(avatarSize / 2).Background(c.Theme().Surface).Clip()
+		Radius(avatarSize / 2).Background(c.Theme().Surface).Clip().
+		Label(a.tf("a11y.avatar", s.user.Name))
 	if url == "" || s.avatarFailed {
 		return
 	}

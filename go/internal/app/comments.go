@@ -266,7 +266,8 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 			})
 		}
 		ui.Row(c).Gap(8).Padding(12).Children(func() {
-			ui.TextInput(c, &st.draft).Grow(1).Placeholder(a.t("comments.placeholder"))
+			ui.TextInput(c, &st.draft).Grow(1).
+				Placeholder(a.t("comments.placeholder")).Label(a.t("comments.placeholder"))
 			if ui.Button(c, a.t("comments.send")).Disabled(v.sending).Clicked() {
 				a.submitComment(st)
 			}
@@ -278,9 +279,11 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 // button.
 func (a *App) commentItem(c *ui.Context, st *commentState, cm *pixiv.Comment) {
 	t := c.Theme()
-	ui.Row(c).Gap(8).AlignItems(ui.Start).Children(func() {
+	ui.Row(c).Gap(8).AlignItems(ui.Start).
+		Label(a.tf("a11y.comment", cm.User.Name)).Children(func() {
 		avatar := ui.Box(c).Width(commentAvatar).Height(commentAvatar).Shrink(0).
-			Radius(commentAvatar / 2).Background(t.Background).Clip()
+			Radius(commentAvatar / 2).Background(t.Background).Clip().
+			Label(a.tf("a11y.avatar", cm.User.Name))
 		url := cm.User.ProfileImageUrls.Px50x50
 		if url != "" && !st.avatarFailedURL(url) {
 			avatar.Children(func() {

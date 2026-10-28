@@ -309,10 +309,6 @@ func (a *App) viewerPage(c *ui.Context) {
 	}
 	bmp, failed := a.viewerImage(v)
 	t := c.Theme()
-	// The window's keys, so they work whatever has the focus.
-	c.OnShortcut(0, ui.KeyEscape, a.closeViewer)
-	c.OnShortcut(0, ui.KeyLeft, func() { a.viewerGo(-1) })
-	c.OnShortcut(0, ui.KeyRight, func() { a.viewerGo(1) })
 	ui.Column(c).Fill().FillHeight().Background(t.Background).Children(func() {
 		ui.Row(c).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
 			area := ui.Box(c).Grow(1).FillHeight().Clip().Background(t.Background).
@@ -325,7 +321,8 @@ func (a *App) viewerPage(c *ui.Context) {
 				switch {
 				case bmp != nil:
 					ui.Image(c, bmp).Fill().Fit(ui.Contain).
-						Scale(v.zoom, v.zoom).Translate(v.panX, v.panY)
+						Scale(v.zoom, v.zoom).Translate(v.panX, v.panY).
+						Label(a.tf("viewer.image", v.work.Title, v.page+1, pageCount(v.work)))
 				case failed:
 					ui.Column(c).Fill().Center().Children(func() {
 						ui.Text(c, a.t("viewer.imageFailed")).TextColor(t.Danger)

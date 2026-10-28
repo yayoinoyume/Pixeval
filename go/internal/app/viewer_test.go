@@ -226,6 +226,9 @@ func TestViewerLoaded(t *testing.T) {
 	if !tt.HasText("1/3") {
 		t.Errorf("page not shown: %q", tt.Texts())
 	}
+	if _, ok := tt.Find("作品图片：查看器作品（第 1/3 页）"); !ok {
+		t.Errorf("the image has no label: %q", tt.Texts())
+	}
 }
 
 // TestViewerFailedRetry checks a failed load offers a retry, that the failure
