@@ -95,7 +95,16 @@
     "langEn": "English",
     "saveFailed": "Save failed: %s",
     "saved": "Saved",
-    "pathFailed": "Cannot save settings: %s"
+    "pathFailed": "Cannot save settings: %s",
+    "updates": "Updates",
+    "checkUpdate": "Check for updates",
+    "updatesOff": "No update source configured",
+    "updateAvailable": "Version %s is available",
+    "updateLatest": "Already up to date",
+    "installRestart": "Install and restart",
+    "updateInstalling": "Installing the update",
+    "updateCheckFailed": "Cannot check for updates: %s",
+    "updateInstallFailed": "Cannot install the update: %s"
   },
   "history": {
     "empty": "No history yet",

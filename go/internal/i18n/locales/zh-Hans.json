@@ -95,7 +95,16 @@
     "langEn": "English",
     "saveFailed": "保存失败：%s",
     "saved": "已保存",
-    "pathFailed": "无法保存设置：%s"
+    "pathFailed": "无法保存设置：%s",
+    "updates": "更新",
+    "checkUpdate": "检查更新",
+    "updatesOff": "未配置更新源",
+    "updateAvailable": "发现新版本 %s",
+    "updateLatest": "已是最新",
+    "installRestart": "安装并重启",
+    "updateInstalling": "正在安装更新",
+    "updateCheckFailed": "检查更新失败：%s",
+    "updateInstallFailed": "安装更新失败：%s"
   },
   "history": {
     "empty": "还没有浏览记录",
