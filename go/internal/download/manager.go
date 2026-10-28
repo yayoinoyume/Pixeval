@@ -84,8 +84,9 @@ func New(client *pixiv.Client, concurrency int) *Manager {
 	}
 }
 
-// Add appends tasks as Queued and skips IDs that are already present.
-func (m *Manager) Add(tasks []Task) {
+// Add appends tasks as Queued and skips IDs that are already present,
+// reporting how many it took.
+func (m *Manager) Add(tasks []Task) int {
 	var added []*entry
 	m.mu.Lock()
 	for _, t := range tasks {
@@ -104,6 +105,7 @@ func (m *Manager) Add(tasks []Task) {
 	for _, e := range added {
 		m.launch(e)
 	}
+	return len(added)
 }
 
 // Start begins downloading; later calls do nothing.
@@ -282,6 +284,9 @@ func (m *Manager) worker(e *entry) {
 	m.changed()
 
 	err := m.run(ctx, e)
+	// The attempt's own cancel, read before cancel below, so a Resume that
+	// undid the pause is still seen as one.
+	canceled := ctx.Err() != nil
 	cancel()
 
 	m.mu.Lock()
@@ -290,16 +295,18 @@ func (m *Manager) worker(e *entry) {
 	m.mu.Unlock()
 
 	switch {
-	case paused:
-		// Pause interrupted the attempt; the task waits for Resume.
+	case state == Canceled:
+		os.Remove(dest + partSuffix)
+	case paused || canceled:
+		// Pause interrupted the attempt, or Resume undid the pause before this
+		// worker saw it: the canceled attempt must not fail the task, which
+		// waits for the next launch instead.
 		os.Remove(dest + partSuffix)
 		m.update(e, func(t *Task) {
 			if t.State != Canceled {
 				t.State, t.Err = Queued, ""
 			}
 		})
-	case state == Canceled:
-		os.Remove(dest + partSuffix)
 	case err != nil:
 		m.update(e, func(t *Task) {
 			if t.State != Canceled {
@@ -320,7 +327,9 @@ func (m *Manager) worker(e *entry) {
 func (m *Manager) finish(e *entry) {
 	m.mu.Lock()
 	e.running = false
-	retry := m.started && !e.paused && e.task.State == Queued
+	// A queue that stopped does not relaunch, which would spin on a canceled
+	// context.
+	retry := m.started && !e.paused && e.task.State == Queued && m.ctx.Err() == nil
 	m.mu.Unlock()
 	if retry {
 		m.launch(e) // wg.Add before Done, so Wait cannot slip through
