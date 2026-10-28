@@ -80,6 +80,7 @@
   },
   "comments": {
     "title": "评论",
+    "login": "登录后查看评论",
     "empty": "还没有评论",
     "loadMore": "加载更多",
     "placeholder": "写评论…",

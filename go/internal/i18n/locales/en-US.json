@@ -80,6 +80,7 @@
   },
   "comments": {
     "title": "Comments",
+    "login": "Sign in to view comments",
     "empty": "No comments yet",
     "loadMore": "Load more",
     "placeholder": "Write a comment…",

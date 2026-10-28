@@ -36,6 +36,7 @@ func (a *App) loadViewerDetail(v *viewerState) {
 		return
 	}
 	v.detailLoading, v.detailErr = true, ""
+	gen := v.bookmarkGen
 	id := v.work.ID
 	v.mu.Unlock()
 
@@ -46,16 +47,18 @@ func (a *App) loadViewerDetail(v *viewerState) {
 		a.update(func() {
 			v.mu.Lock()
 			defer v.mu.Unlock()
+			v.detailLoading = false
 			if v.closed {
 				return
 			}
-			v.detailLoading = false
 			if err != nil {
 				v.detailErr = err.Error()
 				return
 			}
 			v.detail = w
-			if !v.bookmarking {
+			// A bookmark that finished after this fetch started is newer
+			// than the record it returns.
+			if v.bookmarkGen == gen && !v.bookmarking {
 				v.bookmarked = w.IsBookmarked
 			}
 		})
@@ -82,12 +85,12 @@ func (a *App) viewerInfo(c *ui.Context, v *viewerState) {
 		Children(func() {
 			ui.Column(c).Padding(t.SpaceXL).Gap(t.SpaceL).Children(func() {
 				a.detailAuthor(c, v, info.User)
-				ui.Text(c, info.Title).FontSize(30).FontWeight(600).TextColor(t.Text)
+				ui.Text(c, info.Title).FontSize(t.TextDetail).FontWeight(600).TextColor(t.Text)
 				a.detailStats(c, info)
 				a.detailMeta(c, info)
 				a.detailTags(c, info.Tags)
 				if info.Caption != "" {
-					ui.Text(c, info.Caption).FontSize(14).LineHeight(1.6).TextColor(t.TextMuted)
+					ui.Text(c, info.Caption).FontSize(t.TextBody).LineHeight(1.6).TextColor(t.TextMuted)
 				}
 				if info.Series != nil {
 					a.detailSeries(c, *info.Series)
@@ -104,8 +107,15 @@ func (a *App) viewerInfo(c *ui.Context, v *viewerState) {
 						}
 					})
 				}
-				if a.commentsOpen && a.comments != nil {
-					a.commentsSection(c, a.comments)
+				if a.commentsOpen {
+					// Comments need a session; signed out, the card says so
+					// instead of drawing a composer that cannot post.
+					if a.session != nil && a.comments != nil {
+						a.commentsSection(c, a.comments)
+					} else {
+						ui.Text(c, a.t("comments.login")).FontSize(t.TextSmall).
+							TextColor(t.TextMuted)
+					}
 				}
 			})
 		})
@@ -139,12 +149,12 @@ func (a *App) detailAuthor(c *ui.Context, v *viewerState, user pixiv.User) {
 					return
 				}
 			}
-			ui.Text(c, initialOf(user.Name)).FontSize(18).FontWeight(600).TextColor(t.Accent)
+			ui.Text(c, initialOf(user.Name)).FontSize(t.TextTitle).FontWeight(600).TextColor(t.Accent)
 		})
 		ui.Column(c).Gap(2).MinWidth(0).Children(func() {
-			ui.Text(c, user.Name).FontSize(16).FontWeight(600).TextColor(t.Text).
+			ui.Text(c, user.Name).FontSize(t.TextBody).FontWeight(600).TextColor(t.Text).
 				MaxLines(1)
-			ui.Text(c, fmt.Sprintf("ID %d", user.ID)).FontSize(12).
+			ui.Text(c, fmt.Sprintf("ID %d", user.ID)).FontSize(t.TextTiny).
 				FontWeight(500).TextColor(t.Accent)
 		})
 	})
@@ -155,8 +165,8 @@ func (a *App) detailStats(c *ui.Context, w pixiv.Illustration) {
 	t := themeOf(c)
 	stat := func(n int, label string) {
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, detailCount(n)).FontSize(18).FontWeight(600).TextColor(t.Text)
-			ui.Text(c, label).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, detailCount(n)).FontSize(t.TextTitle).FontWeight(600).TextColor(t.Text)
+			ui.Text(c, label).FontSize(t.TextTiny).TextColor(t.TextMuted)
 		})
 	}
 	ui.Row(c).Gap(t.Space2XL).Children(func() {
@@ -170,7 +180,7 @@ func (a *App) detailMeta(c *ui.Context, w pixiv.Illustration) {
 	t := themeOf(c)
 	col := func(label, value string) {
 		ui.Column(c).Gap(2).MinWidth(0).Children(func() {
-			ui.Text(c, label).FontSize(11).TextColor(t.TextMuted)
+			ui.Text(c, label).FontSize(t.TextTiny).TextColor(t.TextMuted)
 			ui.Text(c, value).FontSize(t.TextSmall).TextColor(t.Text)
 		})
 	}
@@ -216,9 +226,9 @@ func (a *App) detailTag(c *ui.Context, tag pixiv.Tag) {
 	}
 	b.Children(func() {
 		ui.Column(c).Gap(1).AlignItems(ui.Start).Children(func() {
-			ui.Text(c, word).FontSize(13).FontWeight(500).TextColor(t.Accent)
+			ui.Text(c, word).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Accent)
 			if tag.TranslatedName != "" && tag.Name != "" {
-				ui.Text(c, tag.TranslatedName).FontSize(11).TextColor(t.TextMuted)
+				ui.Text(c, tag.TranslatedName).FontSize(t.TextTiny).TextColor(t.TextMuted)
 			}
 		})
 	})

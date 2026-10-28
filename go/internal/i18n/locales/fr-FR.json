@@ -80,6 +80,7 @@
   },
   "comments": {
     "title": "Commentaires",
+    "login": "Connectez-vous pour voir les commentaires",
     "empty": "Aucun commentaire pour l'instant",
     "loadMore": "Charger plus",
     "placeholder": "Écrire un commentaire…",

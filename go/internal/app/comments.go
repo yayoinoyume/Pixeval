@@ -149,6 +149,11 @@ func (a *App) submitComment(st *commentState) {
 	if st == nil {
 		return
 	}
+	if a.session == nil {
+		// Signed out, the card draws no composer; this guards a stale send.
+		a.notice = a.t("comments.login")
+		return
+	}
 
 	draft := st.draft
 	text := strings.TrimSpace(draft)

@@ -41,10 +41,13 @@ type viewerState struct {
 
 	// bookmarking is set while the bookmark request runs, so the button is
 	// disabled until it lands; bookmarked is the work's state, which flips
-	// only once the request succeeds. The work itself is never written after
-	// openViewer, so copying it cannot race with this.
+	// only once the request succeeds. bookmarkGen counts the bookmarks that
+	// succeeded, so a detail fetch that started before one cannot write back
+	// the old state. The work itself is never written after openViewer, so
+	// copying it cannot race with this.
 	bookmarking bool
 	bookmarked  bool
+	bookmarkGen int
 
 	// detail is the work's full record from the detail endpoint, which the
 	// feed's copy lacks; detailErr and detailLoading follow the fetch. The
@@ -213,6 +216,7 @@ func (a *App) toggleBookmark(v *viewerState) {
 			v.bookmarking = false
 			if err == nil {
 				v.bookmarked = on
+				v.bookmarkGen++
 			}
 			v.mu.Unlock()
 			if err != nil {
@@ -386,7 +390,7 @@ func (a *App) viewerPage(c *ui.Context) {
 // zoom hint on the right.
 func (a *App) viewerTop(c *ui.Context) {
 	t := themeOf(c)
-	ui.Row(c).Height(48).FillWidth().AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Height(48).FillWidth().AlignItems(ui.Center).KeepFocus().Children(func() {
 		b := ui.ButtonBase(c).Height(36).Radius(t.RadiusFull).Padding(0, t.SpaceL).
 			Gap(t.SpaceS).Background(t.SurfaceAlt).Label(a.t("viewer.close"))
 		if b.Hovered() {
@@ -456,12 +460,18 @@ func (a *App) viewerPageThumbs(c *ui.Context, v *viewerState) {
 	if n <= 1 {
 		return
 	}
+	// The detail's page records carry the smaller renditions the feed's
+	// copy lacks, so the thumbnails use them when it has landed.
+	work := v.work
+	if detail, _, _ := v.detailState(); detail != nil {
+		work = *detail
+	}
 	t := themeOf(c)
 	first := max(min(v.page-1, n-3), 0)
 	ui.Row(c).Absolute().Left(t.SpaceL).Bottom(t.SpaceL).Gap(t.SpaceS).
 		Role(ui.RoleGroup).Label(a.t("viewer.pageThumbs")).Children(func() {
 		for p := first; p < first+3 && p < n; p++ {
-			a.viewerPageThumb(c, v, p)
+			a.viewerPageThumb(c, v, work, p)
 		}
 	})
 }
@@ -469,9 +479,9 @@ func (a *App) viewerPageThumbs(c *ui.Context, v *viewerState) {
 // viewerPageThumb is one page's thumbnail: the page's own picture, or a block
 // while it loads or after it failed. A thumbnail asks for the page's smaller
 // rendition where the work has one.
-func (a *App) viewerPageThumb(c *ui.Context, v *viewerState, page int) {
+func (a *App) viewerPageThumb(c *ui.Context, v *viewerState, work pixiv.Illustration, page int) {
 	t := themeOf(c)
-	url := pageThumbURL(v.work, page)
+	url := pageThumbURL(work, page)
 	b := ui.ButtonBase(c).Size(44, 44).Radius(t.RadiusM).Padding(2).
 		Background(t.Surface).Label(a.tf("viewer.pageThumb", page+1))
 	if page == v.page {
@@ -509,7 +519,7 @@ func (a *App) viewerActions(c *ui.Context, v *viewerState, failed bool) {
 	n := pageCount(v.work)
 	bookmarked, bookmarking := v.bookmarkState()
 	ui.Row(c).FillWidth().Height(72).Padding(t.SpaceS, t.SpaceM).Gap(t.SpaceS).
-		AlignItems(ui.Center).Background(t.SurfaceAlt).Radius(t.RadiusXL).Children(func() {
+		AlignItems(ui.Center).Background(t.SurfaceAlt).Radius(t.RadiusXL).KeepFocus().Children(func() {
 		ui.Row(c).Grow(1).MinWidth(0).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 			glyph, label := iconHeart, a.t("viewer.bookmark")
 			if bookmarked {

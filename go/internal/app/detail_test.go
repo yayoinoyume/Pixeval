@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,11 +54,34 @@ func waitViewerDetail(t *testing.T, a *App, what string, want func(*pixiv.Illust
 	}
 }
 
+// noCommentPages serves an empty page, so the info card's tests never reach
+// the network through a real comment fetch.
+func noCommentPages(context.Context, int64, int) (*pixiv.Page[pixiv.Comment], error) {
+	return &pixiv.Page[pixiv.Comment]{}, nil
+}
+
+// waitViewerBookmark waits for the viewer's bookmark state to match want.
+func waitViewerBookmark(t *testing.T, v *viewerState, what string, want func(bookmarked, bookmarking bool) bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		bookmarked, bookmarking := v.bookmarkState()
+		if want(bookmarked, bookmarking) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("bookmark did not %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // TestViewerDetailFetch checks the detail request fills the info card with the
 // fields the feed's copy does not carry.
 func TestViewerDetailFetch(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
 	detail := viewerDetail()
 	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
 		return &detail, nil
@@ -94,6 +118,7 @@ func TestViewerDetailFetch(t *testing.T) {
 func TestViewerDetailFailure(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
 	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
 		return nil, errors.New("网络错误")
 	}
@@ -129,6 +154,7 @@ func TestViewerDetailFailure(t *testing.T) {
 func TestViewerTagSearch(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
 	// The search itself must not reach the network either.
 	a.client.HTTP().Transport = newImageTransport(nil)
 	detail := viewerDetail()
@@ -184,6 +210,7 @@ func TestViewerPageThumbs(t *testing.T) {
 func TestViewerDetailScrolls(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
 	detail := viewerDetail()
 	detail.Caption = strings.Repeat("長い説明。", 120)
 	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
@@ -220,6 +247,7 @@ func TestViewerDetailLayout(t *testing.T) {
 	}{{1280, 820}, {1000, 700}} {
 		a := newViewerApp(newImageTransport(nil))
 		a.session = &pixiv.Token{}
+		a.fetchCommentPage = noCommentPages
 		detail := viewerDetail()
 		a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
 			return &detail, nil
@@ -239,5 +267,137 @@ func TestViewerDetailLayout(t *testing.T) {
 				t.Errorf("%dx%d: %q at %+v is outside the window", size.w, size.h, label, r)
 			}
 		}
+	}
+}
+
+// TestViewerSignedOutSkipsDetailAndComments checks a signed-out viewer draws
+// the feed's copy and asks for neither the detail nor the comments.
+func TestViewerSignedOutSkipsDetailAndComments(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	var detailCalls, commentCalls int32
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		atomic.AddInt32(&detailCalls, 1)
+		return &pixiv.Illustration{}, nil
+	}
+	a.fetchCommentPage = func(context.Context, int64, int) (*pixiv.Page[pixiv.Comment], error) {
+		atomic.AddInt32(&commentCalls, 1)
+		return &pixiv.Page[pixiv.Comment]{}, nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if !tt.HasText("登录后查看评论") {
+		t.Errorf("the comments login hint is missing: %q", tt.Texts())
+	}
+	if got := atomic.LoadInt32(&detailCalls); got != 0 {
+		t.Errorf("signed out, the detail was fetched %d times", got)
+	}
+	if got := atomic.LoadInt32(&commentCalls); got != 0 {
+		t.Errorf("signed out, the comments were fetched %d times", got)
+	}
+}
+
+// TestViewerClosedDropsDetail checks a detail that lands after the viewer
+// closed is dropped instead of filling a state nothing shows.
+func TestViewerClosedDropsDetail(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
+	started := make(chan struct{})
+	release := make(chan struct{})
+	returned := make(chan struct{})
+	detail := viewerDetail()
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		close(started)
+		<-release
+		close(returned)
+		return &detail, nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	<-started
+	v := a.viewer
+	a.closeViewer()
+	close(release)
+	<-returned
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, _, loading := v.detailState()
+		if !loading {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the detail load did not settle after the close")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got, _, _ := v.detailState(); got != nil {
+		t.Errorf("the closed viewer kept the detail %+v", got)
+	}
+}
+
+// TestViewerBookmarkInFlightKeepsDetailState checks a detail that lands while
+// a bookmark runs does not write back the record's older state.
+func TestViewerBookmarkInFlightKeepsDetailState(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
+	detail := viewerDetail()
+	detailGate := make(chan struct{})
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		<-detailGate
+		return &detail, nil
+	}
+	bookmarkStarted := make(chan struct{})
+	bookmarkGate := make(chan struct{})
+	a.bookmarkFn = func(context.Context, int64, bool) error {
+		close(bookmarkStarted)
+		<-bookmarkGate
+		return nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	v := a.viewer
+	a.toggleBookmark(v)
+	<-bookmarkStarted
+	close(detailGate)
+	waitViewerDetail(t, a, "load while the bookmark runs", func(d *pixiv.Illustration, _ string) bool { return d != nil })
+	if bookmarked, _ := v.bookmarkState(); bookmarked {
+		t.Error("the detail's bookmark state landed while a bookmark was running")
+	}
+	close(bookmarkGate)
+	waitViewerBookmark(t, v, "land", func(bookmarked, bookmarking bool) bool {
+		return bookmarked && !bookmarking
+	})
+}
+
+// TestViewerBookmarkGenerationWinsOverDetail checks a detail fetch that
+// started before a finished bookmark cannot undo it.
+func TestViewerBookmarkGenerationWinsOverDetail(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
+	detail := viewerWork()
+	detail.IsBookmarked = false
+	detailGate := make(chan struct{})
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		<-detailGate
+		return &detail, nil
+	}
+	a.bookmarkFn = func(context.Context, int64, bool) error { return nil }
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	v := a.viewer
+	a.toggleBookmark(v)
+	waitViewerBookmark(t, v, "land before the detail", func(bookmarked, bookmarking bool) bool {
+		return bookmarked && !bookmarking
+	})
+	close(detailGate)
+	waitViewerDetail(t, a, "load after the bookmark", func(d *pixiv.Illustration, _ string) bool { return d != nil })
+	if bookmarked, _ := v.bookmarkState(); !bookmarked {
+		t.Error("the detail fetch undid the finished bookmark")
 	}
 }

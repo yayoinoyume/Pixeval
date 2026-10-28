@@ -321,3 +321,48 @@ func TestViewerShortcuts(t *testing.T) {
 		t.Errorf("shell not back: %q", tt.Texts())
 	}
 }
+
+// TestViewerZoomAfterActionClick checks clicking an action keeps the canvas
+// focused, so the zoom keys still reach it.
+func TestViewerZoomAfterActionClick(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("评论"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Key(0, ui.KeyEqual)
+	if got := a.viewer.zoom; got <= 1 {
+		t.Errorf("zoom %v after the + key, want more than 1", got)
+	}
+}
+
+// TestViewerPageThumbsUseDetail checks the thumbnails take the smaller
+// renditions the detail carries, not the feed's originals.
+func TestViewerPageThumbsUseDetail(t *testing.T) {
+	tr := newImageTransport(nil)
+	a := newViewerApp(tr)
+	w := viewerWork()
+	detail := w
+	detail.ImageUrls.Medium = "https://example.invalid/0-medium.jpg"
+	detail.MetaPages[1].ImageUrls.Medium = "https://example.invalid/1-medium.jpg"
+	detail.MetaPages[2].ImageUrls.Medium = "https://example.invalid/2-medium.jpg"
+	a.openViewer(&w, 0)
+	a.viewer.mu.Lock()
+	a.viewer.detail = &detail
+	a.viewer.mu.Unlock()
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	for _, url := range []string{detail.ImageUrls.Medium,
+		detail.MetaPages[1].ImageUrls.Medium, detail.MetaPages[2].ImageUrls.Medium} {
+		deadline := time.Now().Add(2 * time.Second)
+		for tr.count(url) == 0 {
+			if time.Now().After(deadline) {
+				t.Fatalf("the thumbnail %q was not requested", url)
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+}

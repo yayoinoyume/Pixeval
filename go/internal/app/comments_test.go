@@ -37,6 +37,7 @@ func TestCommentsPanelRenders(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
@@ -63,6 +64,7 @@ func TestCommentsSendClearsDraftAndReloads(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
@@ -118,6 +120,7 @@ func TestCommentsEmptyStateHiddenWithMorePages(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
@@ -140,6 +143,7 @@ func TestCommentsLoadMoreStartsAtLoadedCount(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
@@ -190,6 +194,7 @@ func TestCommentsLoadEndsAtNoMore(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
@@ -221,6 +226,7 @@ func TestCommentsSendFailureKeepsDraft(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	reply := commentFixture(1, "作者甲", "第一条评论")
@@ -260,6 +266,7 @@ func TestCommentsSendKeepsTextTypedWhileSending(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
@@ -335,6 +342,7 @@ func TestCloseViewerDropsComments(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	a.closeViewer()
 
@@ -349,6 +357,7 @@ func TestCommentsReplyPostsAuthorPrefix(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
@@ -396,6 +405,7 @@ func TestCommentsReplyShowsReplyTo(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	w := viewerWork()
 	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{}
 	a.commentsOpen = true
 	st := a.comments
 	st.mu.Lock()
