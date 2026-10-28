@@ -11,6 +11,7 @@ const (
 	routeHome      route = "home"
 	routeSearch    route = "search"
 	routeDownloads route = "downloads"
+	routeHistory   route = "history"
 	routeSettings  route = "settings"
 )
 
@@ -20,6 +21,8 @@ func (r route) label() string {
 		return "搜索"
 	case routeDownloads:
 		return "下载"
+	case routeHistory:
+		return "历史"
 	case routeSettings:
 		return "设置"
 	default:
@@ -27,13 +30,14 @@ func (r route) label() string {
 	}
 }
 
-var navRoutes = []route{routeHome, routeSearch, routeDownloads, routeSettings}
+var navRoutes = []route{routeHome, routeSearch, routeDownloads, routeHistory, routeSettings}
 
 // View builds the shell: the navigation on the left, the page title and the
 // sign-in state above the page. The viewer takes the whole window instead.
 func (a *App) View(c *ui.Context) {
 	a.applyTheme(c)
 	a.applySavedSettings(c)
+	a.showNotice(c)
 	if a.viewer != nil {
 		a.viewerPage(c)
 		return
@@ -84,6 +88,8 @@ func (a *App) page(c *ui.Context) {
 		a.searchPage(c)
 	case routeDownloads:
 		a.downloadsPage(c)
+	case routeHistory:
+		a.historyPage(c)
 	case routeSettings:
 		a.settingsPage(c)
 	default:

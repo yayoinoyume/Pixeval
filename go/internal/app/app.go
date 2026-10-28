@@ -45,6 +45,16 @@ type App struct {
 	// applies it in the view.
 	settingsSaved chan error
 	settingsErr   string
+	// history is the works the user opened, newest first.
+	history *History
+	// historyFailed holds the history covers that did not load, so a broken
+	// URL is not asked for again every frame.
+	historyFailed map[string]bool
+	// bookmarkFn sets or clears a work's bookmark off the main thread; tests
+	// replace it to avoid the network.
+	bookmarkFn func(ctx context.Context, id int64, on bool) error
+	// notice is a message a background task left for the next frame to show.
+	notice string
 }
 
 func New() *App {
@@ -58,9 +68,17 @@ func New() *App {
 		settings:      settings,
 		settingsSaved: make(chan error, 1),
 		paused:        map[string]bool{},
-		route:         routeHome,
-		home:          newHomeState(client),
-		search:        &browseState{},
+		history:       loadHistory(),
+		historyFailed: map[string]bool{},
+		bookmarkFn: func(ctx context.Context, id int64, on bool) error {
+			if on {
+				return client.AddBookmark(ctx, id, false)
+			}
+			return client.RemoveBookmark(ctx, id)
+		},
+		route:  routeHome,
+		home:   newHomeState(client),
+		search: &browseState{},
 	}
 }
 
@@ -187,6 +205,15 @@ func (a *App) update(fn func()) {
 		return
 	}
 	a.win.Update(fn)
+}
+
+// showNotice shows the message a background task left, once.
+func (a *App) showNotice(c *ui.Context) {
+	if a.notice == "" {
+		return
+	}
+	c.Toast(a.notice)
+	a.notice = ""
 }
 
 func (a *App) title() string {

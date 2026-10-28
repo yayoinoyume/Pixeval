@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -16,10 +18,14 @@ const (
 	viewerZoomStep = 1.1
 )
 
+// bookmarkTimeout bounds one bookmark request, so a stuck one cannot leave
+// the button disabled forever.
+const bookmarkTimeout = 30 * time.Second
+
 // viewerState is the full-screen viewer of one work: the page shown, where
 // the user zoomed and panned it to, and the original being loaded. The view
-// runs on the main thread; mu guards the load fields, which imagex's callback
-// writes from its loading goroutine.
+// runs on the main thread; mu guards the load and bookmark fields, which
+// goroutines write.
 type viewerState struct {
 	work       pixiv.Illustration
 	page       int
@@ -33,6 +39,10 @@ type viewerState struct {
 	loadKey string     // the page URL the load fields belong to
 	bmp     *ui.Bitmap // the loaded original, nil until it is there
 	failed  bool       // the load for loadKey failed
+
+	// bookmarking is set while the bookmark request runs, so the button is
+	// disabled until it lands; the work's IsBookmarked flips with it.
+	bookmarking bool
 
 	// drag is the pointer dragging the image; lastX and lastY are where it
 	// was at the previous move.
@@ -48,6 +58,14 @@ func pageCount(w pixiv.Illustration) int {
 	return w.PageCount
 }
 
+// bookmarked reports whether the work is bookmarked, and whether a request
+// is still running.
+func (v *viewerState) bookmarked() (bookmarked, bookmarking bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.work.IsBookmarked, v.bookmarking
+}
+
 // openViewer shows w full screen over the page's content, at page.
 func (a *App) openViewer(w *pixiv.Illustration, page int) {
 	if w == nil {
@@ -60,6 +78,7 @@ func (a *App) openViewer(w *pixiv.Illustration, page int) {
 	}
 	v := &viewerState{work: *w, page: page, zoom: 1}
 	a.viewer = v
+	a.recordHistory(*w)
 	// Start the original at once, so the first frame already has a load to
 	// show rather than one to start.
 	a.viewerImage(v)
@@ -107,6 +126,36 @@ func (a *App) viewerImage(v *viewerState) (bmp *ui.Bitmap, failed bool) {
 		}
 	}
 	return v.bmp, v.failed
+}
+
+// toggleBookmark adds or removes the work's bookmark off the main thread. The
+// button is disabled while the request runs, and the work's state flips only
+// once it succeeds.
+func (a *App) toggleBookmark(v *viewerState) {
+	v.mu.Lock()
+	if v.bookmarking || a.bookmarkFn == nil {
+		v.mu.Unlock()
+		return
+	}
+	v.bookmarking = true
+	on, id := !v.work.IsBookmarked, v.work.ID
+	v.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
+		defer cancel()
+		err := a.bookmarkFn(ctx, id, on)
+		a.update(func() {
+			v.mu.Lock()
+			v.bookmarking = false
+			if err == nil {
+				v.work.IsBookmarked = on
+			}
+			v.mu.Unlock()
+			if err != nil {
+				a.notice = "收藏失败：" + err.Error()
+			}
+		})
+	}()
 }
 
 // viewerGo turns the page by delta, stopping at either end.
@@ -290,6 +339,18 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 			if ui.Button(c, "重试").Clicked() {
 				a.viewerReload(v)
 			}
+		}
+		bookmarked, bookmarking := v.bookmarked()
+		label := "收藏"
+		if bookmarked {
+			label = "已收藏"
+		}
+		bookmark := ui.Button(c, label).Disabled(bookmarking)
+		if bookmarked {
+			bookmark = bookmark.TextColor(t.Accent)
+		}
+		if bookmark.Clicked() {
+			a.toggleBookmark(v)
 		}
 		if ui.Button(c, "下载").Clicked() {
 			queued, ok := a.downloadWork(v.work)
