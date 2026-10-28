@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
@@ -23,6 +24,12 @@ type App struct {
 	client *pixiv.Client
 	// images is reserved for the M1 browse page: thumbnails and originals.
 	images *imagex.Loader
+	// downloads runs the download queue, saving under downloadsDir.
+	downloads    *download.Manager
+	downloadsDir string
+	// paused marks the tasks the user paused: a paused task reads as queued in
+	// a snapshot, so the download page cannot tell on its own.
+	paused map[string]bool
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
 	route   route
@@ -36,11 +43,14 @@ type App struct {
 func New() *App {
 	client := pixiv.NewClient()
 	return &App{
-		client: client,
-		images: imagex.New(client, imageDir()),
-		route:  routeHome,
-		home:   newHomeState(client),
-		search: &browseState{},
+		client:       client,
+		images:       imagex.New(client, imageDir()),
+		downloads:    download.New(client, downloadConcurrency),
+		downloadsDir: downloadDir(),
+		paused:       map[string]bool{},
+		route:        routeHome,
+		home:         newHomeState(client),
+		search:       &browseState{},
 	}
 }
 
@@ -72,6 +82,10 @@ func (a *App) Start() {
 	// A refresh can take a network round trip: the window opens first and
 	// applySession fills in the session when it lands.
 	go a.restoreSession()
+	// The queue downloads on its own goroutines and redraws the download
+	// page on every change.
+	a.downloads.OnChange(func() { a.update(func() {}) })
+	go a.downloads.Start(context.Background())
 	// The feeds load once the window runs, not before it can draw them.
 	a.home.arm()
 }
