@@ -73,7 +73,9 @@ func (a *App) header(c *ui.Context) {
 func (a *App) page(c *ui.Context) {
 	switch a.route {
 	case routeHome:
-		a.home(c)
+		a.homePage(c)
+	case routeSearch:
+		a.searchPage(c)
 	default:
 		t := c.Theme()
 		ui.Column(c).Grow(1).Center().Children(func() {
@@ -82,14 +84,19 @@ func (a *App) page(c *ui.Context) {
 	}
 }
 
-func (a *App) home(c *ui.Context) {
-	t := c.Theme()
-	if a.session != nil {
-		ui.Column(c).Grow(1).Center().Children(func() {
-			ui.Text(c, "已登录："+a.userName())
-		})
+func (a *App) homePage(c *ui.Context) {
+	if a.session == nil {
+		a.loginPrompt(c)
 		return
 	}
+	ui.Column(c).Grow(1).FillHeight().Children(func() {
+		a.browsePage(c, a.home)
+	})
+}
+
+// loginPrompt guides a signed-out user to login.
+func (a *App) loginPrompt(c *ui.Context) {
+	t := c.Theme()
 	ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
 		ui.Text(c, "登录 Pixiv 后开始浏览").TextColor(t.TextMuted)
 		if ui.Button(c, "登录 Pixiv").Clicked() {

@@ -26,6 +26,9 @@ type App struct {
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
 	route   route
+	// home is the recommended feed, search the last search's results.
+	home   *browseState
+	search *browseState
 }
 
 func New() *App {
@@ -34,6 +37,8 @@ func New() *App {
 		client: client,
 		images: imagex.New(client, imageDir()),
 		route:  routeHome,
+		home:   newHomeState(client),
+		search: &browseState{},
 	}
 }
 
@@ -65,6 +70,8 @@ func (a *App) Start() {
 	// A refresh can take a network round trip: the window opens first and
 	// applySession fills in the session when it lands.
 	go a.restoreSession()
+	// The feeds load once the window runs, not before it can draw them.
+	a.home.armed = true
 }
 
 // restoreSession adopts the saved token, refreshing it when expired. It runs
