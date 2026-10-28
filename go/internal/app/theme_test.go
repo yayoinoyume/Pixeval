@@ -40,3 +40,52 @@ func TestDesignThemeScalesText(t *testing.T) {
 		t.Errorf("font size %v, want %v", got, want)
 	}
 }
+
+// TestSystemAccentTextContrast checks a light system accent gets near black
+// text, as mygo's own theme picks it, and that the custom tokens take the
+// same accent.
+func TestSystemAccentTextContrast(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.settings.Theme = themeSystem
+	var text ui.Color
+	var tok tokens
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.View(c)
+		text = c.Theme().AccentText
+		tok = themeOf(c)
+	}, 400, 300)
+	tt.SetPreferences(ui.Preferences{Accent: ui.Hex("#ffd400")})
+	tt.Frame()
+	if text.R != 24 || text.G != 24 || text.B != 27 {
+		t.Errorf("accent text %v, want near black", text)
+	}
+	if tok.Accent.R != 255 || tok.Accent.G != 212 || tok.Accent.B != 0 {
+		t.Errorf("token accent %v, want the system accent", tok.Accent)
+	}
+	if tok.AccentText.R != 24 || tok.AccentText.G != 24 || tok.AccentText.B != 27 {
+		t.Errorf("token accent text %v, want near black", tok.AccentText)
+	}
+	tt.SetPreferences(ui.Preferences{Accent: ui.Hex("#1f6feb")})
+	tt.Frame()
+	if text.R != 255 || text.G != 255 || text.B != 255 {
+		t.Errorf("accent text %v, want white on a dark accent", text)
+	}
+}
+
+// TestThemeTokensFollowTextScale checks the hand-built text tokens scale with
+// the desktop, not just the widgets' FontSize.
+func TestThemeTokensFollowTextScale(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	var tok tokens
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.View(c)
+		tok = themeOf(c)
+	}, 400, 300)
+	tt.SetPreferences(ui.Preferences{TextScale: 1.25})
+	tt.Frame()
+	if want := darkTokens.TextBody * 1.25; tok.TextBody != want {
+		t.Errorf("body text %v, want %v", tok.TextBody, want)
+	}
+}

@@ -164,12 +164,40 @@ func tokensFor(dark bool) tokens {
 // desktop's high contrast setting.
 func themeOf(c *ui.Context) tokens {
 	t := tokensFor(c.Theme().Dark)
+	if s := textScale(c); s != 1 {
+		t.TextDisplay *= s
+		t.TextTitle *= s
+		t.TextBody *= s
+		t.TextSmall *= s
+		t.TextTiny *= s
+	}
+	// A system accent replaces the design's blue in every custom part, so
+	// the navigation, brand and buttons do not show two accents at once.
+	// designTheme leaves our own fill in place for an explicit theme.
+	if a := c.Theme().Accent; a.A != 0 && (a.R != t.AccentFill.R || a.G != t.AccentFill.G || a.B != t.AccentFill.B) {
+		t.Accent = a
+		t.AccentFill = a
+		t.AccentHover = c.Theme().AccentHover
+		t.AccentPressed = c.Theme().AccentPressed
+		t.AccentText = c.Theme().AccentText
+		t.AccentSoft = a.Alpha(0.16)
+	}
 	if c.Preferences().HighContrast {
 		t.Border = t.BorderStrong
 		t.TextMuted = t.TextMuted.Mix(t.Text, 0.45)
 		t.Focus = t.Accent
 	}
 	return t
+}
+
+// accentText is the text color on a filled accent, as mygo's own theme picks
+// it: white unless the accent is light enough that near black stands out.
+func accentText(a ui.Color) ui.Color {
+	l := uint8(0.2126*float32(a.R) + 0.7152*float32(a.G) + 0.0722*float32(a.B) + 0.5)
+	if l > 165 {
+		return ui.RGB(24, 24, 27)
+	}
+	return ui.RGB(255, 255, 255)
 }
 
 // textScale is the desktop's text scale, 1 when it has none.

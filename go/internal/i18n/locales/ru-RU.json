@@ -125,6 +125,8 @@
     "groupAppearance": "Внешний вид",
     "groupDownloads": "Загрузки",
     "groupShortcuts": "Горячие клавиши",
+    "decrease": "Уменьшить",
+    "increase": "Увеличить",
     "groupContent": "Содержимое",
     "groupAbout": "О программе"
   },
