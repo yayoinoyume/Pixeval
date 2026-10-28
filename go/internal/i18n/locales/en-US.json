@@ -10,7 +10,8 @@
     "loggedIn": "Signed in: %s",
     "placeholder": "%s (M1 placeholder)",
     "user": "User",
-    "series": "Series"
+    "series": "Series",
+    "novel": "Novel"
   },
   "home": {
     "recommended": "Recommended",
@@ -122,5 +123,8 @@
   "series": {
     "open": "Series",
     "loadFailed": "Cannot load the series: %s"
+  },
+  "novel": {
+    "loadFailed": "Cannot load the novel: %s"
   }
 }

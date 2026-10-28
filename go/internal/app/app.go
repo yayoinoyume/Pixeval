@@ -45,6 +45,8 @@ type App struct {
 	userView *userViewState
 	// seriesView is the series page shown, nil until one opens.
 	seriesView *seriesViewState
+	// novelView is the novel reading page shown, nil until one opens.
+	novelView *novelViewState
 	// homeTab is the home feed shown: recommended, following or ranking.
 	homeTab int
 	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
@@ -77,6 +79,9 @@ type App struct {
 	// thread; tests replace them to avoid the network.
 	fetchCommentPage func(ctx context.Context, illustID int64, offset int) (*pixiv.Page[pixiv.Comment], error)
 	addCommentFn     func(ctx context.Context, illustID int64, text string) (*pixiv.Comment, error)
+	// novelContent fetches a novel body off the main thread; tests replace it
+	// to avoid the network.
+	novelContent func(ctx context.Context, novelID int64) (string, error)
 	// notice is a message a background task left for the next frame to show.
 	notice string
 }
@@ -108,6 +113,7 @@ func New() *App {
 		},
 		fetchCommentPage: client.Comments,
 		addCommentFn:     client.AddComment,
+		novelContent:     client.NovelContent,
 		route:            routeHome,
 		homeFeeds:        newHomeFeeds(),
 		search:           &browseState{},
