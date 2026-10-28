@@ -267,7 +267,7 @@ func (a *App) novelResults(c *ui.Context) {
 	}
 	switch {
 	case len(v.items) > 0:
-		ui.Column(c).Grow(1).Padding(t.SpaceM, contentPadding, contentPadding, contentPadding).Children(func() {
+		ui.Column(c).Grow(1).Padding(t.SpaceL, contentPadding, contentPadding, contentPadding).Children(func() {
 			widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
 				a.novelCard(c, st, v.items, i)
 			})

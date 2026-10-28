@@ -310,10 +310,10 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 		}
 	}
 	width := a.masonryWidth()
-	items, tiles := feedTiles(st, v.items, width)
+	items, tiles := feedTiles(st, v.items, v.tiles, width)
 	switch {
 	case len(items) > 0:
-		ui.Column(c).Grow(1).Padding(t.SpaceM, contentPadding, contentPadding, contentPadding).Children(func() {
+		ui.Column(c).Grow(1).Padding(t.SpaceL, contentPadding, contentPadding, contentPadding).Children(func() {
 			widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
 				a.browseCard(c, st, items, i)
 			})
