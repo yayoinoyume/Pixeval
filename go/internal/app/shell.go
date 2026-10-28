@@ -15,6 +15,7 @@ const (
 	routeSettings  route = "settings"
 	routeUser      route = "user"
 	routeSeries    route = "series"
+	routeNovel     route = "novel"
 )
 
 // routeLabel is the navigation label of the page.
@@ -93,6 +94,8 @@ func (a *App) page(c *ui.Context) {
 		a.userPage(c)
 	case routeSeries:
 		a.seriesPage(c)
+	case routeNovel:
+		a.novelPage(c)
 	default:
 		t := c.Theme()
 		ui.Column(c).Grow(1).Center().Children(func() {

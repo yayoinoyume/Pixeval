@@ -10,7 +10,8 @@
     "loggedIn": "已登录：%s",
     "placeholder": "%s（M1 占位）",
     "user": "用户",
-    "series": "系列"
+    "series": "系列",
+    "novel": "小说"
   },
   "home": {
     "recommended": "推荐",
@@ -122,5 +123,8 @@
   "series": {
     "open": "系列",
     "loadFailed": "加载系列失败：%s"
+  },
+  "novel": {
+    "loadFailed": "加载小说失败：%s"
   }
 }
