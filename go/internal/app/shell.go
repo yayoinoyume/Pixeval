@@ -114,13 +114,19 @@ func (a *App) applyTheme(c *ui.Context) {
 	}
 }
 
+// homePage draws the home tabs above the feed of the one chosen. Following
+// and ranking need a session, so a signed-out user gets the login prompt
+// instead.
 func (a *App) homePage(c *ui.Context) {
+	if ui.Tabs(c, &a.homeTab, homeTabLabels...).Padding(12, 12, 0, 12).Changed() {
+		a.armHome(a.homeTab)
+	}
 	if a.session == nil {
 		a.loginPrompt(c)
 		return
 	}
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		a.browsePage(c, a.home)
+		a.browsePage(c, a.homeFeeds[a.homeTab])
 	})
 }
 
