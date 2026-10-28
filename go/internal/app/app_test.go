@@ -20,6 +20,8 @@ func TestMain(m *testing.M) {
 	os.Setenv("XDG_CONFIG_HOME", dir)
 	os.Setenv("LANG", "zh_CN.UTF-8")
 	os.Setenv("LC_ALL", "")
+	// Detect reads LC_MESSAGES before LANG, so the runner's value must go too.
+	os.Setenv("LC_MESSAGES", "")
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
@@ -58,8 +60,9 @@ func TestLanguageSettingChangesNavigation(t *testing.T) {
 	}
 
 	a.settings.Language = i18n.LangZhHans
-	// The save finishes off the main thread; its result is the frame's cue.
-	a.settingsSaved <- nil
+	// The language select applies its change on the frame it fires; the test
+	// drives the same switch without a Select to click.
+	a.loadLanguage()
 	tt.Frame()
 	if !tt.HasText("设置") {
 		t.Errorf("Chinese navigation missing after the switch: %q", tt.Texts())

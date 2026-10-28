@@ -170,6 +170,8 @@ func (l *loginWindow) exchange(code string) {
 	verifier := l.verifier
 	l.mu.Unlock()
 	l.win.Invalidate()
+	// The message is looked up here: the bundle changes on the main thread.
+	saveFailed := l.app.t("login.saveFailed")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -178,7 +180,7 @@ func (l *loginWindow) exchange(code string) {
 			l.fail(err)
 			return
 		}
-		l.finish(tok)
+		l.finish(tok, saveFailed)
 	}()
 }
 
@@ -198,6 +200,7 @@ func (l *loginWindow) submitRefresh() {
 	l.busy, l.errMsg = true, ""
 	l.mu.Unlock()
 	l.win.Invalidate()
+	saveFailed := l.app.t("login.saveFailed")
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -206,18 +209,18 @@ func (l *loginWindow) submitRefresh() {
 			l.fail(err)
 			return
 		}
-		l.finish(tok)
+		l.finish(tok, saveFailed)
 	}()
 }
 
 // finish saves the token, closes the window and tells the app.
-func (l *loginWindow) finish(t *pixiv.Token) {
+func (l *loginWindow) finish(t *pixiv.Token, saveFailed string) {
 	path, err := tokenPath()
 	if err == nil {
 		err = pixiv.SaveToken(path, t)
 	}
 	if err != nil {
-		l.fail(fmt.Errorf("%s: %w", l.app.t("login.saveFailed"), err))
+		l.fail(fmt.Errorf("%s: %w", saveFailed, err))
 		return
 	}
 	l.win.Close()

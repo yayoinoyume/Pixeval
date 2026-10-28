@@ -46,7 +46,8 @@ func Load(lang string) (*Bundle, error) {
 }
 
 // Normalize maps a language tag to the one the app ships, or to the system's
-// language when it is LangAuto.
+// language when it is LangAuto. Every other zh tag reads as Simplified
+// Chinese: the app ships only these two languages for now.
 func Normalize(lang string) string {
 	switch {
 	case lang == "" || lang == LangAuto:
@@ -79,6 +80,11 @@ func loadFile(lang string) (map[string]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("i18n: %w", err)
 	}
+	return parseMessages(lang, data)
+}
+
+// parseMessages flattens one locale file's JSON into messages.
+func parseMessages(lang string, data []byte) (map[string]string, error) {
 	var groups map[string]map[string]string
 	if err := json.Unmarshal(data, &groups); err != nil {
 		return nil, fmt.Errorf("i18n %s: %w", lang, err)
