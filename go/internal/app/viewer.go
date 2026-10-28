@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -47,6 +46,20 @@ type viewerState struct {
 	bookmarking bool
 	bookmarked  bool
 
+	// detail is the work's full record from the detail endpoint, which the
+	// feed's copy lacks; detailErr and detailLoading follow the fetch. The
+	// work keeps feeding the image and the pager, so its copy stays
+	// untouched.
+	detail        *pixiv.Illustration
+	detailErr     string
+	detailLoading bool
+	// closed marks a viewer the app let go, so a fetch still in flight drops
+	// its result instead of writing to a state nothing shows.
+	closed bool
+	// failedImages holds the thumbnail and avatar URLs that did not load, so
+	// a broken one is not asked for again every frame.
+	failedImages map[string]bool
+
 	// drag is the pointer dragging the image; lastX and lastY are where it
 	// was at the previous move.
 	drag         bool
@@ -66,12 +79,36 @@ func pageCountOf(n int) int {
 	return n
 }
 
-// bookmarked reports whether the work is bookmarked, and whether a request
+// bookmarkState reports whether the work is bookmarked, and whether a request
 // is still running.
 func (v *viewerState) bookmarkState() (bookmarked, bookmarking bool) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	return v.bookmarked, v.bookmarking
+}
+
+// detailState returns the detail the info card draws and where its fetch got.
+func (v *viewerState) detailState() (detail *pixiv.Illustration, errText string, loading bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.detail, v.detailErr, v.detailLoading
+}
+
+// imageFailedURL reports whether a thumbnail or avatar URL failed already.
+func (v *viewerState) imageFailedURL(url string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.failedImages[url]
+}
+
+// markImageFailed remembers a URL that did not load.
+func (v *viewerState) markImageFailed(url string) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.failedImages == nil {
+		v.failedImages = map[string]bool{}
+	}
+	v.failedImages[url] = true
 }
 
 // openViewer shows w full screen over the page's content, at page.
@@ -85,11 +122,23 @@ func (a *App) openViewer(w *pixiv.Illustration, page int) {
 		page = n - 1
 	}
 	v := &viewerState{work: *w, page: page, zoom: 1, bookmarked: w.IsBookmarked}
-	a.viewer, a.comments, a.commentsOpen = v, &commentState{workID: w.ID}, false
+	if old := a.viewer; old != nil {
+		old.mu.Lock()
+		old.closed = true
+		old.mu.Unlock()
+	}
+	a.viewer, a.comments, a.commentsOpen = v, &commentState{workID: w.ID}, true
 	a.recordHistory(*w)
 	// Start the original at once, so the first frame already has a load to
 	// show rather than one to start.
 	a.viewerImage(v)
+	// The feed's copy of a work is thin: the detail fills the info card, and
+	// the comments load with it. Both need a session, so a signed-out viewer
+	// draws the feed's data and asks for neither.
+	if a.session != nil {
+		a.loadViewerDetail(v)
+		a.loadComments(a.comments, false)
+	}
 	if a.win != nil {
 		a.win.Invalidate()
 	}
@@ -100,6 +149,10 @@ func (a *App) closeViewer() {
 	if a.viewer == nil {
 		return
 	}
+	v := a.viewer
+	v.mu.Lock()
+	v.closed = true
+	v.mu.Unlock()
 	a.viewer = nil
 	// Drop the panel with the viewer: a page still in flight then writes to a
 	// state nothing shows, instead of reviving it on the next work.
@@ -300,113 +353,231 @@ func (a *App) viewerInput(v *viewerState, ev ui.InputEvent) bool {
 	return false
 }
 
-// viewerPage draws the viewer over the whole window: the page's original,
-// and the toolbar under it. The room stays dark in either theme, as a picture
-// viewer should.
+// viewerPage draws the detail view: a close row, the artwork beside the
+// scrollable info card, and the action bar under them. It follows the window's
+// theme, so the light palette shows its own card and bar.
 func (a *App) viewerPage(c *ui.Context) {
 	v := a.viewer
 	if v == nil {
 		return
 	}
-	viewerTheme := designTheme(true, textScale(c))
+	dark := c.Theme().Dark
+	viewerTheme := designTheme(dark, textScale(c))
 	if c.Preferences().HighContrast {
-		applyHighContrast(viewerTheme, true)
+		applyHighContrast(viewerTheme, dark)
 	}
 	c.SetTheme(viewerTheme)
 	bmp, failed := a.viewerImage(v)
 	t := themeOf(c)
-	ui.Column(c).Fill().FillHeight().Background(t.ViewerBg).Children(func() {
-		ui.Row(c).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
-			area := ui.Box(c).Grow(1).FillHeight().Clip().Background(t.ViewerBg).
-				Focusable().AutoFocus().
-				HandleInput(func(ev ui.InputEvent) bool { return a.viewerInput(v, ev) })
-			if b := area.LayoutBounds(); b.W > 0 && b.H > 0 {
-				v.viewW, v.viewH = b.W, b.H
-			}
-			area.Children(func() {
-				switch {
-				case bmp != nil:
-					ui.Image(c, bmp).Fill().Fit(ui.Contain).
-						Scale(v.zoom, v.zoom).Translate(v.panX, v.panY).
-						Label(a.tf("viewer.image", v.work.Title, v.page+1, pageCount(v.work)))
-				case failed:
-					ui.Column(c).Fill().Center().Children(func() {
-						ui.Text(c, a.t("viewer.imageFailed")).TextColor(t.Danger)
-					})
-				default:
-					ui.Column(c).Fill().Center().Children(func() { ui.Spinner(c) })
-				}
+	ui.Column(c).Fill().FillHeight().Background(t.Bg).
+		Padding(t.SpaceM, contentPadding, t.SpaceL, contentPadding).Gap(t.SpaceM).
+		Children(func() {
+			a.viewerTop(c)
+			ui.Row(c).Grow(1).FillWidth().MinHeight(0).Gap(t.SpaceL).
+				AlignItems(ui.Stretch).Children(func() {
+				a.viewerArt(c, v, bmp, failed)
+				a.viewerInfo(c, v)
 			})
-			if a.commentsOpen && a.comments != nil {
-				a.commentsPanel(c, a.comments)
+			a.viewerActions(c, v, failed)
+		})
+}
+
+// viewerTop is the viewer's first row: the close pill on the left and the
+// zoom hint on the right.
+func (a *App) viewerTop(c *ui.Context) {
+	t := themeOf(c)
+	ui.Row(c).Height(48).FillWidth().AlignItems(ui.Center).Children(func() {
+		b := ui.ButtonBase(c).Height(36).Radius(t.RadiusFull).Padding(0, t.SpaceL).
+			Gap(t.SpaceS).Background(t.SurfaceAlt).Label(a.t("viewer.close"))
+		if b.Hovered() {
+			b = b.Background(t.SurfaceHover)
+		}
+		if b.Clicked() {
+			a.closeViewer()
+		}
+		b.Children(func() {
+			ui.Icon(c, iconClose).Size(14, 14).TextColor(t.Text)
+			ui.Text(c, a.t("viewer.close")).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text)
+		})
+		ui.Spacer(c)
+		ui.Text(c, a.t("viewer.zoomHint")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+	})
+}
+
+// viewerArt is the artwork's frame: the original with the viewer's zoom and
+// pan, and the page thumbnails in its bottom left corner.
+func (a *App) viewerArt(c *ui.Context, v *viewerState, bmp *ui.Bitmap, failed bool) {
+	t := themeOf(c)
+	area := ui.Box(c).Grow(1).FillHeight().MinWidth(0).Clip().Radius(t.RadiusXL).
+		Background(t.SurfaceAlt).Focusable().AutoFocus().
+		HandleInput(func(ev ui.InputEvent) bool {
+			// The pointer belongs to the artwork and the thumbnails over it;
+			// the frame keeps the keys, the wheel and the pinch.
+			switch ev.Kind {
+			case ui.InputPointerDown, ui.InputPointerMove, ui.InputPointerUp:
+				return false
+			}
+			return a.viewerInput(v, ev)
+		})
+	if b := area.LayoutBounds(); b.W > 0 && b.H > 0 {
+		v.viewW, v.viewH = b.W, b.H
+	}
+	area.Children(func() {
+		switch {
+		case bmp != nil:
+			img := ui.Image(c, bmp).Fill().Fit(ui.Contain).
+				Scale(v.zoom, v.zoom).Translate(v.panX, v.panY).
+				Label(a.tf("viewer.image", v.work.Title, v.page+1, pageCount(v.work)))
+			img.HandleInput(func(ev ui.InputEvent) bool {
+				switch ev.Kind {
+				case ui.InputPointerDown, ui.InputPointerMove, ui.InputPointerUp:
+					return a.viewerInput(v, ev)
+				}
+				return false
+			})
+			if img.DoubleClicked() {
+				v.resetView()
+			}
+		case failed:
+			ui.Column(c).Fill().Center().Children(func() {
+				ui.Text(c, a.t("viewer.imageFailed")).TextColor(t.Danger)
+			})
+		default:
+			ui.Column(c).Fill().Center().Children(func() { ui.Spinner(c) })
+		}
+		a.viewerPageThumbs(c, v)
+	})
+}
+
+// viewerPageThumbs draws up to three page thumbnails over the artwork's
+// bottom left corner, the current page outlined with the accent.
+func (a *App) viewerPageThumbs(c *ui.Context, v *viewerState) {
+	n := pageCount(v.work)
+	if n <= 1 {
+		return
+	}
+	t := themeOf(c)
+	first := max(min(v.page-1, n-3), 0)
+	ui.Row(c).Absolute().Left(t.SpaceL).Bottom(t.SpaceL).Gap(t.SpaceS).
+		Role(ui.RoleGroup).Label(a.t("viewer.pageThumbs")).Children(func() {
+		for p := first; p < first+3 && p < n; p++ {
+			a.viewerPageThumb(c, v, p)
+		}
+	})
+}
+
+// viewerPageThumb is one page's thumbnail: the page's own picture, or a block
+// while it loads or after it failed. A thumbnail asks for the page's smaller
+// rendition where the work has one.
+func (a *App) viewerPageThumb(c *ui.Context, v *viewerState, page int) {
+	t := themeOf(c)
+	url := pageThumbURL(v.work, page)
+	b := ui.ButtonBase(c).Size(44, 44).Radius(t.RadiusM).Padding(2).
+		Background(t.Surface).Label(a.tf("viewer.pageThumb", page+1))
+	if page == v.page {
+		b = b.Border(2, t.Accent)
+	}
+	if b.Clicked() && page != v.page {
+		a.viewerGo(page - v.page)
+	}
+	b.Children(func() {
+		if url == "" || v.imageFailedURL(url) {
+			return
+		}
+		if bmp := a.images.Thumb(url, 88, 88, a.viewerImageReady(v, url, 88)); bmp != nil {
+			ui.Image(c, bmp).Fill().Fit(ui.Cover).Radius(t.RadiusS)
+		}
+	})
+}
+
+// viewerImageReady returns the callback a thumbnail or avatar load calls: a
+// probe that finds nothing means the load failed, and the image stays a block
+// from then on rather than loading again every frame.
+func (a *App) viewerImageReady(v *viewerState, url string, size int) func() {
+	return func() {
+		if a.images.Thumb(url, size, size, nil) == nil {
+			v.markImageFailed(url)
+		}
+		a.update(func() {})
+	}
+}
+
+// viewerActions is the bottom bar: the work's actions on the left and the
+// pager on the right.
+func (a *App) viewerActions(c *ui.Context, v *viewerState, failed bool) {
+	t := themeOf(c)
+	n := pageCount(v.work)
+	bookmarked, bookmarking := v.bookmarkState()
+	ui.Row(c).FillWidth().Height(72).Padding(t.SpaceS, t.SpaceM).Gap(t.SpaceS).
+		AlignItems(ui.Center).Background(t.SurfaceAlt).Radius(t.RadiusXL).Children(func() {
+		ui.Row(c).Grow(1).MinWidth(0).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+			glyph, label := iconHeart, a.t("viewer.bookmark")
+			if bookmarked {
+				glyph, label = iconHeartFill, a.t("viewer.bookmarked")
+			}
+			b := a.viewerPill(c, glyph, label, t.AccentFill, t.AccentText)
+			if b.Disabled(bookmarking).Clicked() {
+				a.toggleBookmark(v)
+			}
+			if failed {
+				if b := a.viewerPill(c, iconRefresh, a.t("common.retry"), t.Surface, t.Danger); b.Clicked() {
+					a.viewerReload(v)
+				}
+			}
+			if b := a.viewerPill(c, iconDownload, a.t("viewer.download"), t.Surface, t.Text); b.Clicked() {
+				queued, ok := a.downloadWork(v.work)
+				switch {
+				case !ok:
+					c.Toast(a.t("viewer.noDownloadDir"))
+				case queued == 0:
+					c.Toast(a.t("viewer.alreadyQueued"))
+				default:
+					c.Toast(a.tf("viewer.queued", queued))
+				}
+			}
+			bg, fg := t.Surface, t.Text
+			if a.commentsOpen {
+				bg, fg = t.AccentSoft, t.Accent
+			}
+			if b := a.viewerPill(c, iconComment, a.t("comments.title"), bg, fg); b.Clicked() {
+				a.toggleComments()
+			}
+			if b := a.viewerPill(c, nil, a.t("viewer.copyLink"), t.SurfaceAlt, t.TextMuted); b.Clicked() {
+				a.copyWorkLink(c, v.work.ID)
+			}
+			if b := a.viewerPill(c, nil, a.t("viewer.openBrowser"), t.SurfaceAlt, t.TextMuted); b.Clicked() {
+				a.openWorkLink(c, v.work.ID)
 			}
 		})
-		ui.Row(c).Padding(t.SpaceM).Children(func() {
-			a.viewerBar(c, v, failed)
+		ui.Row(c).Shrink(0).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+			if iconButton(c, iconLeft, a.t("viewer.prev"), 36, t.Text, t.SurfaceHover).
+				Disabled(v.page <= 0).Clicked() {
+				a.viewerGo(-1)
+			}
+			ui.Text(c, a.viewerPageLabel(v.page+1, n)).FontSize(t.TextSmall).
+				TextColor(t.TextMuted)
+			if iconButton(c, iconRight, a.t("viewer.next"), 36, t.Text, t.SurfaceHover).
+				Disabled(v.page >= n-1).Clicked() {
+				a.viewerGo(1)
+			}
 		})
 	})
 }
 
-// viewerBar is the work's title, the page count and the viewer's buttons. It
-// floats above the window's bottom edge as a rounded, dark bar.
-func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
+// viewerPill is one rounded action in the viewer's bar: an icon, when there is
+// one, and its label. A nil glyph draws the label alone.
+func (a *App) viewerPill(c *ui.Context, glyph *ui.SVG, label string, bg, fg ui.Color) ui.Element {
 	t := themeOf(c)
-	n := pageCount(v.work)
-	ui.Row(c).FillWidth().Height(56).Padding(t.SpaceS, t.SpaceM).Gap(t.SpaceS).
-		AlignItems(ui.Center).Background(t.ViewerBar).Radius(t.RadiusL).
-		Border(1, t.ViewerBarBorder).Shadow(0, 4, 16, 0, t.Shadow).
-		KeepFocus().Children(func() {
-		ui.Text(c, v.work.Title).FontSize(t.TextSmall).FontWeight(600).
-			TextColor(t.ViewerBarText).Grow(1).MaxLines(1).MinWidth(0)
-		ui.Text(c, fmt.Sprintf("%d/%d", v.page+1, n)).FontSize(t.TextTiny).
-			TextColor(t.ViewerBarMuted).Padding(0, t.SpaceS, 0, t.SpaceXS)
-		if v.work.User.ID > 0 {
-			if iconButton(c, iconUser, a.t("user.open"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
-				a.closeViewer()
-				a.openUser(v.work.User.ID)
-			}
+	b := ui.ButtonBase(c).Height(40).Radius(t.RadiusFull).Padding(0, t.SpaceL).
+		Gap(t.SpaceS).Background(bg).Label(label)
+	if b.Hovered() {
+		b = b.Background(bg.Mix(fg, 0.12))
+	}
+	b.Children(func() {
+		if glyph != nil {
+			ui.Icon(c, glyph).Size(16, 16).TextColor(fg)
 		}
-		if v.work.Series != nil {
-			if iconButton(c, iconSeries, a.t("series.open"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
-				a.closeViewer()
-				a.openSeries(v.work.Series.ID)
-			}
-		}
-		if failed {
-			if iconButton(c, iconRefresh, a.t("common.retry"), 36, t.Danger, t.ViewerBarHover).Clicked() {
-				a.viewerReload(v)
-			}
-		}
-		bookmarked, bookmarking := v.bookmarkState()
-		glyph := iconHeart
-		fg := t.ViewerBarMuted
-		label := a.t("viewer.bookmark")
-		if bookmarked {
-			glyph, fg, label = iconHeartFill, t.Accent, a.t("viewer.bookmarked")
-		}
-		if iconButton(c, glyph, label, 36, fg, t.ViewerBarHover).Disabled(bookmarking).Clicked() {
-			a.toggleBookmark(v)
-		}
-		a.commentsButton(c)
-		if iconButton(c, iconDownload, a.t("viewer.download"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
-			queued, ok := a.downloadWork(v.work)
-			switch {
-			case !ok:
-				c.Toast(a.t("viewer.noDownloadDir"))
-			case queued == 0:
-				c.Toast(a.t("viewer.alreadyQueued"))
-			default:
-				c.Toast(a.tf("viewer.queued", queued))
-			}
-		}
-		if iconButton(c, iconLeft, a.t("viewer.prev"), 36, t.ViewerBarMuted, t.ViewerBarHover).Disabled(v.page <= 0).Clicked() {
-			a.viewerGo(-1)
-		}
-		if iconButton(c, iconRight, a.t("viewer.next"), 36, t.ViewerBarMuted, t.ViewerBarHover).Disabled(v.page >= n-1).Clicked() {
-			a.viewerGo(1)
-		}
-		if iconButton(c, iconClose, a.t("viewer.close"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
-			a.closeViewer()
-		}
+		ui.Text(c, label).FontSize(t.TextSmall).FontWeight(600).TextColor(fg)
 	})
+	return b
 }
