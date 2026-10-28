@@ -301,17 +301,19 @@ func (a *App) viewerInput(v *viewerState, ev ui.InputEvent) bool {
 }
 
 // viewerPage draws the viewer over the whole window: the page's original,
-// and the toolbar under it.
+// and the toolbar under it. The room stays dark in either theme, as a picture
+// viewer should.
 func (a *App) viewerPage(c *ui.Context) {
 	v := a.viewer
 	if v == nil {
 		return
 	}
+	c.SetTheme(designTheme(true))
 	bmp, failed := a.viewerImage(v)
-	t := c.Theme()
-	ui.Column(c).Fill().FillHeight().Background(t.Background).Children(func() {
+	t := themeOf(c)
+	ui.Column(c).Fill().FillHeight().Background(t.ViewerBg).Children(func() {
 		ui.Row(c).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
-			area := ui.Box(c).Grow(1).FillHeight().Clip().Background(t.Background).
+			area := ui.Box(c).Grow(1).FillHeight().Clip().Background(t.ViewerBg).
 				Focusable().AutoFocus().
 				HandleInput(func(ev ui.InputEvent) bool { return a.viewerInput(v, ev) })
 			if b := area.LayoutBounds(); b.W > 0 && b.H > 0 {
@@ -335,48 +337,54 @@ func (a *App) viewerPage(c *ui.Context) {
 				a.commentsPanel(c, a.comments)
 			}
 		})
-		a.viewerBar(c, v, failed)
+		ui.Row(c).Padding(t.SpaceM).Children(func() {
+			a.viewerBar(c, v, failed)
+		})
 	})
 }
 
-// viewerBar is the work's title, the page count and the viewer's buttons.
+// viewerBar is the work's title, the page count and the viewer's buttons. It
+// floats above the window's bottom edge as a rounded, dark bar.
 func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
-	t := c.Theme()
-	n := pageCountOf(v.work.PageCount)
-	ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).KeepFocus().Children(func() {
-		ui.Text(c, v.work.Title).Grow(1).MaxLines(1)
-		ui.Text(c, fmt.Sprintf("%d/%d", v.page+1, n)).TextColor(t.TextMuted)
-		a.commentsButton(c)
-		// Leaving the viewer first, because it takes the whole window and the
-		// page under it is what the back button returns to.
-		if ui.Button(c, a.t("user.open")).Clicked() {
-			a.closeViewer()
-			a.openUser(v.work.User.ID)
+	t := themeOf(c)
+	n := pageCount(v.work)
+	ui.Row(c).FillWidth().Height(56).Padding(t.SpaceS, t.SpaceM).Gap(t.SpaceS).
+		AlignItems(ui.Center).Background(t.ViewerBar).Radius(t.RadiusL).
+		Border(1, t.ViewerBarBorder).Shadow(0, 4, 16, 0, t.Shadow).
+		KeepFocus().Children(func() {
+		ui.Text(c, v.work.Title).FontSize(t.TextSmall).FontWeight(600).
+			TextColor(t.ViewerBarText).Grow(1).MaxLines(1).MinWidth(0)
+		ui.Text(c, fmt.Sprintf("%d/%d", v.page+1, n)).FontSize(t.TextTiny).
+			TextColor(t.ViewerBarMuted).Padding(0, t.SpaceS, 0, t.SpaceXS)
+		if v.work.User.ID > 0 {
+			if iconButton(c, iconUser, a.t("user.open"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
+				a.closeViewer()
+				a.openUser(v.work.User.ID)
+			}
 		}
 		if v.work.Series != nil {
-			if ui.Button(c, a.t("series.open")).Clicked() {
+			if iconButton(c, iconSeries, a.t("series.open"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
 				a.closeViewer()
 				a.openSeries(v.work.Series.ID)
 			}
 		}
 		if failed {
-			if ui.Button(c, a.t("common.retry")).Clicked() {
+			if iconButton(c, iconRefresh, a.t("common.retry"), 36, t.Danger, t.ViewerBarHover).Clicked() {
 				a.viewerReload(v)
 			}
 		}
 		bookmarked, bookmarking := v.bookmarkState()
+		glyph := iconHeart
+		fg := t.ViewerBarMuted
 		label := a.t("viewer.bookmark")
 		if bookmarked {
-			label = a.t("viewer.bookmarked")
+			glyph, fg, label = iconHeartFill, t.Accent, a.t("viewer.bookmarked")
 		}
-		bookmark := ui.Button(c, label).Disabled(bookmarking)
-		if bookmarked {
-			bookmark = bookmark.TextColor(t.Accent)
-		}
-		if bookmark.Clicked() {
+		if iconButton(c, glyph, label, 36, fg, t.ViewerBarHover).Disabled(bookmarking).Clicked() {
 			a.toggleBookmark(v)
 		}
-		if ui.Button(c, a.t("viewer.download")).Clicked() {
+		a.commentsButton(c)
+		if iconButton(c, iconDownload, a.t("viewer.download"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
 			queued, ok := a.downloadWork(v.work)
 			switch {
 			case !ok:
@@ -387,13 +395,13 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 				c.Toast(a.tf("viewer.queued", queued))
 			}
 		}
-		if ui.Button(c, a.t("viewer.prev")).Disabled(v.page <= 0).Clicked() {
+		if iconButton(c, iconLeft, a.t("viewer.prev"), 36, t.ViewerBarMuted, t.ViewerBarHover).Disabled(v.page <= 0).Clicked() {
 			a.viewerGo(-1)
 		}
-		if ui.Button(c, a.t("viewer.next")).Disabled(v.page >= n-1).Clicked() {
+		if iconButton(c, iconRight, a.t("viewer.next"), 36, t.ViewerBarMuted, t.ViewerBarHover).Disabled(v.page >= n-1).Clicked() {
 			a.viewerGo(1)
 		}
-		if ui.Button(c, a.t("viewer.close")).Clicked() {
+		if iconButton(c, iconClose, a.t("viewer.close"), 36, t.ViewerBarMuted, t.ViewerBarHover).Clicked() {
 			a.closeViewer()
 		}
 	})

@@ -102,93 +102,156 @@ func (a *App) languageValue(label string) string {
 	}
 }
 
-// settingsPage draws the preferences. The controls edit the app's settings in
-// place, so the theme applies on the next frame, and the download directory on
-// the next download.
+// settingsRow draws one preference: its name and explanation on the left,
+// its control on the right.
+type settingsRow func(label, hint string, control func())
+
+// settingsPage draws the preferences as groups of rows, so a setting is found
+// by what it is about rather than by scanning one long column.
 func (a *App) settingsPage(c *ui.Context) {
 	s := a.settings
 	if s == nil {
 		return
 	}
-	t := c.Theme()
-	ui.Column(c).Grow(1).FillHeight().Padding(24).Gap(16).Children(func() {
-		ui.Form(c, func() {
-			theme := a.themeLabel(s.Theme)
-			ui.Field(c, a.t("settings.theme"), func() {
-				if ui.Select(c, &theme, a.themeChoices()).Changed() {
-					s.Theme = a.themeValue(theme)
-				}
+	t := themeOf(c)
+	ui.Column(c).Grow(1).FillHeight().Children(func() {
+		ui.Scroll(c).Grow(1).Children(func() {
+			ui.Row(c).Padding(t.SpaceXL, contentPadding).Children(func() {
+				ui.Column(c).Width(min(contentWidth(c), 860)).Gap(t.SpaceM).Children(func() {
+					a.settingsGroup(c, a.t("settings.groupAppearance"), func(row settingsRow) {
+						theme := a.themeLabel(s.Theme)
+						row(a.t("settings.theme"), "", func() {
+							if ui.Select(c, &theme, a.themeChoices()).Width(200).Changed() {
+								s.Theme = a.themeValue(theme)
+							}
+						})
+						language := a.languageLabel(s.Language)
+						row(a.t("settings.language"), "", func() {
+							if ui.Select(c, &language, a.languageChoices()).Width(200).Changed() {
+								s.Language = a.languageValue(language)
+								// The theme applies on the frame it changes in; the language
+								// applies at once too, like the rest of the page's controls.
+								a.loadLanguage()
+								c.Invalidate()
+							}
+						})
+					})
+
+					a.settingsGroup(c, a.t("settings.groupDownloads"), func(row settingsRow) {
+						row(a.t("settings.downloadDir"), a.t("settings.downloadDirHint"), func() {
+							ui.TextInput(c, &s.DownloadDir).Width(360)
+						})
+						concurrency := float64(s.DownloadConcurrency)
+						row(a.t("settings.concurrency"), "", func() {
+							ui.NumberInput(c, &concurrency, 1, 8, 1).Width(140)
+						})
+						s.DownloadConcurrency = int(concurrency)
+						row(a.t("settings.showR18"), a.t("settings.showR18Hint"), func() {
+							ui.Switch(c, &s.ShowR18)
+						})
+						width := s.CardWidth
+						row(a.t("settings.cardWidth"), "", func() {
+							ui.NumberInput(c, &width, 180, 360, 10).Width(140)
+						})
+						s.CardWidth = width
+					})
+
+					a.settingsGroup(c, a.t("settings.updates"), func(settingsRow) {
+						a.updatesSection(c)
+					})
+
+					a.settingsGroup(c, a.t("settings.groupShortcuts"), func(settingsRow) {
+						ui.Text(c, a.t("shortcuts.hint")).FontSize(t.TextSmall).
+							TextColor(t.TextMuted).Padding(0, 20, t.SpaceS, 20)
+					})
+				})
 			})
-			language := a.languageLabel(s.Language)
-			ui.Field(c, a.t("settings.language"), func() {
-				if ui.Select(c, &language, a.languageChoices()).Changed() {
-					s.Language = a.languageValue(language)
-					// The theme applies on the frame it changes in; the language
-					// applies at once too, like the rest of the page's controls.
-					a.loadLanguage()
-					c.Invalidate()
-				}
-			})
-			ui.Field(c, a.t("settings.downloadDir"), func() {
-				ui.TextInput(c, &s.DownloadDir).Width(360)
-			}).Description(a.t("settings.downloadDirHint"))
-			concurrency := float64(s.DownloadConcurrency)
-			ui.Field(c, a.t("settings.concurrency"), func() {
-				ui.NumberInput(c, &concurrency, 1, 8, 1)
-			})
-			s.DownloadConcurrency = int(concurrency)
-			ui.Field(c, a.t("settings.showR18"), func() {
-				ui.Switch(c, &s.ShowR18)
-			}).Description(a.t("settings.showR18Hint"))
-			width := s.CardWidth
-			ui.Field(c, a.t("settings.cardWidth"), func() {
-				ui.NumberInput(c, &width, 180, 360, 10)
-			})
-			s.CardWidth = width
 		})
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c, a.t("common.save")).Clicked() {
-				a.saveSettings()
+		a.settingsFooter(c)
+	})
+}
+
+// settingsFooter keeps the save action in reach however far the page is
+// scrolled.
+func (a *App) settingsFooter(c *ui.Context) {
+	t := themeOf(c)
+	ui.Row(c).Gap(t.SpaceL).AlignItems(ui.Center).Padding(t.SpaceM, contentPadding).
+		Background(t.Bg).BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		if ui.PrimaryButton(c, a.t("common.save")).Clicked() {
+			a.saveSettings()
+		}
+		if a.settingsErr != "" {
+			ui.Text(c, a.settingsErr).FontSize(t.TextSmall).TextColor(t.Danger).
+				Grow(1).MaxLines(2)
+		}
+	})
+}
+
+// settingsGroup is a titled card of preference rows.
+func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsRow)) {
+	t := themeOf(c)
+	ui.Column(c).FillWidth().Background(t.Surface).Radius(t.RadiusL).
+		Border(1, t.Border).Clip().Children(func() {
+		ui.Text(c, title).FontSize(t.TextSmall).TextColor(t.TextMuted).
+			Padding(t.SpaceM, 20, t.SpaceXS, 20)
+		first := true
+		row := func(label, hint string, control func()) {
+			if !first {
+				ui.Box(c).Height(1).FillWidth().Background(t.Border)
+			}
+			first = false
+			a.settingsRow(c, label, hint, control)
+		}
+		body(row)
+	})
+}
+
+// settingsRow places the control at the end of a 44 high row.
+func (a *App) settingsRow(c *ui.Context, label, hint string, control func()) {
+	t := themeOf(c)
+	ui.Row(c).FillWidth().MinHeight(44).Padding(t.SpaceM, 20).Gap(t.SpaceXL).
+		AlignItems(ui.Center).Children(func() {
+		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+			ui.Text(c, label).FontSize(t.TextBody).TextColor(t.Text)
+			if hint != "" {
+				ui.Text(c, hint).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(2)
 			}
 		})
-		ui.Text(c, a.t("shortcuts.hint")).FontSize(12).TextColor(t.TextMuted)
-		if a.settingsErr != "" {
-			ui.Text(c, a.settingsErr).TextColor(t.Danger)
-		}
-		a.updatesSection(c)
+		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Shrink(0).Children(control)
 	})
 }
 
 // updatesSection draws the update check and what its last run found. The
 // check and the install run off the main thread and land in updateSt.
 func (a *App) updatesSection(c *ui.Context) {
-	t := c.Theme()
+	t := themeOf(c)
 	st := a.updateSnapshot()
-	ui.Text(c, a.t("settings.updates")).Bold()
-	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		if ui.Button(c, a.t("settings.checkUpdate")).Disabled(st.off || st.checking || st.installing).Clicked() {
-			a.checkUpdate()
-			c.Invalidate()
-		}
-		if st.version != "" {
-			if ui.Button(c, a.t("settings.installRestart")).Disabled(st.installing).Clicked() {
-				a.installUpdate()
+	ui.Column(c).Padding(0, 20, t.SpaceM, 20).Gap(t.SpaceS).Children(func() {
+		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+			if ui.Button(c, a.t("settings.checkUpdate")).Disabled(st.off || st.checking || st.installing).Clicked() {
+				a.checkUpdate()
 				c.Invalidate()
 			}
+			if st.version != "" {
+				if ui.Button(c, a.t("settings.installRestart")).Disabled(st.installing).Clicked() {
+					a.installUpdate()
+					c.Invalidate()
+				}
+			}
+		})
+		switch {
+		case st.off:
+			ui.Text(c, a.t("settings.updatesOff")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		case st.err != "":
+			ui.Text(c, st.err).FontSize(t.TextSmall).TextColor(t.Danger)
+		case st.installing:
+			ui.Text(c, a.t("settings.updateInstalling")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		case st.version != "":
+			ui.Text(c, a.tf("settings.updateAvailable", st.version)).FontSize(t.TextSmall).TextColor(t.Text)
+		case st.latest:
+			ui.Text(c, a.t("settings.updateLatest")).FontSize(t.TextSmall).TextColor(t.TextMuted)
 		}
 	})
-	switch {
-	case st.off:
-		ui.Text(c, a.t("settings.updatesOff")).TextColor(t.TextMuted)
-	case st.err != "":
-		ui.Text(c, st.err).TextColor(t.Danger)
-	case st.installing:
-		ui.Text(c, a.t("settings.updateInstalling")).TextColor(t.TextMuted)
-	case st.version != "":
-		ui.Text(c, a.tf("settings.updateAvailable", st.version))
-	case st.latest:
-		ui.Text(c, a.t("settings.updateLatest")).TextColor(t.TextMuted)
-	}
 }
 
 // updateSnapshot reads the update state the page draws.

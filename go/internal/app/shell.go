@@ -31,7 +31,10 @@ func (a *App) routeLabel(r route) string {
 	return a.t("nav." + string(r))
 }
 
-var navRoutes = []route{routeHome, routeSearch, routeSubs, routeDownloads, routeHistory, routeSettings}
+var (
+	browseRoutes  = []route{routeHome, routeSearch, routeSubs}
+	libraryRoutes = []route{routeDownloads, routeHistory}
+)
 
 // View builds the shell: the navigation on the left, the page title and the
 // sign-in state above the page. The viewer takes the whole window instead.
@@ -90,36 +93,121 @@ func (a *App) escape() {
 	}
 }
 
+// nav is the window's navigation: the brand, the browsing group, the library
+// group and, held to the bottom, the settings.
 func (a *App) nav(c *ui.Context) {
-	t := c.Theme()
-	ui.Column(c).Width(180).Padding(12).Gap(4).Background(t.Surface).Shrink(0).
+	t := themeOf(c)
+	ui.Column(c).Width(navWidth).FillHeight().Padding(0, t.SpaceM, t.SpaceM, t.SpaceM).
+		Gap(t.SpaceXS).Background(t.Surface).Shrink(0).
+		BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
 		Role(ui.RoleGroup).Label(a.t("nav.region")).Children(func() {
-		ui.Text(c, "Pixeval Go").FontSize(18).Bold().Padding(8)
-		for _, r := range navRoutes {
-			if ui.Button(c, a.routeLabel(r)).Clicked() {
-				a.route = r
-			}
+		a.brand(c)
+		a.navGroupLabel(c, a.t("nav.groupBrowse"))
+		for _, r := range browseRoutes {
+			a.navItem(c, r)
 		}
+		a.navGroupLabel(c, a.t("nav.groupLibrary"))
+		for _, r := range libraryRoutes {
+			a.navItem(c, r)
+		}
+		ui.Spacer(c)
+		ui.Box(c).Height(1).FillWidth().Background(t.Border).MarginY(t.SpaceS)
+		a.navItem(c, routeSettings)
 	})
 }
 
+// brand is the app's mark and wordmark at the top of the navigation.
+func (a *App) brand(c *ui.Context) {
+	t := themeOf(c)
+	ui.Row(c).Height(64).Padding(0, t.SpaceS).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+		ui.Box(c).Size(26, 26).Radius(t.RadiusM).Background(t.AccentFill).Center().Children(func() {
+			ui.Icon(c, iconLogo).Size(16, 16).TextColor(t.AccentText)
+		})
+		ui.RichText(c,
+			ui.Span{Text: "Pixeval ", Size: t.TextBody, Weight: 700, Color: t.Text},
+			ui.Span{Text: "Go", Size: t.TextBody, Weight: 700, Color: t.Accent},
+		)
+	})
+}
+
+// navGroupLabel names a group of destinations. It is a quiet label, not a
+// heading: the pages carry the headings.
+func (a *App) navGroupLabel(c *ui.Context, label string) {
+	t := themeOf(c)
+	ui.Text(c, label).FontSize(t.TextTiny).TextColor(t.TextMuted).
+		Padding(t.SpaceL, t.SpaceS, t.SpaceXS, t.SpaceS)
+}
+
+// navItem is one destination: its glyph, its name, a hover face and, when
+// chosen, an accent face with a bar at its left edge.
+func (a *App) navItem(c *ui.Context, r route) {
+	t := themeOf(c)
+	selected := a.route == r
+	label := a.routeLabel(r)
+	b := ui.ButtonBase(c).Key("nav."+string(r)).Height(38).FillWidth().
+		Radius(t.RadiusM).Padding(0, t.SpaceS, 0, 0).Gap(t.SpaceS).
+		AlignItems(ui.Center).Justify(ui.Start)
+	hovered := b.Hovered()
+	switch {
+	case selected:
+		b = b.Background(t.AccentSoft)
+	case hovered:
+		b = b.Background(t.SurfaceAlt)
+	}
+	fg := t.TextMuted
+	switch {
+	case selected:
+		fg = t.Accent
+	case hovered:
+		fg = t.Text
+	}
+	b.Children(func() {
+		if selected {
+			ui.Box(c).Width(3).Height(16).Radius(2).Background(t.Accent)
+		} else {
+			ui.Box(c).Width(3).Height(16)
+		}
+		ui.Icon(c, navIcon(r)).Size(18, 18).TextColor(fg)
+		ui.Text(c, label).FontSize(t.TextBody).TextColor(fg).MaxLines(1)
+	})
+	if b.Clicked() {
+		a.goRoute(r)
+	}
+}
+
+// header is the page title and the account state above the page.
 func (a *App) header(c *ui.Context) {
-	t := c.Theme()
-	ui.Row(c).Gap(12).Padding(16).AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+	t := themeOf(c)
+	ui.Row(c).Height(64).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		if a.route == routeUser || a.route == routeSeries {
-			if ui.Button(c, a.t("common.back")).Clicked() {
+			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
 		}
-		ui.Text(c, a.routeLabel(a.route)).FontSize(22).Bold().Grow(1)
+		ui.Text(c, a.routeLabel(a.route)).FontSize(t.TextTitle).Bold().
+			LineHeight(1.2).TextColor(t.Text).Grow(1).MaxLines(1).MinWidth(0)
 		if a.session == nil {
-			if ui.Button(c, a.t("nav.login")).Clicked() {
+			if ui.PrimaryButton(c, a.t("nav.login")).Clicked() {
 				a.ShowLogin()
 			}
 			return
 		}
-		ui.Text(c, a.tf("nav.loggedIn", a.userName())).TextColor(t.TextMuted)
-		if ui.Button(c, a.t("nav.logout")).Clicked() {
+		a.userBadge(c)
+	})
+}
+
+// userBadge is the signed-in account: an initial, the name and a quiet way
+// out.
+func (a *App) userBadge(c *ui.Context) {
+	t := themeOf(c)
+	name := a.userName()
+	ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+		ui.Box(c).Size(28, 28).Radius(t.RadiusFull).Background(t.AccentSoft).Center().Children(func() {
+			ui.Text(c, initialOf(name)).FontSize(t.TextTiny).FontWeight(600).TextColor(t.Accent)
+		})
+		ui.Text(c, name).FontSize(t.TextSmall).TextColor(t.TextMuted).MaxLines(1)
+		if iconButton(c, iconLogout, a.t("nav.logout"), 30, t.TextMuted, t.SurfaceAlt).Clicked() {
 			a.logout()
 		}
 	})
@@ -146,7 +234,7 @@ func (a *App) page(c *ui.Context) {
 	case routeNovel:
 		a.novelPage(c)
 	default:
-		t := c.Theme()
+		t := themeOf(c)
 		ui.Column(c).Grow(1).Center().Children(func() {
 			ui.Text(c, a.tf("nav.placeholder", a.routeLabel(a.route))).TextColor(t.TextMuted)
 		})
@@ -164,14 +252,20 @@ func (a *App) goBack() {
 // applyTheme makes the window use the saved theme; the system's is the one
 // the frame starts with when the setting follows it.
 func (a *App) applyTheme(c *ui.Context) {
-	if a.settings == nil {
-		return
+	dark := c.Theme().Dark
+	if a.settings != nil {
+		switch a.settings.Theme {
+		case themeLight:
+			dark = false
+		case themeDark:
+			dark = true
+		}
 	}
-	switch a.settings.Theme {
-	case themeLight:
-		c.SetTheme(ui.LightTheme())
-	case themeDark:
-		c.SetTheme(ui.DarkTheme())
+	c.SetTheme(designTheme(dark))
+	// The desktop asks for less motion: every widget animation jumps to its
+	// target, while the layouts themselves are still.
+	if c.Preferences().ReduceMotion {
+		c.DisableAnimations()
 	}
 }
 
@@ -179,9 +273,12 @@ func (a *App) applyTheme(c *ui.Context) {
 // recommendation also needs a token, so every tab asks a signed-out user to
 // sign in instead of fetching.
 func (a *App) homePage(c *ui.Context) {
-	if ui.Tabs(c, &a.homeTab, a.t("home.recommended"), a.t("home.following"), a.t("home.ranking")).Padding(12, 12, 0, 12).Changed() {
-		a.armHome(a.homeTab)
-	}
+	t := themeOf(c)
+	ui.Row(c).Padding(t.SpaceL, contentPadding, 0, contentPadding).Children(func() {
+		if ui.Segmented(c, &a.homeTab, a.t("home.recommended"), a.t("home.following"), a.t("home.ranking")).Changed() {
+			a.armHome(a.homeTab)
+		}
+	})
 	if a.session == nil {
 		a.loginPrompt(c)
 		return
@@ -198,24 +295,25 @@ func (a *App) searchPage(c *ui.Context) {
 		return
 	}
 	st := a.search
+	t := themeOf(c)
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Row(c).Gap(8).Padding(12).Children(func() {
+		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, 0, contentPadding).
+			AlignItems(ui.Center).Children(func() {
 			box := ui.TextInput(c, &st.query).Grow(1).
 				Placeholder(a.t("search.placeholder")).Label(a.t("search.placeholder"))
 			if st.focusQuery {
 				st.focusQuery = false
 				box = box.Focus()
 			}
-			if ui.Button(c, a.t("search.action")).Clicked() {
+			if ui.PrimaryButton(c, a.t("search.action")).Clicked() {
 				a.startSearch(st)
 			}
 		})
-		ui.Tabs(c, &a.searchKind, a.t("search.illust"), a.t("search.novel")).Padding(12, 12, 0, 12)
+		ui.Row(c).Padding(t.SpaceM, contentPadding, 0, contentPadding).Children(func() {
+			ui.Segmented(c, &a.searchKind, a.t("search.illust"), a.t("search.novel"))
+		})
 		if !a.searchArmed() {
-			t := c.Theme()
-			ui.Column(c).Grow(1).Center().Children(func() {
-				ui.Text(c, a.t("search.hint")).TextColor(t.TextMuted)
-			})
+			emptyState(c, iconSearch, a.t("search.hint"), "", nil)
 			return
 		}
 		if a.searchKind == searchNovel {
@@ -260,16 +358,16 @@ func (a *App) startSearch(st *browseState) {
 // filterBar draws a feed's filter expression box. Each feed keeps its own
 // expression, so switching tabs or searching again keeps it.
 func (a *App) filterBar(c *ui.Context, st *browseState) {
-	t := c.Theme()
-	ui.Column(c).Gap(4).Padding(12, 12, 0, 12).Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+	t := themeOf(c)
+	ui.Column(c).Gap(t.SpaceXS).Padding(t.SpaceM, contentPadding, 0, contentPadding).Children(func() {
+		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 			ui.TextInput(c, &st.filterText).Grow(1).Placeholder(a.t("filter.placeholder"))
 			if ui.Button(c, a.t("filter.action")).Clicked() {
 				st.applyFilter()
 			}
 		})
 		if st.filterErr != "" {
-			ui.Text(c, a.tf("filter.invalid", st.filterErr)).TextColor(t.Danger)
+			ui.Text(c, a.tf("filter.invalid", st.filterErr)).FontSize(t.TextSmall).TextColor(t.Danger)
 		}
 	})
 }
@@ -320,14 +418,13 @@ func feedTiles(st *browseState, all []pixiv.Illustration, width float64) ([]pixi
 
 // loginPrompt guides a signed-out user to login.
 func (a *App) loginPrompt(c *ui.Context) {
-	t := c.Theme()
-	ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
-		ui.Text(c, a.t("login.prompt")).TextColor(t.TextMuted)
-		if !a.webviewOK {
-			// The window cannot show Pixiv's page, so name the path that works.
-			ui.Text(c, a.t("login.noWebView")).TextColor(t.TextMuted)
-		}
-		if ui.Button(c, a.t("login.title")).Clicked() {
+	hint := a.t("login.promptHint")
+	if !a.webviewOK {
+		// The window cannot show Pixiv's page, so name the path that works.
+		hint = a.t("login.noWebView")
+	}
+	emptyState(c, iconUser, a.t("login.prompt"), hint, func() {
+		if ui.PrimaryButton(c, a.t("login.title")).Clicked() {
 			a.ShowLogin()
 		}
 	})

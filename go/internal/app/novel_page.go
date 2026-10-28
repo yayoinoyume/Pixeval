@@ -149,18 +149,19 @@ func (a *App) novelPage(c *ui.Context) {
 	if v == nil {
 		return
 	}
-	t := c.Theme()
+	t := themeOf(c)
 	s := v.snapshot()
 	title := v.title
 	if title == "" && s.doc != nil {
 		title = s.doc.Title
 	}
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Row(c).Gap(12).Padding(16).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, a.t("common.back")).Clicked() {
+		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceL, contentPadding, 0, contentPadding).
+			AlignItems(ui.Center).Children(func() {
+			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
-			ui.Text(c, title).FontSize(22).Bold().Grow(1).MaxLines(1)
+			ui.Text(c, title).FontSize(t.TextTitle).Bold().TextColor(t.Text).Grow(1).MaxLines(1)
 			if s.err != "" {
 				if ui.Button(c, a.t("common.retry")).Clicked() {
 					a.retryNovel(v)
@@ -171,8 +172,8 @@ func (a *App) novelPage(c *ui.Context) {
 		case s.loading:
 			ui.Column(c).Grow(1).Center().Children(func() { ui.Spinner(c) })
 		case s.err != "":
-			ui.Column(c).Grow(1).Center().Padding(16).Children(func() {
-				ui.Text(c, a.tf("novel.loadFailed", s.err)).TextColor(t.Danger)
+			ui.Column(c).Grow(1).Center().Padding(t.SpaceL).Children(func() {
+				ui.Text(c, a.tf("novel.loadFailed", s.err)).FontSize(t.TextSmall).TextColor(t.Danger)
 			})
 		default:
 			a.novelBody(c, v, s)
@@ -187,12 +188,13 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
 	if doc == nil {
 		return
 	}
+	t := themeOf(c)
 	ui.Scroll(c).Grow(1).TrackScroll(&v.scroll).Children(func() {
 		ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
-			ui.Column(c).MaxWidth(novelTextWidth).Grow(1).Padding(24).Gap(12).Children(func() {
+			ui.Column(c).MaxWidth(novelTextWidth).Grow(1).Padding(t.Space2XL).Gap(t.SpaceL).Children(func() {
 				for _, ch := range doc.Chapters {
 					if ch.Title != "" {
-						ui.Text(c, ch.Title).FontSize(20).Bold()
+						ui.Text(c, ch.Title).FontSize(t.TextTitle).Bold().TextColor(t.Text)
 					}
 					for _, p := range ch.Paragraphs {
 						novelParagraph(c, p)
@@ -210,17 +212,17 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
 // loads, a block while it loads, and a note for an uploaded image, which the
 // app cannot fetch yet.
 func (a *App) novelImage(c *ui.Context, img novel.Image, url string) {
-	t := c.Theme()
+	t := themeOf(c)
 	if img.UploadedID > 0 {
-		ui.Text(c, a.t("novel.imageUnsupported")).FontSize(13).TextColor(t.TextMuted)
+		ui.Text(c, a.t("novel.imageUnsupported")).FontSize(t.TextSmall).TextColor(t.TextMuted)
 		return
 	}
 	if bmp := a.novelImageBitmap(url); bmp != nil {
-		ui.Image(c, bmp).MaxWidth(novelImageWidth).Label(a.t("a11y.novelImage"))
+		ui.Image(c, bmp).MaxWidth(novelImageWidth).Radius(t.RadiusM).Label(a.t("a11y.novelImage"))
 		return
 	}
 	ui.Box(c).FillWidth().MaxWidth(novelImageWidth).Height(novelImageBlock).
-		Radius(8).Background(t.Surface).Label(a.t("a11y.novelImage"))
+		Radius(t.RadiusM).Background(t.SurfaceAlt).Label(a.t("a11y.novelImage"))
 }
 
 // novelImageBitmap returns the image's bitmap, starting its load the first time
@@ -239,7 +241,7 @@ func novelParagraph(c *ui.Context, p novel.Paragraph) {
 	if text == "" {
 		return
 	}
-	t := ui.Text(c, text)
+	t := ui.Text(c, text).LineHeight(1.8)
 	if p.Heading {
 		t = t.Bold()
 	}

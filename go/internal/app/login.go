@@ -93,7 +93,8 @@ func (a *App) ShowLogin() {
 // view builds the sign-in window: the login page, and the fallback of a
 // failed sign-in under it.
 func (l *loginWindow) view(c *ui.Context) {
-	t := c.Theme()
+	l.app.applyTheme(c)
+	t := themeOf(c)
 	l.mu.Lock()
 	busy, errMsg := l.busy, l.errMsg
 	l.mu.Unlock()
@@ -105,19 +106,19 @@ func (l *loginWindow) view(c *ui.Context) {
 		if !busy && errMsg == "" {
 			return
 		}
-		ui.Column(c).Padding(12).Gap(8).Children(func() {
+		ui.Column(c).Padding(t.SpaceM).Gap(t.SpaceS).Children(func() {
 			if busy {
-				ui.Row(c).Gap(8).Children(func() {
+				ui.Row(c).Gap(t.SpaceS).Children(func() {
 					ui.Spinner(c)
 					ui.Text(c, l.app.t("login.busy"))
 				})
 			}
 			if errMsg != "" {
-				ui.Text(c, errMsg).TextColor(t.Danger)
+				ui.Text(c, errMsg).FontSize(t.TextSmall).TextColor(t.Danger)
 			}
 			// A retry or a paste while a token is in flight would race it.
 			if !busy {
-				ui.Row(c).Gap(8).Children(func() {
+				ui.Row(c).Gap(t.SpaceS).Children(func() {
 					// Without a page a retry can only fail again: leave the paste.
 					if l.web != nil && ui.Button(c, l.app.t("common.retry")).Clicked() {
 						l.retry()
@@ -126,7 +127,7 @@ func (l *loginWindow) view(c *ui.Context) {
 						l.submitRefresh()
 					}
 				})
-				ui.Text(c, l.app.t("login.refreshHint")).TextColor(t.TextMuted)
+				ui.Text(c, l.app.t("login.refreshHint")).FontSize(t.TextSmall).TextColor(t.TextMuted)
 				ui.TextInput(c, &l.refresh)
 			}
 		})

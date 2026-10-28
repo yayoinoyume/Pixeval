@@ -90,22 +90,27 @@ func (a *App) seriesPage(c *ui.Context) {
 	if v == nil {
 		return
 	}
-	t := c.Theme()
+	t := themeOf(c)
 	s := v.snapshot()
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Column(c).Padding(16).Gap(6).Children(func() {
-			switch {
-			case s.err != "":
-				ui.Text(c, a.tf("series.loadFailed", s.err)).TextColor(t.Danger)
-			case s.loading:
-				ui.Text(c, a.t("common.loading")).TextColor(t.TextMuted)
-			default:
-				ui.Text(c, s.detail.Title).FontSize(20).Bold().MaxLines(1)
-				if s.detail.Description != "" {
-					ui.Text(c, s.detail.Description).TextColor(t.TextMuted).MaxLines(3)
+		ui.Row(c).Padding(t.SpaceL, contentPadding, 0, contentPadding).Children(func() {
+			ui.Column(c).FillWidth().Padding(t.SpaceL).Gap(t.SpaceXS).
+				Background(t.Surface).Radius(t.RadiusL).Border(1, t.Border).Children(func() {
+				switch {
+				case s.err != "":
+					ui.Text(c, a.tf("series.loadFailed", s.err)).FontSize(t.TextSmall).TextColor(t.Danger)
+				case s.loading:
+					ui.Text(c, a.t("common.loading")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+				default:
+					ui.Text(c, s.detail.Title).FontSize(t.TextTitle).Bold().TextColor(t.Text).MaxLines(1)
+					if s.detail.Description != "" {
+						ui.Text(c, s.detail.Description).FontSize(t.TextSmall).TextColor(t.TextMuted).MaxLines(3)
+					}
+					ui.Row(c).AlignItems(ui.Center).Children(func() {
+						a.subscriptionButton(c, subscription.KindSeries, s.detail.ID, s.detail.Title)
+					})
 				}
-				a.subscriptionButton(c, subscription.KindSeries, s.detail.ID, s.detail.Title)
-			}
+			})
 		})
 		a.browsePage(c, v.feed)
 	})

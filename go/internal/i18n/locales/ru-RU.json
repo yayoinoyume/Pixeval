@@ -13,7 +13,9 @@
     "user": "Пользователь",
     "series": "Серия",
     "novel": "Новелла",
-    "region": "Navigation"
+    "region": "Navigation",
+    "groupBrowse": "Обзор",
+    "groupLibrary": "Библиотека"
   },
   "home": {
     "recommended": "Рекомендации",
@@ -119,7 +121,10 @@
     "installRestart": "Установить и перезапустить",
     "updateInstalling": "Установка обновления",
     "updateCheckFailed": "Не удалось проверить обновления: %s",
-    "updateInstallFailed": "Не удалось установить обновление: %s"
+    "updateInstallFailed": "Не удалось установить обновление: %s",
+    "groupAppearance": "Общие",
+    "groupDownloads": "Загрузки",
+    "groupShortcuts": "Горячие клавиши"
   },
   "history": {
     "empty": "История просмотров пуста",
@@ -137,7 +142,8 @@
     "pageFailed": "Не удалось создать страницу входа",
     "refreshEmpty": "Сначала вставьте токен обновления",
     "saveFailed": "Не удалось сохранить данные входа",
-    "noWebView": "WebView недоступен: войдите с помощью refresh token"
+    "noWebView": "WebView недоступен: войдите с помощью refresh token",
+    "promptHint": "Войдите, чтобы смотреть рекомендации, подписки и рейтинг"
   },
   "user": {
     "open": "Автор",
@@ -158,7 +164,7 @@
     "emptyHint": "Подпишитесь на странице пользователя или серии, чтобы видеть новые работы здесь",
     "kindUser": "Пользователь",
     "kindSeries": "Серия",
-    "rowDetail": "%s · Последняя проверка: %s",
+    "rowDetail": "%s, последняя проверка: %s",
     "never": "никогда",
     "remove": "Удалить",
     "newWorks": "Новых работ: %d",
