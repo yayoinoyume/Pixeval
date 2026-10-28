@@ -35,8 +35,12 @@ type App struct {
 	route   route
 	// viewer is the full-screen illustration viewer, nil while it is closed.
 	viewer *viewerState
-	// home is the recommended feed, search the last search's results.
-	home   *browseState
+	// homeTab is the home feed shown: recommended, following or ranking.
+	homeTab int
+	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
+	// so switching tabs loses nothing.
+	homeFeeds [3]*browseState
+	// search is the last search's results.
 	search *browseState
 	// settings are the user's preferences, loaded at start and saved from the
 	// settings page.
@@ -76,9 +80,9 @@ func New() *App {
 			}
 			return client.RemoveBookmark(ctx, id)
 		},
-		route:  routeHome,
-		home:   newHomeState(client),
-		search: &browseState{},
+		route:     routeHome,
+		homeFeeds: [3]*browseState{{}, {}, {}},
+		search:    &browseState{},
 	}
 }
 
@@ -114,8 +118,6 @@ func (a *App) Start() {
 	// page on every change.
 	a.downloads.OnChange(func() { a.update(func() {}) })
 	go a.downloads.Start(context.Background())
-	// The feeds load once the window runs, not before it can draw them.
-	a.home.arm()
 }
 
 // restoreSession adopts the saved token, refreshing it when expired. It runs
@@ -172,6 +174,9 @@ func (a *App) applySession(tok *pixiv.Token) {
 			a.client.SetToken(tok)
 		}
 		a.setTitle()
+		// A signed-out start never draws the feed, so the home tab it shows
+		// is armed here before the next frame loads it.
+		a.armHome(a.homeTab)
 	})
 }
 

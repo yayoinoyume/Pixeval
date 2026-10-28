@@ -222,3 +222,89 @@ func TestBrowseNoMoreStopsPaging(t *testing.T) {
 		t.Fatalf("end of list shown as an error: %q", v.err)
 	}
 }
+
+// fakeHomeFeed is an armed home feed that counts its calls and returns two
+// works numbered from first.
+func fakeHomeFeed(first int, calls *int, mu *sync.Mutex) *browseState {
+	st := &browseState{}
+	st.setFetch(func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		mu.Lock()
+		*calls = *calls + 1
+		mu.Unlock()
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(first, 2)}, nil
+	})
+	st.arm()
+	return st
+}
+
+// TestHomeTabsLoadTheirOwnFeed checks each home tab loads its own feed and
+// that switching back keeps the pages it already has.
+func TestHomeTabsLoadTheirOwnFeed(t *testing.T) {
+	a := New()
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	a.images = imagex.New(nil, "")
+	var mu sync.Mutex
+	calls := make([]int, 3)
+	a.homeFeeds = [3]*browseState{
+		fakeHomeFeed(0, &calls[0], &mu),
+		fakeHomeFeed(100, &calls[1], &mu),
+		fakeHomeFeed(200, &calls[2], &mu),
+	}
+	tt := ui.NewTester(a.View, 1000, 700)
+	waitBrowse(t, a.homeFeeds[0], "load the recommended feed", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("作品 0") {
+		t.Fatalf("recommended feed not shown: %q", tt.Texts())
+	}
+
+	if err := tt.Click("关注"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.homeTab != 1 {
+		t.Fatalf("homeTab %d, want 1", a.homeTab)
+	}
+	waitBrowse(t, a.homeFeeds[1], "load the following feed", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("作品 100") {
+		t.Fatalf("following feed not shown: %q", tt.Texts())
+	}
+
+	if err := tt.Click("推荐"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("作品 0") {
+		t.Fatalf("recommended feed lost on switch: %q", tt.Texts())
+	}
+	mu.Lock()
+	got := append([]int(nil), calls...)
+	mu.Unlock()
+	if got[0] != 1 || got[1] != 1 || got[2] != 0 {
+		t.Fatalf("fetch calls %v, want [1 1 0]", got)
+	}
+}
+
+// TestHomeFollowingNeedsLogin checks a signed-out user switching to the
+// following tab gets the login prompt and no page is fetched.
+func TestHomeFollowingNeedsLogin(t *testing.T) {
+	a := New()
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("关注"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.homeTab != 1 {
+		t.Fatalf("homeTab %d, want 1", a.homeTab)
+	}
+	if !tt.HasText("登录 Pixiv") {
+		t.Fatalf("login prompt missing: %q", tt.Texts())
+	}
+	if !a.homeFeeds[1].isArmed() {
+		t.Error("following tab not armed on switch")
+	}
+	if v := a.homeFeeds[1].snapshot(); v.started || v.loading || len(v.items) != 0 {
+		t.Fatalf("feed fetched while signed out: %+v", v)
+	}
+	if a.homeFeeds[0].isArmed() {
+		t.Error("recommended tab armed without being drawn")
+	}
+}

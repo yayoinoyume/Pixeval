@@ -68,18 +68,42 @@ type browseState struct {
 	masonry widgets.MasonryState
 }
 
-// newHomeState is the recommended feed. Its fetch reads the cursor under mu,
-// as the load goroutine and the view both reach it.
-func newHomeState(client *pixiv.Client) *browseState {
-	st := &browseState{}
-	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
-		next := st.cursor()
-		if next == "" {
-			return client.Recommended(ctx)
+// The home tabs, in the order ui.Tabs shows them: recommended, following and
+// ranking.
+const (
+	homeTabFollowing = iota + 1
+	homeTabRanking
+)
+
+var homeTabLabels = []string{"推荐", "关注", "排行"}
+
+// armHome sets a home tab's fetch and lets it load, once. The first page is
+// fetched as the tab draws it; a tab already armed keeps its pages and place.
+func (a *App) armHome(tab int) {
+	st := a.homeFeeds[tab]
+	if st.isArmed() {
+		return
+	}
+	st.setFetch(a.homeFetch(st, tab))
+	st.arm()
+}
+
+// homeFetch maps a home tab to its first page. Later pages come from the
+// feed's cursor, which each feed reads under mu.
+func (a *App) homeFetch(st *browseState, tab int) func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+	return func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		if next := st.cursor(); next != "" {
+			return a.client.NextIllustrations(ctx, next)
 		}
-		return client.NextIllustrations(ctx, next)
-	})
-	return st
+		switch tab {
+		case homeTabFollowing:
+			return a.client.Following(ctx)
+		case homeTabRanking:
+			return a.client.Ranking(ctx, pixiv.Day, "")
+		default: // homeTabRecommended
+			return a.client.Recommended(ctx)
+		}
+	}
 }
 
 // cursor is the next page's URL, empty for the first.
