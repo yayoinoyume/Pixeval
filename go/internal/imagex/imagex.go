@@ -4,9 +4,10 @@
 //
 // Loading is asynchronous. Thumb and Original return the bitmap when it is
 // already in memory, and nil while it is being fetched; onReady is called on
-// the loading goroutine once the bitmap is there, and calling Thumb or
-// Original again then returns it. The caller redraws from onReady with
-// Window.Update.
+// the loading goroutine once the load ends, and calling Thumb or Original
+// again then returns the bitmap, or starts the load over after a failure. A
+// failure calls onReady too, so a caller that retries from onReady must rate
+// limit itself. The caller redraws from onReady with Window.Update.
 package imagex
 
 import (
@@ -65,7 +66,8 @@ type cached struct {
 }
 
 // New returns a loader caching in memory and, when diskDir is not empty, on
-// disk under it.
+// disk under it. The loader owns only the files there whose names start with
+// cachePrefix, and eviction leaves every other file alone.
 func New(client *pixiv.Client, diskDir string) *Loader {
 	l := &Loader{
 		dir:       diskDir,
@@ -106,9 +108,13 @@ func (l *Loader) SetDiskLimit(bytes int64) {
 	l.diskMu.Unlock()
 }
 
-// Thumb returns the illustration at key scaled down to fit w×h, never up. It
-// returns nil while the image loads and calls onReady once it is there.
+// Thumb returns the illustration at key scaled down to fit w×h, never up. A
+// w or h of zero or less asks for the original size. It returns nil while the
+// image loads and calls onReady once it is there.
 func (l *Loader) Thumb(key string, w, h int, onReady func()) *ui.Bitmap {
+	if w <= 0 || h <= 0 {
+		return l.Original(key, onReady)
+	}
 	memKey := fmt.Sprintf("%s@%dx%d", key, w, h)
 	return l.bitmap(memKey, key, onReady, func(img image.Image) image.Image {
 		return fit(img, w, h)
@@ -168,13 +174,16 @@ func (l *Loader) load(memKey, url string, scale func(image.Image) image.Image) {
 }
 
 func (l *Loader) decode(memKey, url string, scale func(image.Image) image.Image) {
-	data, err := l.bytes(url)
+	data, fromDisk, err := l.fetch(url)
 	if err != nil {
 		return
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return
+	}
+	if !fromDisk {
+		l.diskPut(url, data)
 	}
 	if scale != nil {
 		img = scale(img)
@@ -183,20 +192,16 @@ func (l *Loader) decode(memKey, url string, scale func(image.Image) image.Image)
 	l.put(memKey, ui.NewBitmap(img), int64(b.Dx())*int64(b.Dy())*4)
 }
 
-// bytes returns the image data from the disk cache, or downloads it and writes
-// it there.
-func (l *Loader) bytes(url string) ([]byte, error) {
+// fetch returns the image data from the disk cache, or downloads it. Only a
+// download is new: the caller caches it once it decoded.
+func (l *Loader) fetch(url string) (data []byte, fromDisk bool, err error) {
 	if data, ok := l.diskGet(url); ok {
-		return data, nil
+		return data, true, nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), downloadTimeout)
 	defer cancel()
-	data, err := l.download(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-	l.diskPut(url, data)
-	return data, nil
+	data, err = l.download(ctx, url)
+	return data, false, err
 }
 
 // put caches a bitmap, replacing the memory key's older one and trimming the
@@ -216,10 +221,12 @@ func (l *Loader) put(memKey string, bmp *ui.Bitmap, size int64) {
 	l.trim()
 }
 
-// trim drops the least recently used bitmaps beyond the budget. l.mu must be
-// held.
+// trim drops the least recently used bitmaps beyond the budget, keeping at
+// least one: a bitmap larger than the whole budget would otherwise be dropped
+// right after it was decoded, and every call would decode it again. l.mu must
+// be held.
 func (l *Loader) trim() {
-	for l.memBytes > l.budget {
+	for l.memBytes > l.budget && l.lru.Len() > 1 {
 		el := l.lru.Back()
 		if el == nil {
 			return

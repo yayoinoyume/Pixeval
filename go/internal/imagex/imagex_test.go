@@ -9,6 +9,7 @@ import (
 	"image/jpeg"
 	"image/png"
 	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -240,6 +241,121 @@ func TestMemoryLRUEvicts(t *testing.T) {
 	}
 	if n := f.calls.Load(); n != 2 {
 		t.Errorf("downloads %d, want 2", n)
+	}
+}
+
+func TestBitmapLargerThanBudgetIsKept(t *testing.T) {
+	f := &fakeDownload{data: map[string][]byte{"u": testJPEG(t, 300, 300)}}
+	l := newTestLoader(t, f)
+	l.SetBudget(1)
+
+	first := thumb(t, l, "u", 0, 0)
+	if w, h := first.Size(); w != 300 || h != 300 {
+		t.Errorf("size %dx%d, want 300x300", w, h)
+	}
+	if bmp := l.Original("u", nil); bmp != first {
+		t.Error("bitmap decoded again, want the one over budget kept")
+	}
+	second := thumb(t, l, "u", 150, 150)
+	if bmp := l.Thumb("u", 150, 150, nil); bmp != second {
+		t.Error("thumb evicted itself, want the newest bitmap kept")
+	}
+	if n := f.calls.Load(); n != 1 {
+		t.Errorf("downloads %d, want 1", n)
+	}
+}
+
+func TestThumbZeroSizeIsOriginal(t *testing.T) {
+	f := &fakeDownload{data: map[string][]byte{"u": testJPEG(t, 320, 240)}}
+	l := newTestLoader(t, f)
+
+	if w, h := thumb(t, l, "u", 0, 0).Size(); w != 320 || h != 240 {
+		t.Errorf("size %dx%d, want 320x240", w, h)
+	}
+	if bmp := l.Original("u", nil); bmp == nil {
+		t.Error("original not cached under the same key")
+	}
+	if n := f.calls.Load(); n != 1 {
+		t.Errorf("downloads %d, want 1", n)
+	}
+}
+
+func TestCorruptImageIsNotCached(t *testing.T) {
+	f := &fakeDownload{data: map[string][]byte{"u": []byte("not an image")}}
+	l := newTestLoader(t, f)
+
+	done := make(chan struct{})
+	l.Original("u", func() { close(done) })
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("load timed out")
+	}
+	if bmp := l.Original("u", nil); bmp != nil {
+		t.Fatal("corrupt image cached a bitmap")
+	}
+	if _, ok := l.diskGet("u"); ok {
+		t.Fatal("corrupt bytes written to the disk cache")
+	}
+
+	f.mu.Lock()
+	f.data["u"] = testPNG(t, 60, 40)
+	f.mu.Unlock()
+	if w, h := thumb(t, l, "u", 0, 0).Size(); w != 60 || h != 40 {
+		t.Errorf("size %dx%d, want 60x40", w, h)
+	}
+}
+
+func TestDiskLRUKeepsNewest(t *testing.T) {
+	f := &fakeDownload{data: map[string][]byte{
+		"u1": testJPEG(t, 120, 120),
+		"u2": testJPEG(t, 120, 120),
+		"u3": testJPEG(t, 120, 120),
+	}}
+	l := newTestLoader(t, f)
+	for _, key := range []string{"u1", "u2", "u3"} {
+		thumb(t, l, key, 60, 60)
+	}
+	now := time.Now()
+	for i, key := range []string{"u1", "u2", "u3"} {
+		at := now.Add(time.Duration(i-3) * time.Hour)
+		if err := os.Chtimes(l.diskPath(key), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	info, err := os.Stat(l.diskPath("u3"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Room for two of the three files.
+	l.SetDiskLimit(info.Size() * 2)
+
+	if _, err := os.Stat(l.diskPath("u1")); !os.IsNotExist(err) {
+		t.Errorf("u1: err %v, want the least recently used file gone", err)
+	}
+	for _, key := range []string{"u2", "u3"} {
+		if _, err := os.Stat(l.diskPath(key)); err != nil {
+			t.Errorf("%s: %v, want it kept", key, err)
+		}
+	}
+}
+
+func TestDiskEvictionLeavesOtherFiles(t *testing.T) {
+	f := &fakeDownload{data: map[string][]byte{"u": testJPEG(t, 120, 120)}}
+	l := newTestLoader(t, f)
+	l.SetDiskLimit(1)
+
+	other := filepath.Join(l.dir, "notes.txt")
+	if err := os.WriteFile(other, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	thumb(t, l, "u", 60, 60)
+
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("other file: %v, want it left alone", err)
+	}
+	if _, ok := l.diskGet("u"); ok {
+		t.Error("cache file kept, want it evicted")
 	}
 }
 

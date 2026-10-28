@@ -10,10 +10,14 @@ import (
 	"time"
 )
 
+// cachePrefix marks the files in the cache directory that the loader owns;
+// eviction removes only these and never touches a file beside them.
+const cachePrefix = "imagex-"
+
 // diskPath is where an image's bytes are cached, named by their URL's hash.
 func (l *Loader) diskPath(url string) string {
 	sum := sha256.Sum256([]byte(url))
-	return filepath.Join(l.dir, hex.EncodeToString(sum[:]))
+	return filepath.Join(l.dir, cachePrefix+hex.EncodeToString(sum[:]))
 }
 
 // diskGet reads cached bytes and marks the file recently used, as eviction
@@ -80,6 +84,9 @@ func (l *Loader) evictDisk() {
 			continue
 		}
 		path := filepath.Join(l.dir, e.Name())
+		if !strings.HasPrefix(e.Name(), cachePrefix) {
+			continue
+		}
 		if strings.HasSuffix(e.Name(), ".tmp") {
 			if time.Since(info.ModTime()) > time.Hour {
 				os.Remove(path)
