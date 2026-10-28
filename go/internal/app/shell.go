@@ -71,6 +71,11 @@ func (a *App) header(c *ui.Context) {
 }
 
 func (a *App) page(c *ui.Context) {
+	// The viewer covers the page under it.
+	if a.viewer != nil {
+		a.viewerPage(c)
+		return
+	}
 	switch a.route {
 	case routeHome:
 		a.homePage(c)

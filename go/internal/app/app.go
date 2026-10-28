@@ -26,6 +26,8 @@ type App struct {
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
 	route   route
+	// viewer is the full-screen illustration viewer, nil while it is closed.
+	viewer *viewerState
 	// home is the recommended feed, search the last search's results.
 	home   *browseState
 	search *browseState
