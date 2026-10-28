@@ -19,7 +19,7 @@ const browseTimeout = 30 * time.Second
 
 const (
 	cardWidth   = 240
-	cardGap     = 12
+	cardGap     = 16
 	coverWidth  = 480
 	coverHeight = 720
 )
@@ -314,7 +314,7 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 	items, tiles := feedTiles(st, v.items, v.tiles, width, textHeight)
 	switch {
 	case len(items) > 0:
-		ui.Column(c).Grow(1).Padding(t.SpaceL, contentPadding, contentPadding, contentPadding).Children(func() {
+		ui.Column(c).Grow(1).Padding(t.SpaceM, contentPadding, contentPadding, contentPadding).Children(func() {
 			widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
 				a.browseCard(c, st, items, i)
 			})
@@ -332,8 +332,8 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 }
 
 // browseCard draws one tile: the cover, its title and the author. A cover not
-// loaded yet, or one that failed, is a plain block. The card lifts its border
-// and shadow when the pointer is over it.
+// loaded yet, or one that failed, is a plain tonal block. The card takes a
+// higher container and a soft shadow when the pointer is over it.
 func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustration, i int) {
 	work := items[i]
 	key := work.ThumbURL()
@@ -361,8 +361,8 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 		}
 	})
 	card.Children(func() {
-		ui.Column(c).Padding(t.SpaceS, t.SpaceM, t.SpaceM, t.SpaceM).Gap(2).Children(func() {
-			ui.Text(c, work.Title).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(1)
+		ui.Column(c).Padding(t.SpaceM).Gap(2).Children(func() {
+			ui.Text(c, work.Title).FontSize(t.TextSmall).FontWeight(600).TextColor(t.Text).MaxLines(1)
 			ui.Text(c, work.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 		})
 	})

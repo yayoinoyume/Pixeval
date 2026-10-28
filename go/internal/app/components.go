@@ -13,7 +13,7 @@ import (
 // technology.
 func iconButton(c *ui.Context, glyph *ui.SVG, label string, size float32, fg, hover ui.Color) ui.Element {
 	t := themeOf(c)
-	b := ui.ButtonBase(c).Size(size, size).Radius(t.RadiusS).Label(label).Tooltip(label)
+	b := ui.ButtonBase(c).Size(size, size).Radius(t.RadiusFull).Label(label).Tooltip(label)
 	if b.Hovered() {
 		b = b.Background(hover)
 	}
@@ -27,36 +27,40 @@ func iconButton(c *ui.Context, glyph *ui.SVG, label string, size float32, fg, ho
 // current text scale: the two lines, their gap and the card's padding, plus a
 // little slack for line metrics.
 func cardTextHeight(t tokens) float64 {
-	return float64(t.SpaceS+t.SpaceM+2) + float64(t.TextSmall+t.TextTiny)*1.4 + 4
+	return float64(t.SpaceM*2+2) + float64(t.TextSmall+t.TextTiny)*1.4 + 4
 }
 
 // cardShell is the frame shared by the work, novel and history cards: a
-// surface card that lifts its border and shadow when the pointer is over it.
-// It returns the card and its cover box; the caller adds the cover's contents,
-// the text block, and the card's label and click.
+// tonal surface that takes a higher container and a soft shadow when the
+// pointer is over it. It returns the card and its cover box; the caller adds
+// the cover's contents, the text block, and the card's label and click.
 func cardShell(c *ui.Context) (ui.Element, *ui.Element) {
 	t := themeOf(c)
-	card := ui.Column(c).Background(t.Surface).Radius(t.RadiusL).
-		Border(1, t.Border).Clip()
+	card := ui.Column(c).Background(t.SurfaceContainerLow).Radius(t.RadiusL).
+		Border(1, t.OutlineVariant).Clip()
 	if card.Hovered() {
-		card = card.Border(1, t.Accent).Shadow(0, 8, 24, 0, t.Shadow)
+		card = card.Background(t.SurfaceContainerHigh).Border(0, ui.Color{}).
+			Shadow(0, 6, 18, 0, t.Shadow)
 	}
 	var cover ui.Element
 	card.Children(func() {
-		cover = ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceAlt)
+		cover = ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceContainer)
 	})
 	return card, &cover
 }
 
 // emptyState is the one shape every quiet page uses: a centered card with a
-// large glyph, a short title, a line of explanation and an optional action.
+// glyph in a tonal circle, a short title, a line of explanation and an
+// optional action.
 func emptyState(c *ui.Context, glyph *ui.SVG, title, hint string, action func()) {
 	t := themeOf(c)
 	ui.Column(c).Grow(1).Center().Padding(t.Space2XL).Children(func() {
 		ui.Column(c).Width(460).MaxWidthPercent(100).Padding(t.Space2XL).AlignItems(ui.Center).
-			Background(t.Surface).Radius(t.RadiusXL).Border(1, t.Border).Children(func() {
-			ui.Icon(c, glyph).Size(48, 48).TextColor(t.TextMuted)
-			ui.Text(c, title).FontSize(t.TextDisplay).Bold().TextColor(t.Text).
+			Background(t.SurfaceContainerLow).Radius(t.RadiusXL).Children(func() {
+			ui.Box(c).Size(80, 80).Radius(t.RadiusFull).Background(t.PrimaryContainer).Center().Children(func() {
+				ui.Icon(c, glyph).Size(36, 36).TextColor(t.Accent)
+			})
+			ui.Text(c, title).FontSize(t.TextTitle).FontWeight(600).TextColor(t.Text).
 				TextAlign(ui.Center).Padding(t.SpaceL, 0, 0, 0)
 			if hint != "" {
 				ui.Text(c, hint).FontSize(t.TextSmall).TextColor(t.TextMuted).
@@ -70,13 +74,13 @@ func emptyState(c *ui.Context, glyph *ui.SVG, title, hint string, action func())
 }
 
 // skeletonCard is one placeholder tile of a loading feed: a cover and the two
-// lines of text under it.
+// lines of text under it, in the card's tonal colors.
 func skeletonCard(c *ui.Context, width float32) {
 	t := themeOf(c)
 	ui.Column(c).Width(width).Gap(t.SpaceS).Children(func() {
-		ui.Box(c).FillWidth().Height(width * 4 / 3).Radius(t.RadiusL).Background(t.SurfaceAlt)
-		ui.Box(c).FillWidth().Height(12).Radius(t.RadiusS).Background(t.SurfaceAlt)
-		ui.Box(c).Width(width * 0.45).Height(10).Radius(t.RadiusS).Background(t.SurfaceAlt)
+		ui.Box(c).FillWidth().Height(width * 4 / 3).Radius(t.RadiusL).Background(t.SurfaceContainer)
+		ui.Box(c).FillWidth().Height(12).Radius(t.RadiusS).Background(t.SurfaceContainerHigh)
+		ui.Box(c).Width(width * 0.45).Height(10).Radius(t.RadiusS).Background(t.SurfaceContainerHigh)
 	})
 }
 
