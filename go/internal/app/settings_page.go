@@ -302,6 +302,8 @@ func (a *App) saveSettings() {
 		a.settingsSaved = make(chan error, 1)
 	}
 	s := *a.settings
+	// The R18 filter follows the switch that was just saved.
+	a.client.SetAllowR18(s.ShowR18)
 	dirLabel := a.t("settings.downloadDir")
 	go func() {
 		if dir := s.DownloadDir; dir != "" {

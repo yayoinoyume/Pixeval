@@ -98,7 +98,7 @@
     "downloadDirHint": "Empty means the default folder, created when missing",
     "concurrency": "Download concurrency",
     "showR18": "Show R18",
-    "showR18Hint": "The R18 filter arrives in M2",
+    "showR18Hint": "When off, recommendations, following, ranking and search leave R18 works out",
     "cardWidth": "Masonry column width",
     "language": "Language",
     "langSystem": "Follow system",

@@ -26,6 +26,10 @@ type Client struct {
 	token    *Token
 	onLimit  func(retryAfter time.Duration)
 	backoff  []time.Duration
+
+	// AllowR18 asks Pixiv for every work instead of filtering R18 out. It is
+	// set through SetAllowR18 and read through filterParam, both under mu.
+	AllowR18 bool
 }
 
 func NewClient() *Client {
@@ -52,6 +56,31 @@ func (c *Client) Token() *Token {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.token
+}
+
+// SetAllowR18 turns the R18 filter off, so Pixiv returns every work.
+func (c *Client) SetAllowR18(allow bool) {
+	c.mu.Lock()
+	c.AllowR18 = allow
+	c.mu.Unlock()
+}
+
+// filterParam is the filter the app API wants for R18 works, and empty when
+// the user allows them.
+func (c *Client) filterParam() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.AllowR18 {
+		return ""
+	}
+	return "for_android"
+}
+
+// setFilter adds the R18 filter to q unless the user allows R18 works.
+func (c *Client) setFilter(q url.Values) {
+	if f := c.filterParam(); f != "" {
+		q.Set("filter", f)
+	}
 }
 
 // SetCooldown sets the minimum interval between app API requests.
