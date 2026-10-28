@@ -125,6 +125,7 @@
     "loadFailed": "Cannot load the series: %s"
   },
   "novel": {
-    "loadFailed": "Cannot load the novel: %s"
+    "loadFailed": "Cannot load the novel: %s",
+    "imageUnsupported": "Inline images are not supported yet"
   }
 }

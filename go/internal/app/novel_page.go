@@ -10,10 +10,12 @@ import (
 	"github.com/yayoinoyume/pixeval-go/internal/novel"
 )
 
-// The reading column and the widest a body image may draw.
+// The reading column, the widest a body image may draw and the height of the
+// block that stands in for an image still loading.
 const (
 	novelTextWidth  = 760
 	novelImageWidth = 680
+	novelImageBlock = 120
 )
 
 // novelViewState is one open novel. The view runs on the main thread; the load
@@ -27,19 +29,29 @@ type novelViewState struct {
 	doc     *novel.Document
 	loading bool
 	err     string
+	// imageURLs are the body images whose original URL is known, and
+	// imageLoading marks the illustration lookups in flight, so one image is
+	// looked up once.
+	imageURLs    map[novel.Image]string
+	imageLoading map[novel.Image]bool
 }
 
 // novelPageView is what the novel page draws.
 type novelPageView struct {
-	doc     *novel.Document
-	loading bool
-	err     string
+	doc       *novel.Document
+	loading   bool
+	err       string
+	imageURLs map[novel.Image]string
 }
 
 func (v *novelViewState) snapshot() novelPageView {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return novelPageView{doc: v.doc, loading: v.loading, err: v.err}
+	urls := make(map[novel.Image]string, len(v.imageURLs))
+	for img, url := range v.imageURLs {
+		urls[img] = url
+	}
+	return novelPageView{doc: v.doc, loading: v.loading, err: v.err, imageURLs: urls}
 }
 
 // openNovel shows the novel's reading page: the body loads off the main
@@ -48,7 +60,13 @@ func (a *App) openNovel(novelID int64, title string) {
 	if novelID <= 0 {
 		return
 	}
-	v := &novelViewState{novelID: novelID, title: title, loading: true}
+	v := &novelViewState{
+		novelID:      novelID,
+		title:        title,
+		loading:      true,
+		imageURLs:    map[novel.Image]string{},
+		imageLoading: map[novel.Image]bool{},
+	}
 	a.backRoute, a.route, a.novelView = a.route, routeNovel, v
 	go a.loadNovel(v)
 }
@@ -71,6 +89,45 @@ func (a *App) loadNovel(v *novelViewState) {
 			return
 		}
 		v.doc = doc
+		go a.loadNovelImages(v, doc.Images)
+	})
+}
+
+// loadNovelImages looks up the original URL of every body image that is a
+// Pixiv illustration, one goroutine each, off the main thread.
+func (a *App) loadNovelImages(v *novelViewState, images []novel.Image) {
+	for _, img := range images {
+		if img.IllustID <= 0 || a.illustrationFn == nil {
+			continue
+		}
+		v.mu.Lock()
+		if _, have := v.imageURLs[img]; have || v.imageLoading[img] {
+			v.mu.Unlock()
+			continue
+		}
+		v.imageLoading[img] = true
+		v.mu.Unlock()
+		go a.loadNovelImage(v, img)
+	}
+}
+
+// loadNovelImage fetches one image's illustration and keeps its page URL. The
+// page is 1-based; PageURL takes a 0-based index.
+func (a *App) loadNovelImage(v *novelViewState, img novel.Image) {
+	ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
+	defer cancel()
+	work, err := a.illustrationFn(ctx, img.IllustID)
+	var url string
+	if err == nil {
+		url = work.PageURL(img.Page - 1)
+	}
+	a.update(func() {
+		v.mu.Lock()
+		defer v.mu.Unlock()
+		delete(v.imageLoading, img)
+		if url != "" {
+			v.imageURLs[img] = url
+		}
 	})
 }
 
@@ -118,14 +175,15 @@ func (a *App) novelPage(c *ui.Context) {
 				ui.Text(c, a.tf("novel.loadFailed", s.err)).TextColor(t.Danger)
 			})
 		default:
-			a.novelBody(c, v, s.doc)
+			a.novelBody(c, v, s)
 		}
 	})
 }
 
 // novelBody draws the chapters and paragraphs, with the body images after
 // them.
-func (a *App) novelBody(c *ui.Context, v *novelViewState, doc *novel.Document) {
+func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
+	doc := s.doc
 	if doc == nil {
 		return
 	}
@@ -140,11 +198,38 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, doc *novel.Document) {
 						novelParagraph(c, p)
 					}
 				}
-				// TODO(M2): body images are novel.Image{IllustID, Page}; drawing
-				// them needs the illustration detail for each ID first.
+				for _, img := range doc.Images {
+					a.novelImage(c, img, s.imageURLs[img])
+				}
 			})
 		})
 	})
+}
+
+// novelImage draws one body image in place of its marker: the picture once it
+// loads, a block while it loads, and a note for an uploaded image, which the
+// app cannot fetch yet.
+func (a *App) novelImage(c *ui.Context, img novel.Image, url string) {
+	t := c.Theme()
+	if img.UploadedID > 0 {
+		ui.Text(c, a.t("novel.imageUnsupported")).FontSize(13).TextColor(t.TextMuted)
+		return
+	}
+	if bmp := a.novelImageBitmap(url); bmp != nil {
+		ui.Image(c, bmp).MaxWidth(novelImageWidth)
+		return
+	}
+	ui.Box(c).FillWidth().MaxWidth(novelImageWidth).Height(novelImageBlock).
+		Radius(8).Background(t.Surface)
+}
+
+// novelImageBitmap returns the image's bitmap, starting its load the first time
+// and asking for a redraw when it lands.
+func (a *App) novelImageBitmap(url string) *ui.Bitmap {
+	if url == "" {
+		return nil
+	}
+	return a.images.Original(url, func() { a.update(func() {}) })
 }
 
 // novelParagraph draws one paragraph, bold when it is a heading, with its ruby

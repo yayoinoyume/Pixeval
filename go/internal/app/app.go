@@ -82,6 +82,9 @@ type App struct {
 	// novelContent fetches a novel body off the main thread; tests replace it
 	// to avoid the network.
 	novelContent func(ctx context.Context, novelID int64) (string, error)
+	// illustrationFn fetches one work's detail, which carries a novel body
+	// image's URL; tests replace it to avoid the network.
+	illustrationFn func(ctx context.Context, id int64) (*pixiv.Illustration, error)
 	// notice is a message a background task left for the next frame to show.
 	notice string
 }
@@ -114,6 +117,7 @@ func New() *App {
 		fetchCommentPage: client.Comments,
 		addCommentFn:     client.AddComment,
 		novelContent:     client.NovelContent,
+		illustrationFn:   client.Illustration,
 		route:            routeHome,
 		homeFeeds:        newHomeFeeds(),
 		search:           &browseState{},
