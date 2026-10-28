@@ -9,6 +9,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/filter"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 	"github.com/yayoinoyume/pixeval-go/internal/ui/widgets"
 )
@@ -63,6 +64,13 @@ type browseState struct {
 	// the first submitted word for search.
 	query string
 	armed bool
+
+	// filterText is the expression being typed, filterExpr the one applied
+	// (nil shows every work) and filterErr why the last apply failed. The
+	// view owns these three: only the main thread reads or writes them.
+	filterText string
+	filterExpr filter.Expr
+	filterErr  string
 
 	// masonry is the feed's place, touched only by the view.
 	masonry widgets.MasonryState
@@ -299,6 +307,7 @@ func (a *App) imageReady(st *browseState, key string) func() {
 // browsePage draws a feed, and loads its next page once it is at the end.
 func (a *App) browsePage(c *ui.Context, st *browseState) {
 	t := c.Theme()
+	a.filterBar(c, st)
 	v := st.snapshot()
 	if v.err != "" {
 		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
@@ -312,7 +321,9 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 			return
 		}
 	}
-	if len(v.items) == 0 {
+	width := a.masonryWidth()
+	items, tiles := feedTiles(st, v.items, width)
+	if len(items) == 0 {
 		msg := a.t("common.noWorks")
 		if !v.started {
 			msg = a.t("common.loading")
@@ -321,20 +332,13 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 			ui.Text(c, msg).TextColor(t.TextMuted)
 		})
 	} else {
-		width := a.masonryWidth()
-		tiles := v.tiles
-		if width != st.tilesWidth {
-			st.tilesWidth = width
-			tiles = make([]widgets.MasonryItem, len(v.items))
-			for i, w := range v.items {
-				tiles[i] = widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)}
-			}
-		}
 		widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
-			a.browseCard(c, st, v.items, i)
+			a.browseCard(c, st, items, i)
 		})
 	}
-	if st.canLoad() && (len(v.items) == 0 || st.masonry.AtEnd()) {
+	// A filtered feed is not paged on past its first page: a strict expression
+	// would fetch page after page looking for a match that is not in them.
+	if st.canLoad() && (len(v.items) == 0 || st.filterExpr == nil && st.masonry.AtEnd()) {
 		a.loadMore(st)
 	}
 }

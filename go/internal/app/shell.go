@@ -1,7 +1,13 @@
 package app
 
 import (
+	"strings"
+
 	"github.com/egoist/mygo/ui"
+
+	"github.com/yayoinoyume/pixeval-go/internal/filter"
+	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
+	"github.com/yayoinoyume/pixeval-go/internal/ui/widgets"
 )
 
 // route is the page the shell shows.
@@ -143,6 +149,67 @@ func (a *App) homePage(c *ui.Context) {
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		a.browsePage(c, a.homeFeeds[a.homeTab])
 	})
+}
+
+// filterBar draws a feed's filter expression box. Each feed keeps its own
+// expression, so switching tabs or searching again keeps it.
+func (a *App) filterBar(c *ui.Context, st *browseState) {
+	t := c.Theme()
+	ui.Column(c).Gap(4).Padding(12, 12, 0, 12).Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+			ui.TextInput(c, &st.filterText).Grow(1).Placeholder(a.t("filter.placeholder"))
+			if ui.Button(c, a.t("filter.action")).Clicked() {
+				st.applyFilter()
+			}
+		})
+		if st.filterErr != "" {
+			ui.Text(c, a.tf("filter.invalid", st.filterErr)).TextColor(t.Danger)
+		}
+	})
+}
+
+// applyFilter shows only the works the box's expression passes; an empty
+// expression shows every work again.
+func (st *browseState) applyFilter() {
+	text := strings.TrimSpace(st.filterText)
+	var expr filter.Expr
+	if text != "" {
+		parsed, err := filter.Parse(text)
+		if err != nil {
+			st.filterErr = err.Error()
+			return
+		}
+		expr = parsed
+	}
+	st.filterErr = ""
+	st.filterExpr = expr
+	// The place and the tiles were laid out for the works shown until now.
+	st.masonry = widgets.MasonryState{}
+	st.tilesWidth = 0
+}
+
+// feedTiles returns the works a feed draws and the tiles they draw as: the
+// ones its applied filter passes, or all of them. The tiles are built again
+// while a filter is applied, since the passing set grows as pages load.
+func feedTiles(st *browseState, all []pixiv.Illustration, width float64) ([]pixiv.Illustration, []widgets.MasonryItem) {
+	items := all
+	if st.filterExpr != nil {
+		items = make([]pixiv.Illustration, 0, len(all))
+		for i := range all {
+			if st.filterExpr.Match(&all[i]) {
+				items = append(items, all[i])
+			}
+		}
+	}
+	tiles := st.tiles
+	if st.filterExpr != nil || width != st.tilesWidth {
+		st.tilesWidth = width
+		tiles = make([]widgets.MasonryItem, len(items))
+		for i, w := range items {
+			tiles[i] = widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)}
+		}
+	}
+	return items, tiles
 }
 
 // loginPrompt guides a signed-out user to login.

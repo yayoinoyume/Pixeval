@@ -148,5 +148,10 @@
   "novel": {
     "loadFailed": "Cannot load the novel: %s",
     "imageUnsupported": "Inline images are not supported yet"
+  },
+  "filter": {
+    "placeholder": "Filter works, e.g. bookmarks>100",
+    "action": "Apply",
+    "invalid": "Invalid filter: %s"
   }
 }
