@@ -127,6 +127,19 @@ func (l *Loader) Original(key string, onReady func()) *ui.Bitmap {
 	return l.bitmap(key+"@original", key, onReady, nil)
 }
 
+// Cached returns the original of key already decoded in memory, without
+// starting a load. It is nil while the image loads and after a failed load.
+func (l *Loader) Cached(key string) *ui.Bitmap {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	el, ok := l.mem[key+"@original"]
+	if !ok {
+		return nil
+	}
+	l.lru.MoveToFront(el)
+	return el.Value.(*cached).bmp
+}
+
 // bitmap returns the cached bitmap of memKey, or starts loading it and returns
 // nil. One load per memory key runs at a time; callers that arrive meanwhile
 // wait for it.
