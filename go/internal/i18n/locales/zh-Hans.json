@@ -148,5 +148,10 @@
   "novel": {
     "loadFailed": "加载小说失败：%s",
     "imageUnsupported": "正文图片暂不支持"
+  },
+  "filter": {
+    "placeholder": "过滤表达式，如 bookmarks>100",
+    "action": "应用",
+    "invalid": "过滤表达式无效：%s"
   }
 }

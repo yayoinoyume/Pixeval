@@ -333,3 +333,94 @@ func TestLoginArmsHomeFeed(t *testing.T) {
 		t.Fatalf("feed fetched before it is drawn: %+v", v)
 	}
 }
+
+// filterWorks is three works, the second one's bookmarks above what the filter
+// tests ask for.
+func filterWorks() []pixiv.Illustration {
+	works := fakeWorks(0, 3)
+	works[1].TotalBookmarks = 500
+	return works
+}
+
+// newFilterFeed is an app drawing a loaded feed of filterWorks, filter box and
+// all, without images or a network.
+func newFilterFeed(t *testing.T) (*App, *browseState, *ui.Tester) {
+	t.Helper()
+	st := &browseState{fetch: func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: filterWorks()}, nil
+	}}
+	a, tt := newBrowseTest(st)
+	waitBrowse(t, st, "load", func(v browseView) bool { return len(v.items) == 3 })
+	tt.Frame()
+	return a, st, tt
+}
+
+// runFilter types expr in the box and clicks apply.
+func runFilter(t *testing.T, st *browseState, tt *ui.Tester, expr string) {
+	t.Helper()
+	st.filterText = expr
+	if err := tt.Click("应用"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+}
+
+// checkShown checks the feed draws exactly the works wanted, of the three
+// filterWorks made.
+func checkShown(t *testing.T, tt *ui.Tester, want ...string) {
+	t.Helper()
+	shown := map[string]bool{}
+	for _, title := range want {
+		shown[title] = true
+	}
+	for n := 0; n < 3; n++ {
+		title := fmt.Sprintf("作品 %d", n)
+		if tt.HasText(title) != shown[title] {
+			t.Errorf("%s shown %v, want %v: %q", title, !shown[title], shown[title], tt.Texts())
+		}
+	}
+}
+
+// TestFilterShowsMatchingWorks checks an applied expression leaves the works
+// it passes only, and that a tile still opens the work it shows.
+func TestFilterShowsMatchingWorks(t *testing.T) {
+	a, st, tt := newFilterFeed(t)
+	runFilter(t, st, tt, "bookmarks>100")
+	if st.filterErr != "" {
+		t.Fatalf("filterErr %q", st.filterErr)
+	}
+	checkShown(t, tt, "作品 1")
+	if err := tt.Click("作品 1"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.viewer == nil || a.viewer.work.ID != 1 {
+		t.Fatalf("filtered tile did not open work 1: %+v", a.viewer)
+	}
+}
+
+// TestFilterErrorKeepsList checks a malformed expression shows why and leaves
+// the works shown as they were.
+func TestFilterErrorKeepsList(t *testing.T) {
+	_, st, tt := newFilterFeed(t)
+	runFilter(t, st, tt, "bookmarks>")
+	if st.filterErr == "" || st.filterExpr != nil {
+		t.Fatalf("malformed expression applied: expr=%v err=%q", st.filterExpr, st.filterErr)
+	}
+	if !tt.HasText("过滤表达式无效") {
+		t.Errorf("error not shown: %q", tt.Texts())
+	}
+	checkShown(t, tt, "作品 0", "作品 1", "作品 2")
+}
+
+// TestFilterClearedRestoresList checks an empty expression shows every work
+// again.
+func TestFilterClearedRestoresList(t *testing.T) {
+	_, st, tt := newFilterFeed(t)
+	runFilter(t, st, tt, "bookmarks>100")
+	checkShown(t, tt, "作品 1")
+	runFilter(t, st, tt, "")
+	if st.filterExpr != nil || st.filterErr != "" {
+		t.Fatalf("cleared filter kept: expr=%v err=%q", st.filterExpr, st.filterErr)
+	}
+	checkShown(t, tt, "作品 0", "作品 1", "作品 2")
+}

@@ -36,6 +36,9 @@ type commentState struct {
 	loading bool
 	sending bool
 	err     string
+	// sentDraft is the text a send posted, written off the main thread. The
+	// panel clears the composer on the next frame, where draft is its own.
+	sentDraft string
 	// started is set once a page loaded, so an empty next ends the list
 	// instead of opening the panel on the first page again.
 	started bool
@@ -183,19 +186,26 @@ func (a *App) submitComment(st *commentState) {
 		a.update(func() {
 			st.mu.Lock()
 			st.sending = false
+			if err == nil {
+				st.sentDraft = draft
+			}
 			st.mu.Unlock()
 			if err != nil {
 				a.notice = a.tf("comments.sendFailed", err.Error())
 				return
 			}
-			// Clear only the text that was sent: anything typed during the
-			// send stays in the composer.
-			if st.draft == draft {
-				st.draft, st.replyTo = "", nil
-			}
 			a.loadComments(st, true)
 		})
 	}()
+}
+
+// takeSentDraft returns the text of the send that finished, once.
+func (st *commentState) takeSentDraft() (string, bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	sent := st.sentDraft
+	st.sentDraft = ""
+	return sent, sent != ""
 }
 
 func (st *commentState) retry() {
@@ -208,6 +218,11 @@ func (st *commentState) retry() {
 // scrollable list, and the composer.
 func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 	t := c.Theme()
+	// The composer is edited on the main thread only: a send leaves the text
+	// it posted here, and this frame clears it if it is still what was sent.
+	if sent, ok := st.takeSentDraft(); ok && st.draft == sent {
+		st.draft, st.replyTo = "", nil
+	}
 	v := st.snapshot()
 	ui.Column(c).Width(commentsWidth).Shrink(0).FillHeight().
 		Background(t.Surface).BorderWidth(0, 0, 0, 1).BorderColor(t.Border).Children(func() {
