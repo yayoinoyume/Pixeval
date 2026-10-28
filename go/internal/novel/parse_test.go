@@ -1,35 +1,29 @@
 package novel
 
 import (
-	"strings"
+	"errors"
 	"testing"
 )
 
-const twoChapters = `<!DOCTYPE html>
-<html><head><title>ignored</title></head>
-<body>
-<h1>  夜の  図書館 </h1>
-<div class="_chapter">第一章 出会い</div>
-<p>　静かな<ruby><rb>図書館</rb><rt>としょかん</rt></ruby>で、少女は本を読んでいた。</p>
-<p>一行目<br>二行目　　続き</p>
-<p> &amp; 記号 &lt;タグ&gt; </p>
-<p><img src="https://i.pximg.net/novel/1.png" alt=""></p>
-<p></p>
-<h2>第二章 別れ</h2>
-<p>同じ<img src="https://i.pximg.net/novel/1.png">画像と<img src="https://i.pximg.net/novel/2.png">。</p>
-<h4>小見出し</h4>
-</body></html>`
+const body = `[chapter:第一章 出会い]
+　静かな[[rb:図書館>としょかん]]で、少女は本を読んでいた。
+一行目
+二行目
+[pixivimage:12345678-2]
+[newpage]
+続きの段落
+[chapter:第二章 別れ]
+同じ[pixivimage:12345678-2]画像と[pixivimage:87654321]。
+[uploadedimage:555]
+`
 
 func TestParseChapters(t *testing.T) {
-	doc, err := Parse(twoChapters)
+	doc, err := Parse(body)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	if doc.Title != "夜の 図書館" {
-		t.Errorf("Title = %q", doc.Title)
-	}
 	if len(doc.Chapters) != 2 {
-		t.Fatalf("chapters = %d, want 2", len(doc.Chapters))
+		t.Fatalf("chapters = %d, want 2: %+v", len(doc.Chapters), doc.Chapters)
 	}
 	if got := doc.Chapters[0].Title; got != "第一章 出会い" {
 		t.Errorf("chapter 1 title = %q", got)
@@ -39,15 +33,16 @@ func TestParseChapters(t *testing.T) {
 	}
 }
 
-func TestParseParagraphText(t *testing.T) {
-	doc, err := Parse(twoChapters)
+func TestParseParagraphs(t *testing.T) {
+	doc, err := Parse(body)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	want := []string{
 		"静かな図書館で、少女は本を読んでいた。",
-		"一行目\n二行目 続き",
-		"& 記号 <タグ>",
+		"一行目",
+		"二行目",
+		"続きの段落",
 	}
 	got := doc.Chapters[0].Paragraphs
 	if len(got) != len(want) {
@@ -55,57 +50,62 @@ func TestParseParagraphText(t *testing.T) {
 	}
 	for i, w := range want {
 		if got[i].Text != w {
-			t.Errorf("paragraph %d text = %q, want %q", i, got[i].Text, w)
+			t.Errorf("paragraph %d = %q, want %q", i, got[i].Text, w)
 		}
 	}
-
 	second := doc.Chapters[1].Paragraphs
-	if len(second) != 2 {
-		t.Fatalf("chapter 2 paragraphs = %d, want 2: %+v", len(second), second)
-	}
-	if !second[1].Heading || second[1].Text != "小見出し" {
-		t.Errorf("heading paragraph = %+v", second[1])
+	if len(second) != 1 || second[0].Text != "同じ画像と。" {
+		t.Errorf("chapter 2 paragraphs = %+v", second)
 	}
 }
 
 func TestParseRuby(t *testing.T) {
-	doc, err := Parse(twoChapters)
+	doc, err := Parse(body)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	ruby := doc.Chapters[0].Paragraphs[0].Ruby
-	want := []Ruby{{Base: "図書館", Text: "としょかん"}}
-	if len(ruby) != len(want) {
-		t.Fatalf("ruby = %+v, want %+v", ruby, want)
-	}
-	for i := range want {
-		if ruby[i] != want[i] {
-			t.Errorf("ruby %d = %+v, want %+v", i, ruby[i], want[i])
-		}
+	if len(ruby) != 1 || ruby[0] != (Ruby{Base: "図書館", Text: "としょかん"}) {
+		t.Fatalf("ruby = %+v", ruby)
 	}
 	if got := doc.Chapters[0].Paragraphs[1].Ruby; len(got) != 0 {
 		t.Errorf("prose paragraph has ruby %+v", got)
 	}
 }
 
-func TestParseImagesDeduplicated(t *testing.T) {
-	doc, err := Parse(twoChapters)
+func TestParseImages(t *testing.T) {
+	doc, err := Parse(body)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
-	want := []string{"https://i.pximg.net/novel/1.png", "https://i.pximg.net/novel/2.png"}
+	want := []Image{
+		{IllustID: 12345678, Page: 2},
+		{IllustID: 87654321, Page: 1},
+		{UploadedID: 555},
+	}
 	if len(doc.Images) != len(want) {
-		t.Fatalf("images = %v, want %v", doc.Images, want)
+		t.Fatalf("images = %+v, want %+v", doc.Images, want)
 	}
 	for i := range want {
 		if doc.Images[i] != want[i] {
-			t.Errorf("image %d = %q, want %q", i, doc.Images[i], want[i])
+			t.Errorf("image %d = %+v, want %+v", i, doc.Images[i], want[i])
 		}
 	}
 }
 
+func TestParseNewPageSplitsParagraph(t *testing.T) {
+	doc, err := Parse("前半[newpage]後半")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	got := doc.Chapters[0].Paragraphs
+	if len(got) != 2 || got[0].Text != "前半" || got[1].Text != "後半" {
+		t.Fatalf("paragraphs = %+v", got)
+	}
+}
+
 func TestParseUntitledBody(t *testing.T) {
-	doc, err := Parse("<div>ただの文</div>\n<div>次の文</div>")
+	doc, err := Parse("ただの文\n\n次の文")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -113,39 +113,43 @@ func TestParseUntitledBody(t *testing.T) {
 		t.Fatalf("chapters = %+v, want one untitled chapter", doc.Chapters)
 	}
 	if got := len(doc.Chapters[0].Paragraphs); got != 2 {
-		t.Fatalf("paragraphs = %d, want 2: %+v", got, doc.Chapters[0].Paragraphs)
+		t.Fatalf("paragraphs = %d, want 2", got)
 	}
 }
 
-func TestParseBrokenMarkupDoesNotPanic(t *testing.T) {
-	bodies := []string{
-		"",
-		"<p>a<ruby><rb>字</rb><rt>音</p ><div class=_chapter>章",
-		"<p><ruby><rt>だけ</rt></ruby></p>",
-		"<h2></h2><p>   </p>",
-		"<img src=\"\"><img>",
+func TestParseKeepsBrokenMarkersAsText(t *testing.T) {
+	bodies := map[string]string{
+		"[[rb:base":          "[[rb:base",
+		"[chapter:未終":        "[chapter:未終",
+		"[pixivimage:abc]":   "[pixivimage:abc]",
+		"[pixivimage:1-2-3]": "[pixivimage:1-2-3]",
+		"[uploadedimage:0]":  "[uploadedimage:0]",
+		"末尾の[":               "末尾の[",
 	}
-	for _, body := range bodies {
-		doc, err := Parse(body)
+	for in, want := range bodies {
+		doc, err := Parse(in)
 		if err != nil {
-			t.Errorf("Parse(%q): %v", body, err)
+			t.Errorf("Parse(%q): %v", in, err)
 			continue
 		}
-		if doc == nil {
-			t.Errorf("Parse(%q) returned nil document", body)
+		if len(doc.Chapters) != 1 || len(doc.Chapters[0].Paragraphs) != 1 {
+			t.Errorf("Parse(%q) = %+v", in, doc.Chapters)
+			continue
+		}
+		if got := doc.Chapters[0].Paragraphs[0].Text; got != want {
+			t.Errorf("Parse(%q) text = %q, want %q", in, got, want)
 		}
 	}
 }
 
-func TestParseRubyWithoutBase(t *testing.T) {
-	doc, err := Parse("<p><ruby><rt>よみ</rt></ruby></p>")
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if len(doc.Chapters) != 0 && len(doc.Chapters[0].Paragraphs) != 0 {
-		t.Errorf("empty base produced %+v", doc.Chapters)
-	}
-	if strings.TrimSpace(doc.Title) != "" {
-		t.Errorf("Title = %q", doc.Title)
+func TestParseEmptyBody(t *testing.T) {
+	for _, in := range []string{"", "  \n\t\r\n"} {
+		doc, err := Parse(in)
+		if !errors.Is(err, ErrEmpty) {
+			t.Errorf("Parse(%q) error = %v, want ErrEmpty", in, err)
+		}
+		if doc == nil || len(doc.Chapters) != 0 || len(doc.Images) != 0 {
+			t.Errorf("Parse(%q) document = %+v, want empty", in, doc)
+		}
 	}
 }
