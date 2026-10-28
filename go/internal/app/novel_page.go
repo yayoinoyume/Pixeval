@@ -27,9 +27,6 @@ type novelViewState struct {
 	doc     *novel.Document
 	loading bool
 	err     string
-	// startedImages marks the body images whose load already started, so a
-	// redraw does not queue another.
-	startedImages map[string]bool
 }
 
 // novelPageView is what the novel page draws.
@@ -132,7 +129,6 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, doc *novel.Document) {
 	if doc == nil {
 		return
 	}
-	a.startNovelImages(v, doc)
 	ui.Scroll(c).Grow(1).TrackScroll(&v.scroll).Children(func() {
 		ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
 			ui.Column(c).MaxWidth(novelTextWidth).Grow(1).Padding(24).Gap(12).Children(func() {
@@ -144,39 +140,11 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, doc *novel.Document) {
 						novelParagraph(c, p)
 					}
 				}
-				for _, src := range doc.Images {
-					a.novelImage(c, src)
-				}
+				// TODO(M2): body images are novel.Image{IllustID, Page}; drawing
+				// them needs the illustration detail for each ID first.
 			})
 		})
 	})
-}
-
-// startNovelImages starts the body images once, so each frame reuses the load.
-func (a *App) startNovelImages(v *novelViewState, doc *novel.Document) {
-	if a.images == nil {
-		return
-	}
-	if v.startedImages == nil {
-		v.startedImages = map[string]bool{}
-	}
-	for _, src := range doc.Images {
-		if v.startedImages[src] {
-			continue
-		}
-		v.startedImages[src] = true
-		a.images.Original(src, func() { a.update(func() {}) })
-	}
-}
-
-// novelImage draws a body image at its own size, capped to the column.
-func (a *App) novelImage(c *ui.Context, src string) {
-	if a.images == nil {
-		return
-	}
-	if bmp := a.images.Cached(src); bmp != nil {
-		ui.Image(c, bmp).MaxWidth(novelImageWidth)
-	}
 }
 
 // novelParagraph draws one paragraph, bold when it is a heading, with its ruby

@@ -12,8 +12,7 @@ import (
 )
 
 // novelBody is a body with two paragraphs and one ruby reading.
-const novelBody = `<h1>星之故事</h1><h2>第一章</h2>` +
-	`<p>这是第一段。</p><p>这是<ruby>漢字<rt>かんじ</rt></ruby>的故事。</p>`
+const novelBody = "星之故事\n[chapter:第一章]\n这是第一段。\n这是[[rb:漢字>かんじ]]的故事。"
 
 // newNovelApp is an app whose novel body comes from fetch, without a network.
 func newNovelApp(fetch func(context.Context, int64) (string, error)) *App {
