@@ -8,7 +8,9 @@
     "login": "Sign in",
     "logout": "Sign out",
     "loggedIn": "Signed in: %s",
-    "placeholder": "%s (M1 placeholder)"
+    "placeholder": "%s (M1 placeholder)",
+    "user": "User",
+    "series": "Series"
   },
   "home": {
     "recommended": "Recommended",
@@ -21,7 +23,8 @@
     "loadFailed": "Failed to load: %s",
     "coverFailed": "Cover failed to load",
     "noWorks": "No works",
-    "save": "Save"
+    "save": "Save",
+    "back": "Back"
   },
   "search": {
     "placeholder": "Search works",
@@ -93,5 +96,16 @@
     "pageFailed": "Cannot create the login page",
     "refreshEmpty": "Paste a refresh token first",
     "saveFailed": "Cannot save the sign-in"
+  },
+  "user": {
+    "open": "Author",
+    "follow": "Follow",
+    "following": "Following",
+    "followFailed": "Follow failed: %s",
+    "loadFailed": "Cannot load the user: %s"
+  },
+  "series": {
+    "open": "Series",
+    "loadFailed": "Cannot load the series: %s"
   }
 }

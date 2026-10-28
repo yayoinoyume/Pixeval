@@ -201,16 +201,22 @@ func (a *App) loadMore(st *browseState) {
 			st.err = err.Error()
 		default:
 			st.started = true
-			for _, w := range page.Items {
-				st.items = append(st.items, w)
-				st.tiles = append(st.tiles, widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)})
-			}
+			st.add(page.Items, width)
 			st.next = page.NextURL
 		}
 		st.mu.Unlock()
 
 		a.update(func() {})
 	}()
+}
+
+// add appends a page's works to the feed, with the tiles they draw as. st.mu
+// must be held.
+func (st *browseState) add(items []pixiv.Illustration, width float64) {
+	for _, w := range items {
+		st.items = append(st.items, w)
+		st.tiles = append(st.tiles, widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)})
+	}
 }
 
 // retry clears a failure, so the next frame loads the page again.
@@ -341,6 +347,11 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 	t := c.Theme()
 	ui.Column(c).Fill().Gap(4).Padding(2).Cursor(ui.CursorPointer).OnClick(func() {
 		a.openViewer(&items[i], 0)
+	}).ContextMenu(func(m *ui.Menu) {
+		// Right click opens the author's page: the card's click is the work.
+		if m.Item(a.t("user.open")).Chosen() {
+			a.openUser(work.User.ID)
+		}
 	}).Children(func() {
 		ui.Box(c).Grow(1).FillWidth().Radius(8).Background(t.Surface).Clip().Children(func() {
 			if st.imageFailed(key) {

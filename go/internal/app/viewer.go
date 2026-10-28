@@ -343,6 +343,18 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 	ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).KeepFocus().Children(func() {
 		ui.Text(c, v.work.Title).Grow(1).MaxLines(1)
 		ui.Text(c, fmt.Sprintf("%d/%d", v.page+1, n)).TextColor(t.TextMuted)
+		// Leaving the viewer first, because it takes the whole window and the
+		// page under it is what the back button returns to.
+		if ui.Button(c, a.t("user.open")).Clicked() {
+			a.closeViewer()
+			a.openUser(v.work.User.ID)
+		}
+		if v.work.Series != nil {
+			if ui.Button(c, a.t("series.open")).Clicked() {
+				a.closeViewer()
+				a.openSeries(v.work.Series.ID)
+			}
+		}
 		if failed {
 			if ui.Button(c, a.t("common.retry")).Clicked() {
 				a.viewerReload(v)

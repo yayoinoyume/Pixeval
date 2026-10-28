@@ -13,6 +13,8 @@ const (
 	routeDownloads route = "downloads"
 	routeHistory   route = "history"
 	routeSettings  route = "settings"
+	routeUser      route = "user"
+	routeSeries    route = "series"
 )
 
 // routeLabel is the navigation label of the page.
@@ -56,6 +58,11 @@ func (a *App) nav(c *ui.Context) {
 func (a *App) header(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Gap(12).Padding(16).AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
+		if a.route == routeUser || a.route == routeSeries {
+			if ui.Button(c, a.t("common.back")).Clicked() {
+				a.goBack()
+			}
+		}
 		ui.Text(c, a.routeLabel(a.route)).FontSize(22).Bold().Grow(1)
 		if a.session == nil {
 			if ui.Button(c, a.t("nav.login")).Clicked() {
@@ -82,12 +89,24 @@ func (a *App) page(c *ui.Context) {
 		a.historyPage(c)
 	case routeSettings:
 		a.settingsPage(c)
+	case routeUser:
+		a.userPage(c)
+	case routeSeries:
+		a.seriesPage(c)
 	default:
 		t := c.Theme()
 		ui.Column(c).Grow(1).Center().Children(func() {
 			ui.Text(c, a.tf("nav.placeholder", a.routeLabel(a.route))).TextColor(t.TextMuted)
 		})
 	}
+}
+
+// goBack leaves a user page or series page for the page it was opened from.
+func (a *App) goBack() {
+	if a.backRoute == "" {
+		a.backRoute = routeHome
+	}
+	a.route = a.backRoute
 }
 
 // applyTheme makes the window use the saved theme; the system's is the one
