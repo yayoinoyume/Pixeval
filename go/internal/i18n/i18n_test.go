@@ -86,7 +86,36 @@ func TestLocalesMatch(t *testing.T) {
 	}
 }
 
-// TestDetect checks the locale variables choose the language.
+// TestParseRejectsBadJSON checks a locale file that does not parse fails
+// rather than leaving the app with a half understood language.
+func TestParseRejectsBadJSON(t *testing.T) {
+	if _, err := parseMessages(LangZhHans, []byte("{not json")); err == nil {
+		t.Fatal("parseMessages accepted bad JSON")
+	}
+	if _, err := parseMessages(LangZhHans, []byte(`[]`)); err == nil {
+		t.Fatal("parseMessages accepted a non-object")
+	}
+}
+
+// TestTraditionalChineseReadsAsSimplified checks another zh tag lands on the
+// one Chinese the app ships.
+func TestTraditionalChineseReadsAsSimplified(t *testing.T) {
+	for _, tag := range []string{"zh-Hant", "zh_TW.UTF-8"} {
+		if got := Normalize(tag); got != LangZhHans {
+			t.Errorf("Normalize(%q) = %q, want %q", tag, got, LangZhHans)
+		}
+		b, err := Load(tag)
+		if err != nil {
+			t.Fatalf("Load(%q): %v", tag, err)
+		}
+		if got := b.T("nav.home"); got != "首页" {
+			t.Errorf("Load(%q) nav.home %q, want 首页", tag, got)
+		}
+	}
+}
+
+// TestDetect checks the locale variables choose the language, LC_MESSAGES
+// first.
 func TestDetect(t *testing.T) {
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "")
@@ -94,6 +123,11 @@ func TestDetect(t *testing.T) {
 	if got := Detect(); got != LangZhHans {
 		t.Errorf("zh LANG %q, want %q", got, LangZhHans)
 	}
+	t.Setenv("LC_MESSAGES", "en_US.UTF-8")
+	if got := Detect(); got != LangEnUS {
+		t.Errorf("en LC_MESSAGES over zh LANG %q, want %q", got, LangEnUS)
+	}
+	t.Setenv("LC_MESSAGES", "")
 	t.Setenv("LANG", "en_US.UTF-8")
 	if got := Detect(); got != LangEnUS {
 		t.Errorf("en LANG %q, want %q", got, LangEnUS)

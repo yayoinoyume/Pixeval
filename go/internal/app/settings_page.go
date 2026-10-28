@@ -88,6 +88,10 @@ func (a *App) settingsPage(c *ui.Context) {
 			ui.Field(c, a.t("settings.language"), func() {
 				if ui.Select(c, &language, a.languageChoices()).Changed() {
 					s.Language = a.languageValue(language)
+					// The theme applies on the frame it changes in; the language
+					// applies at once too, like the rest of the page's controls.
+					a.loadLanguage()
+					c.Invalidate()
 				}
 			})
 			ui.Field(c, a.t("settings.downloadDir"), func() {
@@ -119,8 +123,7 @@ func (a *App) settingsPage(c *ui.Context) {
 }
 
 // applySavedSettings picks up a save that finished off the main thread: it
-// applies the language, the download directory and concurrency, and shows the
-// toast.
+// applies the download directory and concurrency, and shows the toast.
 func (a *App) applySavedSettings(c *ui.Context) {
 	select {
 	case err := <-a.settingsSaved:
@@ -129,15 +132,13 @@ func (a *App) applySavedSettings(c *ui.Context) {
 			return
 		}
 		a.settingsErr = ""
-		a.loadLanguage()
-		a.setTitle()
 		a.downloadsDir = settingsDownloadDir(a.settings)
 		if a.downloads != nil {
 			a.downloads.SetConcurrency(a.settings.DownloadConcurrency)
 		}
 		c.Toast(a.t("settings.saved"))
 		// The masonry keeps its last layout until the next frame; ask for it
-		// so a new column width or language shows at once.
+		// so a new column width shows at once.
 		c.Invalidate()
 	default:
 	}
