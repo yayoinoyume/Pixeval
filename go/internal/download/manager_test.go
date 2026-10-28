@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +21,14 @@ func newManager(concurrency int) *Manager {
 	m := New(pixiv.NewClient(), concurrency)
 	m.backoff = []time.Duration{time.Millisecond, time.Millisecond, time.Millisecond}
 	return m
+}
+
+// serve starts a test server that is closed with the test.
+func serve(t *testing.T, h http.HandlerFunc) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(h)
+	t.Cleanup(srv.Close)
+	return srv
 }
 
 // waitState blocks until the task with id reaches want.
@@ -57,7 +66,7 @@ func mustNotExist(t *testing.T, path string) {
 
 func TestConcurrencyLimit(t *testing.T) {
 	var active, peak atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n := active.Add(1)
 		defer active.Add(-1)
 		for {
@@ -69,7 +78,6 @@ func TestConcurrencyLimit(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		w.Write([]byte("image"))
 	}))
-	defer srv.Close()
 
 	dir := t.TempDir()
 	m := newManager(3)
@@ -99,11 +107,10 @@ func TestConcurrencyLimit(t *testing.T) {
 
 func TestAtomicWrite(t *testing.T) {
 	content := []byte("image-bytes")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(100 * time.Millisecond)
 		w.Write(content)
 	}))
-	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "nested", "a.png")
 	m := newManager(1)
@@ -129,14 +136,13 @@ func TestAtomicWrite(t *testing.T) {
 
 func TestRetryThenSuccess(t *testing.T) {
 	var calls atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) <= 2 {
 			http.Error(w, "boom", http.StatusInternalServerError)
 			return
 		}
 		w.Write([]byte("ok"))
 	}))
-	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "a.png")
 	m := newManager(1)
@@ -158,7 +164,7 @@ func TestRetryThenSuccess(t *testing.T) {
 
 func TestCancelRunning(t *testing.T) {
 	release := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", "1000")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("partial"))
@@ -168,7 +174,6 @@ func TestCancelRunning(t *testing.T) {
 		case <-release:
 		}
 	}))
-	defer srv.Close()
 	defer close(release)
 
 	dest := filepath.Join(t.TempDir(), "a.png")
@@ -189,14 +194,13 @@ func TestCancelRunning(t *testing.T) {
 
 func TestPauseAndResume(t *testing.T) {
 	var calls atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if calls.Add(1) == 1 {
 			<-r.Context().Done() // the paused attempt never finishes
 			return
 		}
 		w.Write([]byte("ok"))
 	}))
-	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "a.png")
 	m := newManager(1)
@@ -221,11 +225,10 @@ func TestPauseAndResume(t *testing.T) {
 
 func TestSkipExistingTarget(t *testing.T) {
 	var hits atomic.Int64
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
 		w.Write([]byte("new"))
 	}))
-	defer srv.Close()
 
 	dest := filepath.Join(t.TempDir(), "a.png")
 	if err := os.WriteFile(dest, []byte("old"), 0o644); err != nil {
@@ -245,5 +248,153 @@ func TestSkipExistingTarget(t *testing.T) {
 	}
 	if got, err := os.ReadFile(dest); err != nil || string(got) != "old" {
 		t.Fatalf("dest = %q, err = %v", got, err)
+	}
+}
+
+func TestRestartAfterCanceledRun(t *testing.T) {
+	var calls atomic.Int64
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			<-r.Context().Done() // the canceled run never finishes
+			return
+		}
+		w.Write([]byte("ok"))
+	}))
+
+	dir := t.TempDir()
+	m := newManager(1)
+	m.Add([]Task{{ID: "a", URL: srv.URL, Dest: filepath.Join(dir, "a.png")}})
+	ctx, cancel := context.WithCancel(context.Background())
+	m.Start(ctx)
+	waitState(t, m, "a", Running)
+	cancel()
+	m.Wait()
+
+	if task := taskOf(t, m, "a"); task.State != Canceled {
+		t.Fatalf("state = %d, want Canceled (err %q)", task.State, task.Err)
+	}
+
+	// A canceled ctx must not latch the manager shut: a later Start works.
+	m.Start(context.Background())
+	m.Add([]Task{{ID: "b", URL: srv.URL, Dest: filepath.Join(dir, "b.png")}})
+	m.Wait()
+	if task := taskOf(t, m, "b"); task.State != Done {
+		t.Fatalf("state = %d, want Done (err %q)", task.State, task.Err)
+	}
+}
+
+func TestRetryExhausted(t *testing.T) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusServiceUnavailable)
+	}))
+
+	dest := filepath.Join(t.TempDir(), "a.png")
+	m := newManager(1)
+	m.Add([]Task{{ID: "a", URL: srv.URL, Dest: dest}})
+	m.Start(context.Background())
+	m.Wait()
+
+	task := taskOf(t, m, "a")
+	if task.State != Failed {
+		t.Fatalf("state = %d, want Failed", task.State)
+	}
+	if task.Attempts != 4 {
+		t.Fatalf("attempts = %d, want 4 (one try plus three retries)", task.Attempts)
+	}
+	mustNotExist(t, dest)
+	mustNotExist(t, dest+".part")
+}
+
+func TestPermanentErrorIsNotRetried(t *testing.T) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+
+	m := newManager(1)
+	m.Add([]Task{{ID: "a", URL: srv.URL, Dest: filepath.Join(t.TempDir(), "a.png")}})
+	m.Start(context.Background())
+	m.Wait()
+
+	if task := taskOf(t, m, "a"); task.State != Failed || task.Attempts != 1 {
+		t.Fatalf("state = %d attempts = %d, want Failed and 1 attempt", task.State, task.Attempts)
+	}
+}
+
+func TestOnChange(t *testing.T) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+
+	var changes atomic.Int64
+	m := newManager(1)
+	m.OnChange(func() { changes.Add(1) })
+	m.Add([]Task{{ID: "a", URL: srv.URL, Dest: filepath.Join(t.TempDir(), "a.png")}})
+	if changes.Load() == 0 {
+		t.Fatal("OnChange was not called by Add")
+	}
+
+	m.Start(context.Background())
+	m.Wait()
+	if changes.Load() < 3 {
+		t.Fatalf("OnChange calls = %d, want Add, Running and Done", changes.Load())
+	}
+}
+
+func TestRemove(t *testing.T) {
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+
+	dir := t.TempDir()
+	m := newManager(1)
+	m.Add([]Task{
+		{ID: "a", URL: srv.URL, Dest: filepath.Join(dir, "a.png")},
+		{ID: "b", URL: srv.URL, Dest: filepath.Join(dir, "b.png")},
+	})
+	m.Start(context.Background())
+	m.Wait()
+
+	m.Remove("a")
+	snap := m.Snapshot()
+	if len(snap) != 1 || snap[0].ID != "b" {
+		t.Fatalf("snapshot = %+v, want only task b", snap)
+	}
+}
+
+func TestOverwriteExistingTarget(t *testing.T) {
+	var hits atomic.Int64
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.Write([]byte("new"))
+	}))
+
+	dest := filepath.Join(t.TempDir(), "a.png")
+	if err := os.WriteFile(dest, []byte("old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := newManager(1)
+	m.Add([]Task{{ID: "a", URL: srv.URL, Dest: dest, Overwrite: true}})
+	m.Start(context.Background())
+	m.Wait()
+
+	task := taskOf(t, m, "a")
+	if task.State != Done || task.Skipped {
+		t.Fatalf("state = %d skipped = %v, want Done and not skipped", task.State, task.Skipped)
+	}
+	if n := hits.Load(); n != 1 {
+		t.Fatalf("server saw %d requests, want 1", n)
+	}
+	if got, err := os.ReadFile(dest); err != nil || string(got) != "new" {
+		t.Fatalf("dest = %q, err = %v", got, err)
+	}
+}
+
+func TestDefaults(t *testing.T) {
+	m := New(pixiv.NewClient(), 0)
+	if want := []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second}; !slices.Equal(m.backoff, want) {
+		t.Fatalf("backoff = %v, want %v", m.backoff, want)
+	}
+	if got := cap(m.sem); got != 3 {
+		t.Fatalf("default concurrency = %d, want 3", got)
 	}
 }
