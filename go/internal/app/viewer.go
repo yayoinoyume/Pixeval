@@ -292,10 +292,14 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 			}
 		}
 		if ui.Button(c, "下载").Clicked() {
-			if n := a.downloadWork(v.work); n > 0 {
-				c.Toast(fmt.Sprintf("已加入 %d 页到下载队列", n))
-			} else {
+			queued, ok := a.downloadWork(v.work)
+			switch {
+			case !ok:
 				c.Toast("无法创建下载目录")
+			case queued == 0:
+				c.Toast("已在下载队列中")
+			default:
+				c.Toast(fmt.Sprintf("已加入 %d 页到下载队列", queued))
 			}
 		}
 		if ui.Button(c, "上一页").Disabled(v.page <= 0).Clicked() {

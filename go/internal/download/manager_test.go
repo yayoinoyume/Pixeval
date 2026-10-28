@@ -223,6 +223,38 @@ func TestPauseAndResume(t *testing.T) {
 	}
 }
 
+// TestResumeBeforePauseIsSeen checks a Resume that arrives before the paused
+// worker unwinds requeues the task rather than failing it with the canceled
+// attempt's error.
+func TestResumeBeforePauseIsSeen(t *testing.T) {
+	var calls atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			<-r.Context().Done() // the paused attempt never finishes
+			return
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	dest := filepath.Join(t.TempDir(), "a.png")
+	m := newManager(1)
+	m.Add([]Task{{ID: "a", URL: srv.URL, Dest: dest}})
+	m.Start(context.Background())
+	waitState(t, m, "a", Running)
+
+	m.Pause("a")
+	m.Resume("a") // no wait for Queued
+	m.Wait()
+
+	if task := taskOf(t, m, "a"); task.State != Done {
+		t.Fatalf("state = %d, want Done (err %q)", task.State, task.Err)
+	}
+	if got, err := os.ReadFile(dest); err != nil || string(got) != "ok" {
+		t.Fatalf("dest = %q, err = %v", got, err)
+	}
+}
+
 func TestSkipExistingTarget(t *testing.T) {
 	var hits atomic.Int64
 	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

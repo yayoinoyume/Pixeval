@@ -32,11 +32,12 @@ func downloadDir() string {
 	return dir
 }
 
-// downloadWork queues every page of w and reports how many it queued; zero
-// means saving is off, because the download directory could not be made.
-func (a *App) downloadWork(w pixiv.Illustration) int {
+// downloadWork queues every page of w and reports how many pages the queue
+// took, and whether saving is on at all; the queue skips a page it already
+// holds.
+func (a *App) downloadWork(w pixiv.Illustration) (queued int, ok bool) {
 	if a.downloads == nil || a.downloadsDir == "" {
-		return 0
+		return 0, false
 	}
 	n := pageCount(w)
 	artist := downloadSafeName(w.User.Name)
@@ -48,12 +49,12 @@ func (a *App) downloadWork(w pixiv.Illustration) int {
 			Title:    w.Title,
 			Artist:   w.User.Name,
 			URL:      w.PageURL(i),
-			Dest:     filepath.Join(a.downloadsDir, artist, fmt.Sprintf("%d_%d.jpg", w.ID, i)),
-			Page:     i,
+			// The page number is one based and padded, so a folder sorts.
+			Dest: filepath.Join(a.downloadsDir, artist, fmt.Sprintf("%d_%03d.jpg", w.ID, i+1)),
+			Page: i,
 		})
 	}
-	a.downloads.Add(tasks)
-	return n
+	return a.downloads.Add(tasks), true
 }
 
 // downloadSafeName keeps an artist name from naming a directory outside the
@@ -135,12 +136,21 @@ func (a *App) downloadsPage(c *ui.Context) {
 // downloadRow draws one task: what it is, how far it got, and its buttons.
 func (a *App) downloadRow(c *ui.Context, task download.Task) {
 	t := c.Theme()
+	// A paused task reads as queued in a snapshot; only this page knows.
+	paused := task.State == download.Queued && a.paused[task.ID]
+	label := downloadStateLabel(task.State)
+	if paused {
+		label = "已暂停"
+	}
 	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			ui.Text(c, task.Title).MaxLines(1)
 			ui.Text(c, fmt.Sprintf("第 %d 页", task.Page+1)).FontSize(12).TextColor(t.TextMuted)
+			if task.State == download.Failed && task.Err != "" {
+				ui.Text(c, task.Err).FontSize(12).TextColor(t.Danger).MaxLines(1)
+			}
 		})
-		ui.Text(c, downloadStateLabel(task.State)).TextColor(downloadStateColor(t, task.State))
+		ui.Text(c, label).TextColor(downloadStateColor(t, task.State))
 		ui.Column(c).Width(160).AlignItems(ui.Center).Children(func() {
 			switch {
 			case task.Total > 0:
@@ -149,8 +159,13 @@ func (a *App) downloadRow(c *ui.Context, task download.Task) {
 				ui.Spinner(c)
 			}
 		})
+		if task.State == download.Failed {
+			if ui.Button(c, "重试").Clicked() {
+				a.retryDownload(task)
+			}
+		}
 		if !downloadFinished(task.State) {
-			if a.paused[task.ID] {
+			if paused {
 				if ui.Button(c, "恢复").Clicked() {
 					a.resumeDownload(task.ID)
 				}
@@ -201,11 +216,27 @@ func (a *App) removeDownload(id string) {
 	a.update(func() {})
 }
 
-// clearDoneDownloads drops the finished tasks from the queue.
+// clearDoneDownloads drops the finished tasks from the queue, redrawing once
+// for the lot.
 func (a *App) clearDoneDownloads() {
+	var ids []string
 	for _, task := range a.downloads.Snapshot() {
 		if task.State == download.Done {
-			a.removeDownload(task.ID)
+			ids = append(ids, task.ID)
 		}
 	}
+	for _, id := range ids {
+		delete(a.paused, id)
+		a.downloads.Remove(id)
+	}
+	a.update(func() {})
+}
+
+// retryDownload queues a failed task again: the manager only takes a task it
+// does not hold, so the failed one goes first.
+func (a *App) retryDownload(task download.Task) {
+	delete(a.paused, task.ID)
+	a.downloads.Remove(task.ID)
+	a.downloads.Add([]download.Task{task})
+	a.update(func() {})
 }

@@ -84,8 +84,9 @@ func New(client *pixiv.Client, concurrency int) *Manager {
 	}
 }
 
-// Add appends tasks as Queued and skips IDs that are already present.
-func (m *Manager) Add(tasks []Task) {
+// Add appends tasks as Queued and skips IDs that are already present,
+// reporting how many it took.
+func (m *Manager) Add(tasks []Task) int {
 	var added []*entry
 	m.mu.Lock()
 	for _, t := range tasks {
@@ -104,7 +105,10 @@ func (m *Manager) Add(tasks []Task) {
 	for _, e := range added {
 		m.launch(e)
 	}
-	m.changed()
+	if len(added) > 0 {
+		m.changed()
+	}
+	return len(added)
 }
 
 // Start begins downloading. A canceled run is restarted by the next call, which
@@ -276,6 +280,9 @@ func (m *Manager) worker(e *entry) {
 	m.changed()
 
 	err := m.run(ctx, e)
+	// The attempt's own cancel, read before cancel below, so a Resume that
+	// undid the pause is still seen as one.
+	canceled := ctx.Err() != nil
 	cancel()
 
 	m.mu.Lock()
@@ -283,24 +290,37 @@ func (m *Manager) worker(e *entry) {
 	paused := e.paused
 	m.mu.Unlock()
 
-	outcome, msg := Done, ""
-	if paused {
-		outcome = Queued // Resume starts it again.
-	} else if err != nil {
-		outcome, msg = Failed, err.Error()
-	}
-	if parent.Err() != nil {
-		outcome, msg = Canceled, ""
-	}
-	if outcome != Done {
+	switch {
+	case parent.Err() != nil:
+		// The queue stopped: the attempt is not a failure of the task.
 		os.Remove(dest + partSuffix)
+		m.update(e, func(t *Task) {
+			if t.State != Canceled {
+				t.State, t.Err = Canceled, ""
+			}
+		})
+	case paused || canceled:
+		// A pause, or a Resume that undid it: the canceled attempt stays
+		// queued for the next launch instead of failing.
+		os.Remove(dest + partSuffix)
+		m.update(e, func(t *Task) {
+			if t.State != Canceled {
+				t.State, t.Err = Queued, ""
+			}
+		})
+	case err != nil:
+		m.update(e, func(t *Task) {
+			if t.State != Canceled {
+				t.State, t.Err = Failed, err.Error()
+			}
+		})
+	default:
+		m.update(e, func(t *Task) {
+			if t.State != Canceled {
+				t.State = Done
+			}
+		})
 	}
-	m.update(e, func(t *Task) {
-		if t.State == Canceled && outcome != Canceled {
-			return // Cancel already had the last word.
-		}
-		t.State, t.Err = outcome, msg
-	})
 }
 
 // finish clears the running mark and requeues a task whose Resume arrived
@@ -308,7 +328,9 @@ func (m *Manager) worker(e *entry) {
 func (m *Manager) finish(e *entry) {
 	m.mu.Lock()
 	e.running = false
-	retry := m.started && m.ctx.Err() == nil && !e.paused && e.task.State == Queued
+	// A queue that stopped does not relaunch, which would spin on a canceled
+	// context.
+	retry := m.started && !e.paused && e.task.State == Queued && m.ctx.Err() == nil
 	m.mu.Unlock()
 	if retry {
 		m.launch(e) // wg.Add before Done, so Wait cannot slip through
