@@ -35,8 +35,8 @@ func TestShellNavSwitches(t *testing.T) {
 	if a.route != routeSettings {
 		t.Errorf("route %q, want %q", a.route, routeSettings)
 	}
-	if !tt.HasText("设置（M1 占位）") {
-		t.Errorf("texts %q", tt.Texts())
+	if !tt.HasText("下载目录") {
+		t.Errorf("settings page missing: %q", tt.Texts())
 	}
 	// The nav item and the header both show 设置.
 	n := 0
