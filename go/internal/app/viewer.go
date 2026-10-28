@@ -41,8 +41,11 @@ type viewerState struct {
 	failed  bool       // the load for loadKey failed
 
 	// bookmarking is set while the bookmark request runs, so the button is
-	// disabled until it lands; the work's IsBookmarked flips with it.
+	// disabled until it lands; bookmarked is the work's state, which flips
+	// only once the request succeeds. The work itself is never written after
+	// openViewer, so copying it cannot race with this.
 	bookmarking bool
+	bookmarked  bool
 
 	// drag is the pointer dragging the image; lastX and lastY are where it
 	// was at the previous move.
@@ -52,18 +55,23 @@ type viewerState struct {
 
 // pageCount is the work's number of pages, at least one.
 func pageCount(w pixiv.Illustration) int {
-	if w.PageCount < 1 {
+	return pageCountOf(w.PageCount)
+}
+
+// pageCountOf is the number of pages a page count names, at least one.
+func pageCountOf(n int) int {
+	if n < 1 {
 		return 1
 	}
-	return w.PageCount
+	return n
 }
 
 // bookmarked reports whether the work is bookmarked, and whether a request
 // is still running.
-func (v *viewerState) bookmarked() (bookmarked, bookmarking bool) {
+func (v *viewerState) bookmarkState() (bookmarked, bookmarking bool) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return v.work.IsBookmarked, v.bookmarking
+	return v.bookmarked, v.bookmarking
 }
 
 // openViewer shows w full screen over the page's content, at page.
@@ -71,12 +79,12 @@ func (a *App) openViewer(w *pixiv.Illustration, page int) {
 	if w == nil {
 		return
 	}
-	if n := pageCount(*w); page < 0 {
+	if n := pageCountOf(w.PageCount); page < 0 {
 		page = 0
 	} else if page >= n {
 		page = n - 1
 	}
-	v := &viewerState{work: *w, page: page, zoom: 1}
+	v := &viewerState{work: *w, page: page, zoom: 1, bookmarked: w.IsBookmarked}
 	a.viewer = v
 	a.recordHistory(*w)
 	// Start the original at once, so the first frame already has a load to
@@ -120,7 +128,7 @@ func (a *App) viewerImage(v *viewerState) (bmp *ui.Bitmap, failed bool) {
 		})
 		// The pages beside this one load ahead, so a page turn shows at once.
 		for _, p := range []int{v.page - 1, v.page + 1} {
-			if p >= 0 && p < pageCount(v.work) {
+			if p >= 0 && p < pageCountOf(v.work.PageCount) {
 				a.images.Original(v.work.PageURL(p), nil)
 			}
 		}
@@ -138,7 +146,7 @@ func (a *App) toggleBookmark(v *viewerState) {
 		return
 	}
 	v.bookmarking = true
-	on, id := !v.work.IsBookmarked, v.work.ID
+	on, id := !v.bookmarked, v.work.ID
 	v.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
@@ -148,7 +156,7 @@ func (a *App) toggleBookmark(v *viewerState) {
 			v.mu.Lock()
 			v.bookmarking = false
 			if err == nil {
-				v.work.IsBookmarked = on
+				v.bookmarked = on
 			}
 			v.mu.Unlock()
 			if err != nil {
@@ -165,7 +173,7 @@ func (a *App) viewerGo(delta int) {
 		return
 	}
 	page := v.page + delta
-	if page < 0 || page >= pageCount(v.work) {
+	if page < 0 || page >= pageCountOf(v.work.PageCount) {
 		return
 	}
 	v.page = page
@@ -331,7 +339,7 @@ func (a *App) viewerPage(c *ui.Context) {
 // viewerBar is the work's title, the page count and the viewer's buttons.
 func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 	t := c.Theme()
-	n := pageCount(v.work)
+	n := pageCountOf(v.work.PageCount)
 	ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).KeepFocus().Children(func() {
 		ui.Text(c, v.work.Title).Grow(1).MaxLines(1)
 		ui.Text(c, fmt.Sprintf("%d/%d", v.page+1, n)).TextColor(t.TextMuted)
@@ -340,7 +348,7 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 				a.viewerReload(v)
 			}
 		}
-		bookmarked, bookmarking := v.bookmarked()
+		bookmarked, bookmarking := v.bookmarkState()
 		label := "收藏"
 		if bookmarked {
 			label = "已收藏"
