@@ -16,6 +16,10 @@ import (
 // partSuffix marks the in-progress file, renamed over Dest when it is complete.
 const partSuffix = ".part"
 
+// defaultConcurrency is used when New or SetConcurrency gets a non-positive
+// limit.
+const defaultConcurrency = 3
+
 // permanentStatuses will not change on a retry.
 var permanentStatuses = []string{"400 Bad Request", "401 Unauthorized", "403 Forbidden", "404 Not Found", "410 Gone"}
 
@@ -55,12 +59,13 @@ type Manager struct {
 	sem     chan struct{} // one slot per allowed concurrent download
 	backoff []time.Duration
 
-	mu       sync.Mutex
-	entries  []*entry // join order, which Snapshot keeps
-	started  bool
-	ctx      context.Context
-	onChange func()
-	wg       sync.WaitGroup
+	mu          sync.Mutex
+	concurrency int
+	entries     []*entry // join order, which Snapshot keeps
+	started     bool
+	ctx         context.Context
+	onChange    func()
+	wg          sync.WaitGroup
 }
 
 // entry is the mutable side of a task that Snapshot does not expose.
@@ -74,14 +79,30 @@ type entry struct {
 // New builds a manager. concurrency below 1 falls back to the default.
 func New(client *pixiv.Client, concurrency int) *Manager {
 	if concurrency < 1 {
-		concurrency = 3 // default when the caller does not care
+		concurrency = defaultConcurrency
 	}
 	return &Manager{
-		client:  client,
-		sem:     make(chan struct{}, concurrency),
-		backoff: []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second},
-		ctx:     context.Background(),
+		client:      client,
+		sem:         make(chan struct{}, concurrency),
+		concurrency: concurrency,
+		backoff:     []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second},
+		ctx:         context.Background(),
 	}
+}
+
+// SetConcurrency changes how many downloads run at once. Tasks already
+// running keep the slots they took, so the total can exceed n until they
+// finish; tasks started after the call use the new limit.
+func (m *Manager) SetConcurrency(n int) {
+	if n < 1 {
+		n = defaultConcurrency
+	}
+	m.mu.Lock()
+	if n != m.concurrency {
+		m.concurrency = n
+		m.sem = make(chan struct{}, n)
+	}
+	m.mu.Unlock()
 }
 
 // Add appends tasks as Queued and skips IDs that are already present.
@@ -232,13 +253,15 @@ func (m *Manager) launch(e *entry) {
 		return
 	}
 	e.running = true
+	sem := m.sem
 	m.wg.Add(1)
 	m.mu.Unlock()
-	go m.worker(e)
+	go m.worker(e, sem)
 }
 
-// worker owns one task from queue slot to terminal state.
-func (m *Manager) worker(e *entry) {
+// worker owns one task from queue slot to terminal state. sem is the limit the
+// task was launched under, so a later SetConcurrency cannot swap it midway.
+func (m *Manager) worker(e *entry, sem chan struct{}) {
 	defer m.finish(e)
 
 	m.mu.Lock()
@@ -257,12 +280,12 @@ func (m *Manager) worker(e *entry) {
 	}
 
 	select {
-	case m.sem <- struct{}{}:
+	case sem <- struct{}{}:
 	case <-parent.Done():
 		m.update(e, func(t *Task) { t.State = Canceled })
 		return
 	}
-	defer func() { <-m.sem }()
+	defer func() { <-sem }()
 
 	m.mu.Lock()
 	if e.paused || e.task.State != Queued {

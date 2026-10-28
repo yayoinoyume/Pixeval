@@ -66,6 +66,9 @@ type browseState struct {
 
 	// masonry is the feed's place, touched only by the view.
 	masonry widgets.MasonryState
+	// tilesWidth is the column width v.tiles were built for; the view rebuilds
+	// them when the setting changes.
+	tilesWidth float64
 }
 
 // newHomeState is the recommended feed. Its fetch reads the cursor under mu,
@@ -140,6 +143,9 @@ func (a *App) loadMore(st *browseState) {
 	st.loading = true
 	gen, fetch := st.gen, st.fetch
 	st.mu.Unlock()
+	// Read the width on the main thread; the load goroutine must not touch
+	// the settings the view edits.
+	width := a.masonryWidth()
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
@@ -163,7 +169,7 @@ func (a *App) loadMore(st *browseState) {
 			st.started = true
 			for _, w := range page.Items {
 				st.items = append(st.items, w)
-				st.tiles = append(st.tiles, widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect())})
+				st.tiles = append(st.tiles, widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)})
 			}
 			st.next = page.NextURL
 		}
@@ -214,11 +220,11 @@ func (a *App) startSearch(st *browseState) {
 
 // cardAspect is a cover's aspect with the title and author under it, so the
 // masonry leaves them room.
-func cardAspect(aspect float64) float64 {
+func cardAspect(aspect, width float64) float64 {
 	if !(aspect > 0) {
 		aspect = 1
 	}
-	return cardWidth / (cardWidth/aspect + cardText)
+	return width / (width/aspect + cardText)
 }
 
 // imageFailed reports whether a cover failed to load.
@@ -275,7 +281,16 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 			ui.Text(c, msg).TextColor(t.TextMuted)
 		})
 	} else {
-		widgets.Masonry(c, &st.masonry, v.tiles, cardWidth, cardGap, func(i int) {
+		width := a.masonryWidth()
+		tiles := v.tiles
+		if width != st.tilesWidth {
+			st.tilesWidth = width
+			tiles = make([]widgets.MasonryItem, len(v.items))
+			for i, w := range v.items {
+				tiles[i] = widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width)}
+			}
+		}
+		widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
 			a.browseCard(c, st, v.items, i)
 		})
 	}
