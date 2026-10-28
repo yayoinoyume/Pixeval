@@ -244,8 +244,8 @@ func TestHomeTabsLoadTheirOwnFeed(t *testing.T) {
 	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
 	a.images = imagex.New(nil, "")
 	var mu sync.Mutex
-	calls := make([]int, 3)
-	a.homeFeeds = [3]*browseState{
+	calls := make([]int, homeTabCount)
+	a.homeFeeds = [homeTabCount]*browseState{
 		fakeHomeFeed(0, &calls[0], &mu),
 		fakeHomeFeed(100, &calls[1], &mu),
 		fakeHomeFeed(200, &calls[2], &mu),
@@ -269,6 +269,18 @@ func TestHomeTabsLoadTheirOwnFeed(t *testing.T) {
 		t.Fatalf("following feed not shown: %q", tt.Texts())
 	}
 
+	if err := tt.Click("排行"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.homeTab != homeTabRanking {
+		t.Fatalf("homeTab %d, want %d", a.homeTab, homeTabRanking)
+	}
+	waitBrowse(t, a.homeFeeds[homeTabRanking], "load the ranking feed", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("作品 200") {
+		t.Fatalf("ranking feed not shown: %q", tt.Texts())
+	}
+
 	if err := tt.Click("推荐"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -279,8 +291,8 @@ func TestHomeTabsLoadTheirOwnFeed(t *testing.T) {
 	mu.Lock()
 	got := append([]int(nil), calls...)
 	mu.Unlock()
-	if got[0] != 1 || got[1] != 1 || got[2] != 0 {
-		t.Fatalf("fetch calls %v, want [1 1 0]", got)
+	if got[0] != 1 || got[1] != 1 || got[2] != 1 {
+		t.Fatalf("fetch calls %v, want [1 1 1]", got)
 	}
 }
 
@@ -306,5 +318,18 @@ func TestHomeFollowingNeedsLogin(t *testing.T) {
 	}
 	if a.homeFeeds[0].isArmed() {
 		t.Error("recommended tab armed without being drawn")
+	}
+}
+
+// TestLoginArmsHomeFeed checks a session arms the home tab it will show. The
+// window is missing, so the update runs at once and nothing is fetched.
+func TestLoginArmsHomeFeed(t *testing.T) {
+	a := New()
+	a.applySession(&pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}})
+	if !a.homeFeeds[0].isArmed() {
+		t.Fatal("home feed not armed after login")
+	}
+	if v := a.homeFeeds[0].snapshot(); v.started || v.loading || len(v.items) != 0 {
+		t.Fatalf("feed fetched before it is drawn: %+v", v)
 	}
 }
