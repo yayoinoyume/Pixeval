@@ -12,7 +12,8 @@
     "placeholder": "%s（M1 占位）",
     "user": "用户",
     "series": "系列",
-    "novel": "小说"
+    "novel": "小说",
+    "region": "导航"
   },
   "home": {
     "recommended": "推荐",
@@ -28,6 +29,15 @@
     "save": "保存",
     "back": "返回"
   },
+  "a11y": {
+    "card": "%s，作者：%s",
+    "cover": "%s 的封面",
+    "avatar": "%s 的头像",
+    "comment": "%s 的评论",
+    "subscription": "追更：%s",
+    "download": "下载任务：%s",
+    "novelImage": "小说插图"
+  },
   "search": {
     "placeholder": "搜索作品",
     "action": "搜索",
@@ -35,6 +45,7 @@
   },
   "viewer": {
     "imageFailed": "图片加载失败",
+    "image": "作品图片：%s（第 %d/%d 页）",
     "bookmark": "收藏",
     "bookmarked": "已收藏",
     "download": "下载",
@@ -164,5 +175,8 @@
     "placeholder": "过滤表达式，如 bookmarks>100",
     "action": "应用",
     "invalid": "过滤表达式无效：%s"
+  },
+  "shortcuts": {
+    "hint": "快捷键：Ctrl+K 搜索，Ctrl+, 设置，Ctrl+H 历史，Ctrl+D 下载，Esc 返回（macOS 用 Command 代替 Ctrl）"
   }
 }

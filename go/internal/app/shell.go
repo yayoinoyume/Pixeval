@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -38,6 +39,7 @@ func (a *App) View(c *ui.Context) {
 	a.applyTheme(c)
 	a.applySavedSettings(c)
 	a.showNotice(c)
+	a.shortcuts(c)
 	if a.viewer != nil {
 		a.viewerPage(c)
 		return
@@ -51,9 +53,47 @@ func (a *App) View(c *ui.Context) {
 	})
 }
 
+// shortcuts registers the window's keys, which work on every page and in the
+// viewer, whatever has the keyboard focus.
+func (a *App) shortcuts(c *ui.Context) {
+	c.OnShortcut(ui.Cmd, ui.KeyK, func() {
+		a.goRoute(routeSearch)
+		// The search box takes the focus on the frame after this one.
+		a.search.focusQuery = true
+	})
+	c.OnShortcut(ui.Cmd, ui.KeyComma, func() { a.goRoute(routeSettings) })
+	c.OnShortcut(ui.Cmd, ui.KeyH, func() { a.goRoute(routeHistory) })
+	c.OnShortcut(ui.Cmd, ui.KeyD, func() { a.goRoute(routeDownloads) })
+	c.OnShortcut(0, ui.KeyEscape, a.escape)
+	if a.viewer != nil {
+		c.OnShortcut(0, ui.KeyLeft, func() { a.viewerGo(-1) })
+		c.OnShortcut(0, ui.KeyRight, func() { a.viewerGo(1) })
+	}
+}
+
+// goRoute shows r, closing the viewer that covers the pages.
+func (a *App) goRoute(r route) {
+	a.closeViewer()
+	a.route = r
+}
+
+// escape closes the viewer, or leaves the user, series or novel page for the
+// page it was opened from.
+func (a *App) escape() {
+	if a.viewer != nil {
+		a.closeViewer()
+		return
+	}
+	switch a.route {
+	case routeUser, routeSeries, routeNovel:
+		a.goBack()
+	}
+}
+
 func (a *App) nav(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Width(180).Padding(12).Gap(4).Background(t.Surface).Shrink(0).Children(func() {
+	ui.Column(c).Width(180).Padding(12).Gap(4).Background(t.Surface).Shrink(0).
+		Role(ui.RoleGroup).Label(a.t("nav.region")).Children(func() {
 		ui.Text(c, "Pixeval Go").FontSize(18).Bold().Padding(8)
 		for _, r := range navRoutes {
 			if ui.Button(c, a.routeLabel(r)).Clicked() {
@@ -149,6 +189,53 @@ func (a *App) homePage(c *ui.Context) {
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		a.browsePage(c, a.homeFeeds[a.homeTab])
 	})
+}
+
+// searchPage draws the search box and its results.
+func (a *App) searchPage(c *ui.Context) {
+	if a.session == nil {
+		a.loginPrompt(c)
+		return
+	}
+	st := a.search
+	ui.Column(c).Grow(1).FillHeight().Children(func() {
+		ui.Row(c).Gap(8).Padding(12).Children(func() {
+			box := ui.TextInput(c, &st.query).Grow(1).
+				Placeholder(a.t("search.placeholder")).Label(a.t("search.placeholder"))
+			if st.focusQuery {
+				st.focusQuery = false
+				box = box.Focus()
+			}
+			if ui.Button(c, a.t("search.action")).Clicked() {
+				a.startSearch(st)
+			}
+		})
+		if !st.isArmed() {
+			t := c.Theme()
+			ui.Column(c).Grow(1).Center().Children(func() {
+				ui.Text(c, a.t("search.hint")).TextColor(t.TextMuted)
+			})
+			return
+		}
+		a.browsePage(c, st)
+	})
+}
+
+// startSearch replaces the results with a search for the box's word.
+func (a *App) startSearch(st *browseState) {
+	word := strings.TrimSpace(st.query)
+	if word == "" {
+		return
+	}
+	st.restart()
+	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		if next := st.cursor(); next != "" {
+			return a.client.NextIllustrations(ctx, next)
+		}
+		return a.client.SearchIllustrations(ctx, pixiv.SearchOptions{Word: word})
+	})
+	st.masonry = widgets.MasonryState{}
+	a.loadMore(st)
 }
 
 // filterBar draws a feed's filter expression box. Each feed keeps its own

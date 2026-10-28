@@ -247,7 +247,8 @@ func (a *App) subscriptionRow(c *ui.Context, sub subscription.Subscription) {
 	if sub.Kind == subscription.KindSeries {
 		kind = a.t("subs.kindSeries")
 	}
-	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).
+		Label(a.tf("a11y.subscription", sub.TargetName)).Children(func() {
 		ui.Column(c).Grow(1).Gap(2).Children(func() {
 			ui.Text(c, sub.TargetName).MaxLines(1)
 			ui.Text(c, a.tf("subs.rowDetail", kind, a.checkedLabel(sub))).FontSize(12).TextColor(t.TextMuted)
@@ -278,7 +279,9 @@ func (a *App) newWorksList(c *ui.Context, works []pixiv.Illustration) {
 		ui.Text(c, a.tf("subs.newWorks", len(works))).FontSize(14).Bold().Padding(0, 12)
 		for i := range works {
 			work := works[i]
-			ui.Column(c).Gap(2).Padding(6, 12).Cursor(ui.CursorPointer).OnClick(func() {
+			ui.Column(c).Gap(2).Padding(6, 12).Focusable().
+				Label(a.tf("a11y.card", work.Title, work.User.Name)).
+				Cursor(ui.CursorPointer).OnClick(func() {
 				a.openViewer(&work, 0)
 			}).Children(func() {
 				ui.Text(c, work.Title).MaxLines(1)

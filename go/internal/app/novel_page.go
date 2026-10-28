@@ -216,11 +216,11 @@ func (a *App) novelImage(c *ui.Context, img novel.Image, url string) {
 		return
 	}
 	if bmp := a.novelImageBitmap(url); bmp != nil {
-		ui.Image(c, bmp).MaxWidth(novelImageWidth)
+		ui.Image(c, bmp).MaxWidth(novelImageWidth).Label(a.t("a11y.novelImage"))
 		return
 	}
 	ui.Box(c).FillWidth().MaxWidth(novelImageWidth).Height(novelImageBlock).
-		Radius(8).Background(t.Surface)
+		Radius(8).Background(t.Surface).Label(a.t("a11y.novelImage"))
 }
 
 // novelImageBitmap returns the image's bitmap, starting its load the first time

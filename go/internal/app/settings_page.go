@@ -151,6 +151,7 @@ func (a *App) settingsPage(c *ui.Context) {
 				a.saveSettings()
 			}
 		})
+		ui.Text(c, a.t("shortcuts.hint")).FontSize(12).TextColor(t.TextMuted)
 		if a.settingsErr != "" {
 			ui.Text(c, a.settingsErr).TextColor(t.Danger)
 		}

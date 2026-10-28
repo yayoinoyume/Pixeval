@@ -12,7 +12,8 @@
     "placeholder": "%s (M1 placeholder)",
     "user": "User",
     "series": "Series",
-    "novel": "Novel"
+    "novel": "Novel",
+    "region": "Navigation"
   },
   "home": {
     "recommended": "Recommended",
@@ -28,6 +29,15 @@
     "save": "Save",
     "back": "Back"
   },
+  "a11y": {
+    "card": "%s, by %s",
+    "cover": "Cover of %s",
+    "avatar": "Avatar of %s",
+    "comment": "Comment by %s",
+    "subscription": "Subscription: %s",
+    "download": "Download: %s",
+    "novelImage": "Novel illustration"
+  },
   "search": {
     "placeholder": "Search works",
     "action": "Search",
@@ -35,6 +45,7 @@
   },
   "viewer": {
     "imageFailed": "Image failed to load",
+    "image": "Illustration: %s (page %d of %d)",
     "bookmark": "Bookmark",
     "bookmarked": "Bookmarked",
     "download": "Download",
@@ -164,5 +175,8 @@
     "placeholder": "Filter works, e.g. bookmarks>100",
     "action": "Apply",
     "invalid": "Invalid filter: %s"
+  },
+  "shortcuts": {
+    "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
   }
 }

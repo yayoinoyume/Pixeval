@@ -50,7 +50,9 @@ func (a *App) historyPage(c *ui.Context) {
 // fetches the work and opens the viewer.
 func (a *App) historyCard(c *ui.Context, e HistoryEntry) {
 	t := c.Theme()
-	ui.Column(c).Width(cardWidth).Gap(4).Padding(2).Cursor(ui.CursorPointer).OnClick(func() {
+	ui.Column(c).Width(cardWidth).Gap(4).Padding(2).Focusable().
+		Label(a.tf("a11y.card", e.Title, e.Artist)).
+		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openHistory(e)
 	}).Children(func() {
 		ui.Box(c).Width(cardWidth).Height(cardWidth * 3 / 2).Radius(8).
@@ -65,7 +67,7 @@ func (a *App) historyCard(c *ui.Context, e HistoryEntry) {
 				return
 			}
 			if bmp := a.images.Thumb(e.Cover, coverWidth, coverHeight, a.historyCoverReady(e.Cover)); bmp != nil {
-				ui.Image(c, bmp).Fill()
+				ui.Image(c, bmp).Fill().Label(a.tf("a11y.cover", e.Title))
 			}
 		})
 		ui.Text(c, e.Title).MaxLines(1)
