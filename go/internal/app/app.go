@@ -44,7 +44,6 @@ type App struct {
 	// settingsSaved carries a save's result back to the main thread, which
 	// applies it in the view.
 	settingsSaved chan error
-	settingsMsg   string
 	settingsErr   string
 }
 

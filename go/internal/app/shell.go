@@ -33,6 +33,7 @@ var navRoutes = []route{routeHome, routeSearch, routeDownloads, routeSettings}
 // sign-in state above the page. The viewer takes the whole window instead.
 func (a *App) View(c *ui.Context) {
 	a.applyTheme(c)
+	a.applySavedSettings(c)
 	if a.viewer != nil {
 		a.viewerPage(c)
 		return

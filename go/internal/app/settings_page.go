@@ -39,7 +39,6 @@ func (a *App) settingsPage(c *ui.Context) {
 	if s == nil {
 		return
 	}
-	a.applySavedSettings(c)
 	t := c.Theme()
 	ui.Column(c).Grow(1).FillHeight().Padding(24).Gap(16).Children(func() {
 		ui.Form(c, func() {
@@ -77,8 +76,8 @@ func (a *App) settingsPage(c *ui.Context) {
 	})
 }
 
-// applySavedSettings picks up a save that finished off the main thread, and
-// shows its toast once.
+// applySavedSettings picks up a save that finished off the main thread: it
+// applies the download directory and shows the toast.
 func (a *App) applySavedSettings(c *ui.Context) {
 	select {
 	case err := <-a.settingsSaved:
@@ -87,13 +86,9 @@ func (a *App) applySavedSettings(c *ui.Context) {
 			return
 		}
 		a.settingsErr = ""
-		a.settingsMsg = "已保存"
 		a.downloadsDir = settingsDownloadDir(a.settings)
+		c.Toast("已保存")
 	default:
-	}
-	if a.settingsMsg != "" {
-		c.Toast(a.settingsMsg)
-		a.settingsMsg = ""
 	}
 }
 
