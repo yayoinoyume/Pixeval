@@ -160,7 +160,7 @@ func (a *App) toggleBookmark(v *viewerState) {
 			}
 			v.mu.Unlock()
 			if err != nil {
-				a.notice = "收藏失败：" + err.Error()
+				a.notice = a.tf("viewer.bookmarkFailed", err.Error())
 			}
 		})
 	}()
@@ -324,7 +324,7 @@ func (a *App) viewerPage(c *ui.Context) {
 					Scale(v.zoom, v.zoom).Translate(v.panX, v.panY)
 			case failed:
 				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, "图片加载失败").TextColor(t.Danger)
+					ui.Text(c, a.t("viewer.imageFailed")).TextColor(t.Danger)
 				})
 			default:
 				ui.Column(c).Fill().Center().Children(func() {
@@ -344,14 +344,14 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 		ui.Text(c, v.work.Title).Grow(1).MaxLines(1)
 		ui.Text(c, fmt.Sprintf("%d/%d", v.page+1, n)).TextColor(t.TextMuted)
 		if failed {
-			if ui.Button(c, "重试").Clicked() {
+			if ui.Button(c, a.t("common.retry")).Clicked() {
 				a.viewerReload(v)
 			}
 		}
 		bookmarked, bookmarking := v.bookmarkState()
-		label := "收藏"
+		label := a.t("viewer.bookmark")
 		if bookmarked {
-			label = "已收藏"
+			label = a.t("viewer.bookmarked")
 		}
 		bookmark := ui.Button(c, label).Disabled(bookmarking)
 		if bookmarked {
@@ -360,24 +360,24 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 		if bookmark.Clicked() {
 			a.toggleBookmark(v)
 		}
-		if ui.Button(c, "下载").Clicked() {
+		if ui.Button(c, a.t("viewer.download")).Clicked() {
 			queued, ok := a.downloadWork(v.work)
 			switch {
 			case !ok:
-				c.Toast("无法创建下载目录")
+				c.Toast(a.t("viewer.noDownloadDir"))
 			case queued == 0:
-				c.Toast("已在下载队列中")
+				c.Toast(a.t("viewer.alreadyQueued"))
 			default:
-				c.Toast(fmt.Sprintf("已加入 %d 页到下载队列", queued))
+				c.Toast(a.tf("viewer.queued", queued))
 			}
 		}
-		if ui.Button(c, "上一页").Disabled(v.page <= 0).Clicked() {
+		if ui.Button(c, a.t("viewer.prev")).Disabled(v.page <= 0).Clicked() {
 			a.viewerGo(-1)
 		}
-		if ui.Button(c, "下一页").Disabled(v.page >= n-1).Clicked() {
+		if ui.Button(c, a.t("viewer.next")).Disabled(v.page >= n-1).Clicked() {
 			a.viewerGo(1)
 		}
-		if ui.Button(c, "关闭").Clicked() {
+		if ui.Button(c, a.t("viewer.close")).Clicked() {
 			a.closeViewer()
 		}
 	})

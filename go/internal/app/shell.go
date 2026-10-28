@@ -15,19 +15,9 @@ const (
 	routeSettings  route = "settings"
 )
 
-func (r route) label() string {
-	switch r {
-	case routeSearch:
-		return "搜索"
-	case routeDownloads:
-		return "下载"
-	case routeHistory:
-		return "历史"
-	case routeSettings:
-		return "设置"
-	default:
-		return "首页"
-	}
+// routeLabel is the navigation label of the page.
+func (a *App) routeLabel(r route) string {
+	return a.t("nav." + string(r))
 }
 
 var navRoutes = []route{routeHome, routeSearch, routeDownloads, routeHistory, routeSettings}
@@ -56,7 +46,7 @@ func (a *App) nav(c *ui.Context) {
 	ui.Column(c).Width(180).Padding(12).Gap(4).Background(t.Surface).Shrink(0).Children(func() {
 		ui.Text(c, "Pixeval Go").FontSize(18).Bold().Padding(8)
 		for _, r := range navRoutes {
-			if ui.Button(c, r.label()).Clicked() {
+			if ui.Button(c, a.routeLabel(r)).Clicked() {
 				a.route = r
 			}
 		}
@@ -66,15 +56,15 @@ func (a *App) nav(c *ui.Context) {
 func (a *App) header(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Gap(12).Padding(16).AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-		ui.Text(c, a.route.label()).FontSize(22).Bold().Grow(1)
+		ui.Text(c, a.routeLabel(a.route)).FontSize(22).Bold().Grow(1)
 		if a.session == nil {
-			if ui.Button(c, "登录").Clicked() {
+			if ui.Button(c, a.t("nav.login")).Clicked() {
 				a.ShowLogin()
 			}
 			return
 		}
-		ui.Text(c, "已登录："+a.userName()).TextColor(t.TextMuted)
-		if ui.Button(c, "退出").Clicked() {
+		ui.Text(c, a.tf("nav.loggedIn", a.userName())).TextColor(t.TextMuted)
+		if ui.Button(c, a.t("nav.logout")).Clicked() {
 			a.logout()
 		}
 	})
@@ -95,7 +85,7 @@ func (a *App) page(c *ui.Context) {
 	default:
 		t := c.Theme()
 		ui.Column(c).Grow(1).Center().Children(func() {
-			ui.Text(c, a.route.label()+"（M1 占位）").TextColor(t.TextMuted)
+			ui.Text(c, a.tf("nav.placeholder", a.routeLabel(a.route))).TextColor(t.TextMuted)
 		})
 	}
 }
@@ -118,7 +108,7 @@ func (a *App) applyTheme(c *ui.Context) {
 // and ranking need a session, so a signed-out user gets the login prompt
 // instead.
 func (a *App) homePage(c *ui.Context) {
-	if ui.Tabs(c, &a.homeTab, homeTabLabels...).Padding(12, 12, 0, 12).Changed() {
+	if ui.Tabs(c, &a.homeTab, a.t("home.recommended"), a.t("home.following"), a.t("home.ranking")).Padding(12, 12, 0, 12).Changed() {
 		a.armHome(a.homeTab)
 	}
 	if a.session == nil {
@@ -134,8 +124,8 @@ func (a *App) homePage(c *ui.Context) {
 func (a *App) loginPrompt(c *ui.Context) {
 	t := c.Theme()
 	ui.Column(c).Grow(1).Center().Gap(12).Children(func() {
-		ui.Text(c, "登录 Pixiv 后开始浏览").TextColor(t.TextMuted)
-		if ui.Button(c, "登录 Pixiv").Clicked() {
+		ui.Text(c, a.t("login.prompt")).TextColor(t.TextMuted)
+		if ui.Button(c, a.t("login.title")).Clicked() {
 			a.ShowLogin()
 		}
 	})

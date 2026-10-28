@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log"
 
 	"github.com/egoist/mygo/ui"
@@ -20,15 +19,15 @@ func (a *App) historyPage(c *ui.Context) {
 	}
 	if len(entries) == 0 {
 		ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
-			ui.Text(c, "还没有浏览记录").TextColor(t.TextMuted)
-			ui.Text(c, "打开作品后会自动记录").FontSize(12).TextColor(t.TextMuted)
+			ui.Text(c, a.t("history.empty")).TextColor(t.TextMuted)
+			ui.Text(c, a.t("history.emptyHint")).FontSize(12).TextColor(t.TextMuted)
 		})
 		return
 	}
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, fmt.Sprintf("%d 条记录", len(entries))).Grow(1).TextColor(t.TextMuted)
-			if ui.Button(c, "清空历史").Clicked() {
+			ui.Text(c, a.tf("history.count", len(entries))).Grow(1).TextColor(t.TextMuted)
+			if ui.Button(c, a.t("history.clear")).Clicked() {
 				a.clearHistory()
 			}
 		})
@@ -61,7 +60,7 @@ func (a *App) historyCard(c *ui.Context, e HistoryEntry) {
 			}
 			if a.historyFailed[e.Cover] {
 				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, "封面加载失败").FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, a.t("common.coverFailed")).FontSize(12).TextColor(t.TextMuted)
 				})
 				return
 			}
@@ -98,7 +97,7 @@ func (a *App) openHistory(e HistoryEntry) {
 		a.update(func() {
 			if err != nil {
 				log.Printf("history: open %d: %v", e.ID, err)
-				a.notice = "打开作品失败：" + err.Error()
+				a.notice = a.tf("history.openFailed", err.Error())
 				return
 			}
 			a.openViewer(w, 0)

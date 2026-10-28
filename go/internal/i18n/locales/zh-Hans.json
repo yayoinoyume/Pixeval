@@ -1,0 +1,97 @@
+{
+  "nav": {
+    "home": "首页",
+    "search": "搜索",
+    "downloads": "下载",
+    "history": "历史",
+    "settings": "设置",
+    "login": "登录",
+    "logout": "退出",
+    "loggedIn": "已登录：%s",
+    "placeholder": "%s（M1 占位）"
+  },
+  "home": {
+    "recommended": "推荐",
+    "following": "关注",
+    "ranking": "排行"
+  },
+  "common": {
+    "retry": "重试",
+    "loading": "加载中…",
+    "loadFailed": "加载失败：%s",
+    "coverFailed": "封面加载失败",
+    "noWorks": "没有作品",
+    "save": "保存"
+  },
+  "search": {
+    "placeholder": "搜索作品",
+    "action": "搜索",
+    "hint": "输入关键词开始搜索"
+  },
+  "viewer": {
+    "imageFailed": "图片加载失败",
+    "bookmark": "收藏",
+    "bookmarked": "已收藏",
+    "download": "下载",
+    "noDownloadDir": "无法创建下载目录",
+    "alreadyQueued": "已在下载队列中",
+    "queued": "已加入 %d 页到下载队列",
+    "prev": "上一页",
+    "next": "下一页",
+    "close": "关闭",
+    "bookmarkFailed": "收藏失败：%s"
+  },
+  "download": {
+    "running": "下载中",
+    "done": "完成",
+    "failed": "失败",
+    "canceled": "取消",
+    "queued": "排队",
+    "paused": "已暂停",
+    "empty": "还没有下载任务",
+    "emptyHint": "在查看器里点「下载」把作品加入队列",
+    "count": "%d 个任务",
+    "clearDone": "清空已完成",
+    "page": "第 %d 页",
+    "resume": "恢复",
+    "pause": "暂停",
+    "cancel": "取消",
+    "remove": "移除"
+  },
+  "settings": {
+    "theme": "主题",
+    "themeSystem": "跟随系统",
+    "themeLight": "浅色",
+    "themeDark": "深色",
+    "downloadDir": "下载目录",
+    "downloadDirHint": "留空表示默认目录，不存在时自动创建",
+    "concurrency": "下载并发",
+    "showR18": "显示 R18",
+    "showR18Hint": "R18 过滤将在 M2 生效",
+    "cardWidth": "瀑布流列宽",
+    "language": "语言",
+    "langSystem": "跟随系统",
+    "langZh": "中文",
+    "langEn": "English",
+    "saveFailed": "保存失败：%s",
+    "saved": "已保存",
+    "pathFailed": "无法保存设置：%s"
+  },
+  "history": {
+    "empty": "还没有浏览记录",
+    "emptyHint": "打开作品后会自动记录",
+    "count": "%d 条记录",
+    "clear": "清空历史",
+    "openFailed": "打开作品失败：%s"
+  },
+  "login": {
+    "title": "登录 Pixiv",
+    "prompt": "登录 Pixiv 后开始浏览",
+    "busy": "正在登录…",
+    "refreshAction": "用 refresh token 登录",
+    "refreshHint": "手动登录：粘贴 Pixiv 网页登录拿到的 refresh token",
+    "pageFailed": "无法创建登录页面",
+    "refreshEmpty": "请先粘贴 refresh token",
+    "saveFailed": "保存登录信息失败"
+  }
+}

@@ -12,6 +12,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
+	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
@@ -45,6 +46,9 @@ type App struct {
 	// settings are the user's preferences, loaded at start and saved from the
 	// settings page.
 	settings *Settings
+	// lang is the language the bundle speaks, and bundle holds its messages.
+	lang   string
+	bundle *i18n.Bundle
 	// settingsSaved carries a save's result back to the main thread, which
 	// applies it in the view.
 	settingsSaved chan error
@@ -64,7 +68,7 @@ type App struct {
 func New() *App {
 	client := pixiv.NewClient()
 	settings := loadSettings()
-	return &App{
+	a := &App{
 		client:        client,
 		images:        imagex.New(client, imageDir()),
 		downloads:     download.New(client, settings.DownloadConcurrency),
@@ -84,6 +88,40 @@ func New() *App {
 		homeFeeds: [3]*browseState{{}, {}, {}},
 		search:    &browseState{},
 	}
+	a.loadLanguage()
+	return a
+}
+
+// loadLanguage makes the messages the ones the settings ask for: the saved
+// language, or the system's when the setting follows it.
+func (a *App) loadLanguage() {
+	lang := i18n.LangAuto
+	if a.settings != nil {
+		lang = a.settings.Language
+	}
+	b, err := i18n.Load(lang)
+	if err != nil {
+		log.Printf("i18n: %v", err)
+		return
+	}
+	a.bundle = b
+	a.lang = b.Lang()
+}
+
+// t is the message for key in the current language.
+func (a *App) t(key string) string {
+	if a == nil {
+		return key
+	}
+	return a.bundle.T(key)
+}
+
+// tf is t with the format's arguments filled in.
+func (a *App) tf(key string, args ...any) string {
+	if a == nil {
+		return key
+	}
+	return a.bundle.Tf(key, args...)
 }
 
 // imageDir is the image cache under the user's cache directory, created when

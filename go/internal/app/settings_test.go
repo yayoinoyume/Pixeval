@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
@@ -18,6 +19,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "pixeval-go", "settings.json")
 	want := &Settings{
 		Theme:               themeDark,
+		Language:            i18n.LangZhHans,
 		DownloadDir:         filepath.Join(t.TempDir(), "downloads"),
 		DownloadConcurrency: 5,
 		ShowR18:             true,
@@ -46,6 +48,9 @@ func TestDefaultSettings(t *testing.T) {
 	s := Default()
 	if s.Theme != themeSystem {
 		t.Errorf("theme %q, want %q", s.Theme, themeSystem)
+	}
+	if s.Language != i18n.LangAuto {
+		t.Errorf("language %q, want %q", s.Language, i18n.LangAuto)
 	}
 	if s.DownloadConcurrency != 3 {
 		t.Errorf("concurrency %d, want 3", s.DownloadConcurrency)
@@ -83,8 +88,27 @@ func TestLoadFillsMissingFields(t *testing.T) {
 	if s.Theme != themeDark {
 		t.Errorf("theme %q", s.Theme)
 	}
+	if s.Language != i18n.LangAuto {
+		t.Errorf("language %q, want %q", s.Language, i18n.LangAuto)
+	}
 	if s.DownloadConcurrency != 3 || s.CardWidth != 240 {
 		t.Errorf("missing fields not defaulted: %+v", *s)
+	}
+}
+
+// TestLoadRejectsUnknownLanguage checks a hand edited language falls back to
+// following the system.
+func TestLoadRejectsUnknownLanguage(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(path, []byte(`{"language":"klingon"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.Language != i18n.LangAuto {
+		t.Errorf("language %q, want %q", s.Language, i18n.LangAuto)
 	}
 }
 
@@ -117,7 +141,7 @@ func TestSettingsPageShowsFields(t *testing.T) {
 	a := New()
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, label := range []string{"主题", "下载目录", "下载并发", "显示 R18", "瀑布流列宽"} {
+	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "显示 R18", "瀑布流列宽"} {
 		if !tt.HasText(label) {
 			t.Errorf("label %q missing: %q", label, tt.Texts())
 		}
