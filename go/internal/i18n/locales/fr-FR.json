@@ -41,6 +41,8 @@
   "search": {
     "placeholder": "Rechercher des œuvres",
     "action": "Rechercher",
+    "illust": "Illustrations",
+    "novel": "Novels",
     "hint": "Saisissez un mot-clé pour lancer la recherche"
   },
   "viewer": {
@@ -170,7 +172,8 @@
   },
   "novel": {
     "loadFailed": "Impossible de charger le roman : %s",
-    "imageUnsupported": "Les images intégrées ne sont pas encore prises en charge"
+    "imageUnsupported": "Les images intégrées ne sont pas encore prises en charge",
+    "pages": "%d pages"
   },
   "filter": {
     "placeholder": "Filtrer les œuvres, p. ex. bookmarks>100",

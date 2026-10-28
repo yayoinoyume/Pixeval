@@ -41,6 +41,8 @@
   "search": {
     "placeholder": "Search works",
     "action": "Search",
+    "illust": "Illustrations",
+    "novel": "Novels",
     "hint": "Type a keyword to search"
   },
   "viewer": {
@@ -170,7 +172,8 @@
   },
   "novel": {
     "loadFailed": "Cannot load the novel: %s",
-    "imageUnsupported": "Inline images are not supported yet"
+    "imageUnsupported": "Inline images are not supported yet",
+    "pages": "%d pages"
   },
   "filter": {
     "placeholder": "Filter works, e.g. bookmarks>100",

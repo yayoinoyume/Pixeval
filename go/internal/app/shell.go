@@ -210,18 +210,32 @@ func (a *App) searchPage(c *ui.Context) {
 				a.startSearch(st)
 			}
 		})
-		if !st.isArmed() {
+		ui.Tabs(c, &a.searchKind, a.t("search.illust"), a.t("search.novel")).Padding(12, 12, 0, 12)
+		if !a.searchArmed() {
 			t := c.Theme()
 			ui.Column(c).Grow(1).Center().Children(func() {
 				ui.Text(c, a.t("search.hint")).TextColor(t.TextMuted)
 			})
 			return
 		}
+		if a.searchKind == searchNovel {
+			a.novelResults(c)
+			return
+		}
 		a.browsePage(c, st)
 	})
 }
 
-// startSearch replaces the results with a search for the box's word.
+// searchArmed reports whether the result list the search page shows may load.
+func (a *App) searchArmed() bool {
+	if a.searchKind == searchNovel {
+		return a.searchNovels.isArmed()
+	}
+	return a.search.isArmed()
+}
+
+// startSearch replaces the results with a search for the box's word. Both
+// tabs get it: the novel list loads when its tab first draws it.
 func (a *App) startSearch(st *browseState) {
 	word := strings.TrimSpace(st.query)
 	if word == "" {
@@ -235,6 +249,11 @@ func (a *App) startSearch(st *browseState) {
 		return a.client.SearchIllustrations(ctx, pixiv.SearchOptions{Word: word})
 	})
 	st.masonry = widgets.MasonryState{}
+	a.startNovelSearch(word)
+	if a.searchKind == searchNovel {
+		a.loadMoreNovels(a.searchNovels)
+		return
+	}
 	a.loadMore(st)
 }
 

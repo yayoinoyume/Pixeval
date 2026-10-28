@@ -62,8 +62,12 @@ type App struct {
 	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
 	// so switching tabs loses nothing.
 	homeFeeds [homeTabCount]*browseState
-	// search is the last search's results.
-	search *browseState
+	// search is the last illustration search's results, and searchNovels the
+	// last novel search's. searchKind is which of the two the search page
+	// shows.
+	search       *browseState
+	searchNovels *novelFeedState
+	searchKind   int
 	// settings are the user's preferences, loaded at start and saved from the
 	// settings page.
 	settings *Settings
@@ -177,6 +181,7 @@ func New() *App {
 		route:            routeHome,
 		homeFeeds:        newHomeFeeds(),
 		search:           &browseState{},
+		searchNovels:     &novelFeedState{},
 		updater:          mygoUpdater{},
 	}
 	// The check probes the install directory, so the settings page asks once.
