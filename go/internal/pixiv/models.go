@@ -30,6 +30,46 @@ type User struct {
 	ProfileImageUrls ProfileImageUrls `json:"profile_image_urls"`
 }
 
+// UserDetail is a user with the profile block the detail endpoint returns.
+type UserDetail struct {
+	User    User    `json:"user"`
+	Profile Profile `json:"profile"`
+}
+
+// Profile is the public profile of a user.
+type Profile struct {
+	Webpage                    string `json:"webpage"`
+	Gender                     string `json:"gender"`
+	Birth                      string `json:"birth"`
+	BirthDay                   string `json:"birth_day"`
+	BirthYear                  int    `json:"birth_year"`
+	Region                     string `json:"region"`
+	Job                        string `json:"job"`
+	TotalFollowUsers           int    `json:"total_follow_users"`
+	TotalMyPixivUsers          int    `json:"total_mypixiv_users"`
+	TotalIllusts               int    `json:"total_illusts"`
+	TotalManga                 int    `json:"total_manga"`
+	TotalNovels                int    `json:"total_novels"`
+	TotalIllustBookmarksPublic int    `json:"total_illust_bookmarks_public"`
+	TotalIllustSeries          int    `json:"total_illust_series"`
+	TotalNovelSeries           int    `json:"total_novel_series"`
+	BackgroundImageURL         string `json:"background_image_url"`
+	TwitterAccount             string `json:"twitter_account"`
+	TwitterURL                 string `json:"twitter_url"`
+	IsPremium                  bool   `json:"is_premium"`
+	IsFollowed                 bool   `json:"is_followed"`
+	IsMypixiv                  bool   `json:"is_mypixiv"`
+	IsBlocked                  bool   `json:"is_blocked"`
+	Comment                    string `json:"comment"`
+}
+
+// UserPreview is one entry of a following or follower list.
+type UserPreview struct {
+	User    User           `json:"user"`
+	Illusts []Illustration `json:"illusts"`
+	IsMuted bool           `json:"is_muted"`
+}
+
 type MetaPage struct {
 	ImageUrls ImageUrls `json:"image_urls"`
 }
@@ -41,6 +81,27 @@ type MetaSinglePage struct {
 type Series struct {
 	ID    int64  `json:"id"`
 	Title string `json:"title"`
+}
+
+// SeriesDetail is the description of an illustration series.
+type SeriesDetail struct {
+	ID               int64     `json:"id"`
+	Title            string    `json:"title"`
+	Description      string    `json:"description"`
+	CoverImageURLs   ImageUrls `json:"cover_image_urls"`
+	User             User      `json:"user"`
+	WorkIllustsCount int       `json:"work_illusts_count"`
+	CreateDate       time.Time `json:"create_date"`
+	UpdateDate       time.Time `json:"update_date"`
+	IsConcluded      bool      `json:"is_concluded"`
+	IsOriginal       bool      `json:"is_original"`
+}
+
+// SeriesPage is one series with a page of its works.
+type SeriesPage struct {
+	Detail  SeriesDetail   `json:"-"`
+	Illusts []Illustration `json:"-"`
+	NextURL string         `json:"next_url"`
 }
 
 type Illustration struct {
