@@ -1,6 +1,7 @@
 package pixiv
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ const imageReferer = "https://www.pixiv.net"
 // Client talks to the Pixiv app API. Requests are serialized with a minimum
 // interval, and a 429 pauses every request until Retry-After.
 type Client struct {
+	baseURL  string
 	hc       *http.Client
 	mu       sync.Mutex
 	last     time.Time
@@ -28,6 +30,7 @@ type Client struct {
 
 func NewClient() *Client {
 	return &Client{
+		baseURL:  appBaseURL,
 		hc:       &http.Client{Timeout: 100 * time.Second},
 		cooldown: 700 * time.Millisecond,
 		backoff:  []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second},
@@ -98,8 +101,19 @@ func (c *Client) pause(d time.Duration) {
 
 // get performs a rate limited GET with retries and JSON decoding.
 func (c *Client) get(ctx context.Context, rawURL string, out any) error {
+	return c.do(ctx, http.MethodGet, rawURL, "", nil, out)
+}
+
+// post performs a rate limited form POST with the same retries and JSON
+// decoding as get. out may be nil when the response body is not needed.
+func (c *Client) post(ctx context.Context, path string, form url.Values, out any) error {
+	const contentType = "application/x-www-form-urlencoded"
+	return c.do(ctx, http.MethodPost, c.baseURL+path, contentType, []byte(form.Encode()), out)
+}
+
+func (c *Client) do(ctx context.Context, method, rawURL, contentType string, payload []byte, out any) error {
 	for attempt := 0; ; attempt++ {
-		retry, err := c.getOnce(ctx, rawURL, out)
+		retry, err := c.doOnce(ctx, method, rawURL, contentType, payload, out)
 		if !retry || attempt >= len(c.backoff) {
 			return err
 		}
@@ -113,11 +127,15 @@ func (c *Client) get(ctx context.Context, rawURL string, out any) error {
 	}
 }
 
-func (c *Client) getOnce(ctx context.Context, rawURL string, out any) (retry bool, err error) {
+func (c *Client) doOnce(ctx context.Context, method, rawURL, contentType string, payload []byte, out any) (retry bool, err error) {
 	if err = c.wait(ctx); err != nil {
 		return false, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	var reqBody io.Reader
+	if payload != nil {
+		reqBody = bytes.NewReader(payload)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, reqBody)
 	if err != nil {
 		return false, err
 	}
@@ -126,6 +144,9 @@ func (c *Client) getOnce(ctx context.Context, rawURL string, out any) (retry boo
 	c.mu.Unlock()
 	if tok != nil && tok.AccessToken != "" {
 		req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 	req.Header.Set("User-Agent", appUserAgent)
 	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
@@ -146,12 +167,15 @@ func (c *Client) getOnce(ctx context.Context, rawURL string, out any) (retry boo
 		return true, fmt.Errorf("pixiv: rate limited for %s", d)
 	case resp.StatusCode == http.StatusUnauthorized:
 		return false, errors.New("pixiv: unauthorized (token expired or revoked)")
-	case resp.StatusCode == http.StatusBadRequest && isNextURLExhausted(body):
+	case resp.StatusCode == http.StatusBadRequest && method == http.MethodGet && isNextURLExhausted(body):
 		return false, ErrNoMore
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooEarly:
 		return true, fmt.Errorf("pixiv: %s: %s", resp.Status, truncate(string(body), 200))
 	case resp.StatusCode != http.StatusOK:
 		return false, fmt.Errorf("pixiv: %s: %s", resp.Status, truncate(string(body), 200))
+	}
+	if out == nil {
+		return false, nil
 	}
 	if err := json.Unmarshal(body, out); err != nil {
 		return false, fmt.Errorf("pixiv: decode: %w", err)
@@ -202,7 +226,17 @@ func (c *Client) GetImage(ctx context.Context, imageURL string) ([]byte, error) 
 	return io.ReadAll(resp.Body)
 }
 
-// PageURL builds an app API URL.
+// PageURL builds an app API URL for the default host.
 func PageURL(path string, q url.Values) string {
-	return appBaseURL + path + "?" + q.Encode()
+	return apiURL(appBaseURL, path, q)
+}
+
+// pageURL builds an app API URL against this client's base, so a test server
+// can stand in for the real host.
+func (c *Client) pageURL(path string, q url.Values) string {
+	return apiURL(c.baseURL, path, q)
+}
+
+func apiURL(base, path string, q url.Values) string {
+	return base + path + "?" + q.Encode()
 }
