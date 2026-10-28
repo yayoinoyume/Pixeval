@@ -85,7 +85,7 @@ func (a *App) openViewer(w *pixiv.Illustration, page int) {
 		page = n - 1
 	}
 	v := &viewerState{work: *w, page: page, zoom: 1, bookmarked: w.IsBookmarked}
-	a.viewer = v
+	a.viewer, a.comments, a.commentsOpen = v, &commentState{workID: w.ID}, false
 	a.recordHistory(*w)
 	// Start the original at once, so the first frame already has a load to
 	// show rather than one to start.
@@ -311,25 +311,28 @@ func (a *App) viewerPage(c *ui.Context) {
 	c.OnShortcut(0, ui.KeyLeft, func() { a.viewerGo(-1) })
 	c.OnShortcut(0, ui.KeyRight, func() { a.viewerGo(1) })
 	ui.Column(c).Fill().FillHeight().Background(t.Background).Children(func() {
-		area := ui.Box(c).Grow(1).FillWidth().Clip().Background(t.Background).
-			Focusable().AutoFocus().
-			HandleInput(func(ev ui.InputEvent) bool { return a.viewerInput(v, ev) })
-		if b := area.LayoutBounds(); b.W > 0 && b.H > 0 {
-			v.viewW, v.viewH = b.W, b.H
-		}
-		area.Children(func() {
-			switch {
-			case bmp != nil:
-				ui.Image(c, bmp).Fill().Fit(ui.Contain).
-					Scale(v.zoom, v.zoom).Translate(v.panX, v.panY)
-			case failed:
-				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, a.t("viewer.imageFailed")).TextColor(t.Danger)
-				})
-			default:
-				ui.Column(c).Fill().Center().Children(func() {
-					ui.Spinner(c)
-				})
+		ui.Row(c).Grow(1).FillWidth().AlignItems(ui.Stretch).Children(func() {
+			area := ui.Box(c).Grow(1).FillHeight().Clip().Background(t.Background).
+				Focusable().AutoFocus().
+				HandleInput(func(ev ui.InputEvent) bool { return a.viewerInput(v, ev) })
+			if b := area.LayoutBounds(); b.W > 0 && b.H > 0 {
+				v.viewW, v.viewH = b.W, b.H
+			}
+			area.Children(func() {
+				switch {
+				case bmp != nil:
+					ui.Image(c, bmp).Fill().Fit(ui.Contain).
+						Scale(v.zoom, v.zoom).Translate(v.panX, v.panY)
+				case failed:
+					ui.Column(c).Fill().Center().Children(func() {
+						ui.Text(c, a.t("viewer.imageFailed")).TextColor(t.Danger)
+					})
+				default:
+					ui.Column(c).Fill().Center().Children(func() { ui.Spinner(c) })
+				}
+			})
+			if a.commentsOpen && a.comments != nil {
+				a.commentsPanel(c, a.comments)
 			}
 		})
 		a.viewerBar(c, v, failed)
@@ -343,6 +346,7 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 	ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).KeepFocus().Children(func() {
 		ui.Text(c, v.work.Title).Grow(1).MaxLines(1)
 		ui.Text(c, fmt.Sprintf("%d/%d", v.page+1, n)).TextColor(t.TextMuted)
+		a.commentsButton(c)
 		// Leaving the viewer first, because it takes the whole window and the
 		// page under it is what the back button returns to.
 		if ui.Button(c, a.t("user.open")).Clicked() {

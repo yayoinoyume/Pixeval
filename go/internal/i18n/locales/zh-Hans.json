@@ -44,6 +44,21 @@
     "close": "关闭",
     "bookmarkFailed": "收藏失败：%s"
   },
+  "comments": {
+    "title": "评论",
+    "empty": "还没有评论",
+    "loadMore": "加载更多",
+    "placeholder": "写评论…",
+    "send": "发送",
+    "reply": "回复",
+    "replyingTo": "回复 @%s",
+    "cancel": "取消",
+    "justNow": "刚刚",
+    "minutesAgo": "%d 分钟前",
+    "hoursAgo": "%d 小时前",
+    "daysAgo": "%d 天前",
+    "sendFailed": "评论发送失败：%s"
+  },
   "download": {
     "running": "下载中",
     "done": "完成",
