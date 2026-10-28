@@ -106,8 +106,11 @@ func (a *App) languageValue(label string) string {
 // its control on the right.
 type settingsRow func(label, hint string, control func())
 
-// settingsPage draws the preferences as groups of rows, so a setting is found
-// by what it is about rather than by scanning one long column.
+// settingsPad is the horizontal inset of a settings card's title and rows.
+const settingsPad float32 = 20
+
+// settingsPage draws the preferences as four cards, so a setting is found by
+// what it is about rather than by scanning one long column.
 func (a *App) settingsPage(c *ui.Context) {
 	s := a.settings
 	if s == nil {
@@ -117,17 +120,17 @@ func (a *App) settingsPage(c *ui.Context) {
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Row(c).Padding(t.SpaceXL, contentPadding).Children(func() {
-				ui.Column(c).Width(min(contentWidth(c), 860)).Gap(t.SpaceM).Children(func() {
+				ui.Column(c).Width(min(contentWidth(c), 900)).Gap(t.SpaceL).Children(func() {
 					a.settingsGroup(c, a.t("settings.groupAppearance"), func(row settingsRow) {
 						theme := a.themeLabel(s.Theme)
 						row(a.t("settings.theme"), "", func() {
-							if ui.Select(c, &theme, a.themeChoices()).Width(200).Changed() {
+							if ui.Select(c, &theme, a.themeChoices()).Width(200).Height(36).Label(a.t("settings.theme")).Changed() {
 								s.Theme = a.themeValue(theme)
 							}
 						})
 						language := a.languageLabel(s.Language)
 						row(a.t("settings.language"), "", func() {
-							if ui.Select(c, &language, a.languageChoices()).Width(200).Changed() {
+							if ui.Select(c, &language, a.languageChoices()).Width(200).Height(36).Label(a.t("settings.language")).Changed() {
 								s.Language = a.languageValue(language)
 								// The theme applies on the frame it changes in; the language
 								// applies at once too, like the rest of the page's controls.
@@ -139,30 +142,47 @@ func (a *App) settingsPage(c *ui.Context) {
 
 					a.settingsGroup(c, a.t("settings.groupDownloads"), func(row settingsRow) {
 						row(a.t("settings.downloadDir"), a.t("settings.downloadDirHint"), func() {
-							ui.TextInput(c, &s.DownloadDir).Width(360)
+							ui.TextInput(c, &s.DownloadDir).Width(360).Height(36).Label(a.t("settings.downloadDir"))
 						})
 						concurrency := float64(s.DownloadConcurrency)
 						row(a.t("settings.concurrency"), "", func() {
-							ui.NumberInput(c, &concurrency, 1, 8, 1).Width(140)
+							ui.NumberInput(c, &concurrency, 1, 8, 1).Width(140).Height(36).Label(a.t("settings.concurrency"))
 						})
 						s.DownloadConcurrency = int(concurrency)
+					})
+
+					a.settingsGroup(c, a.t("settings.groupContent"), func(row settingsRow) {
 						row(a.t("settings.showR18"), a.t("settings.showR18Hint"), func() {
-							ui.Switch(c, &s.ShowR18)
+							switchControl(c, &s.ShowR18, a.t("settings.showR18"))
 						})
 						width := s.CardWidth
 						row(a.t("settings.cardWidth"), "", func() {
-							ui.NumberInput(c, &width, 180, 360, 10).Width(140)
+							ui.NumberInput(c, &width, 180, 360, 10).Width(140).Height(36).Label(a.t("settings.cardWidth"))
 						})
 						s.CardWidth = width
 					})
 
-					a.settingsGroup(c, a.t("settings.updates"), func(settingsRow) {
-						a.updatesSection(c)
-					})
-
-					a.settingsGroup(c, a.t("settings.groupShortcuts"), func(settingsRow) {
-						ui.Text(c, a.t("shortcuts.hint")).FontSize(t.TextSmall).
-							TextColor(t.TextMuted).Padding(0, 20, t.SpaceS, 20)
+					a.settingsGroup(c, a.t("settings.groupAbout"), func(row settingsRow) {
+						a.settingsToggleRow(c, a.t("settings.groupShortcuts"), &a.shortcutsOpen)
+						if a.shortcutsOpen {
+							ui.Text(c, a.t("shortcuts.hint")).FontSize(t.TextTiny).
+								TextColor(t.TextMuted).Padding(0, settingsPad, t.SpaceM, settingsPad).MaxLines(3)
+						}
+						ui.Box(c).Height(1).FillWidth().Background(t.Border)
+						row(a.t("settings.updates"), "", func() {
+							st := a.updateSnapshot()
+							if ui.Button(c, a.t("settings.checkUpdate")).Disabled(st.off || st.checking || st.installing).Clicked() {
+								a.checkUpdate()
+								c.Invalidate()
+							}
+							if st.version != "" {
+								if ui.Button(c, a.t("settings.installRestart")).Disabled(st.installing).Clicked() {
+									a.installUpdate()
+									c.Invalidate()
+								}
+							}
+						})
+						a.updateStatus(c)
 					})
 				})
 			})
@@ -193,7 +213,7 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 	ui.Column(c).FillWidth().Background(t.Surface).Radius(t.RadiusL).
 		Border(1, t.Border).Clip().Children(func() {
 		ui.Text(c, title).FontSize(t.TextSmall).TextColor(t.TextMuted).
-			Padding(t.SpaceM, 20, t.SpaceXS, 20)
+			Padding(t.SpaceM, settingsPad, t.SpaceXS, settingsPad)
 		first := true
 		row := func(label, hint string, control func()) {
 			if !first {
@@ -209,49 +229,85 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 // settingsRow places the control at the end of a 44 high row.
 func (a *App) settingsRow(c *ui.Context, label, hint string, control func()) {
 	t := themeOf(c)
-	ui.Row(c).FillWidth().MinHeight(44).Padding(t.SpaceM, 20).Gap(t.SpaceXL).
+	ui.Row(c).FillWidth().Height(44).Padding(0, settingsPad).Gap(t.SpaceXL).
 		AlignItems(ui.Center).Children(func() {
-		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+		ui.Column(c).Grow(1).MinWidth(100).Gap(2).Children(func() {
 			ui.Text(c, label).FontSize(t.TextBody).TextColor(t.Text)
 			if hint != "" {
-				ui.Text(c, hint).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(2)
+				ui.Text(c, hint).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 			}
 		})
 		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Shrink(0).Children(control)
 	})
 }
 
-// updatesSection draws the update check and what its last run found. The
-// check and the install run off the main thread and land in updateSt.
-func (a *App) updatesSection(c *ui.Context) {
+// settingsToggleRow is a whole-row disclosure control: its label, and a
+// chevron that turns as the hint below opens.
+func (a *App) settingsToggleRow(c *ui.Context, label string, open *bool) {
 	t := themeOf(c)
-	st := a.updateSnapshot()
-	ui.Column(c).Padding(0, 20, t.SpaceM, 20).Gap(t.SpaceS).Children(func() {
-		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
-			if ui.Button(c, a.t("settings.checkUpdate")).Disabled(st.off || st.checking || st.installing).Clicked() {
-				a.checkUpdate()
-				c.Invalidate()
-			}
-			if st.version != "" {
-				if ui.Button(c, a.t("settings.installRestart")).Disabled(st.installing).Clicked() {
-					a.installUpdate()
-					c.Invalidate()
-				}
-			}
-		})
-		switch {
-		case st.off:
-			ui.Text(c, a.t("settings.updatesOff")).FontSize(t.TextSmall).TextColor(t.TextMuted)
-		case st.err != "":
-			ui.Text(c, st.err).FontSize(t.TextSmall).TextColor(t.Danger)
-		case st.installing:
-			ui.Text(c, a.t("settings.updateInstalling")).FontSize(t.TextSmall).TextColor(t.TextMuted)
-		case st.version != "":
-			ui.Text(c, a.tf("settings.updateAvailable", st.version)).FontSize(t.TextSmall).TextColor(t.Text)
-		case st.latest:
-			ui.Text(c, a.t("settings.updateLatest")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+	b := ui.ButtonBase(c).Height(44).FillWidth().Padding(0, settingsPad).Gap(t.SpaceS).
+		AlignItems(ui.Center).Justify(ui.Start)
+	if b.Hovered() {
+		b = b.Background(t.SurfaceAlt)
+	}
+	b.Children(func() {
+		ui.Text(c, label).FontSize(t.TextBody).TextColor(t.Text).Grow(1)
+		deg := float32(90)
+		if *open {
+			deg = 270
+		}
+		ui.Icon(c, iconRight).Size(16, 16).TextColor(t.TextMuted).Rotate(deg)
+	})
+	if b.Clicked() {
+		*open = !*open
+	}
+}
+
+// switchControl is a 40 by 24 switch, the size of a settings row rather than
+// the smaller default control.
+func switchControl(c *ui.Context, on *bool, label string) {
+	t := themeOf(c)
+	b := ui.SwitchBase(c, on).Size(40, 24).Radius(t.RadiusFull).Label(label)
+	b.Children(func() {
+		track := t.BorderStrong
+		if *on {
+			track = t.AccentFill
+		}
+		ui.Box(c).Fill().Radius(t.RadiusFull).Background(track)
+		knob := ui.Box(c).Size(20, 20).Radius(t.RadiusFull).Background(t.AccentText).
+			Absolute().Top(2)
+		if *on {
+			knob = knob.Right(2)
+		} else {
+			knob = knob.Left(2)
 		}
 	})
+}
+
+// updateStatus is the line under the update row: what the last check found,
+// or why it cannot run.
+func (a *App) updateStatus(c *ui.Context) {
+	t := themeOf(c)
+	st := a.updateSnapshot()
+	text := ""
+	color := t.TextMuted
+	switch {
+	case st.off:
+		text = a.t("settings.updatesOff")
+	case st.err != "":
+		text, color = st.err, t.Danger
+	case st.installing:
+		text = a.t("settings.updateInstalling")
+	case st.version != "":
+		text, color = a.tf("settings.updateAvailable", st.version), t.Text
+	case st.latest:
+		text = a.t("settings.updateLatest")
+	}
+	if text == "" {
+		return
+	}
+	ui.Text(c, text).FontSize(t.TextSmall).TextColor(color).
+		Padding(0, settingsPad, t.SpaceM, settingsPad).MaxLines(2)
 }
 
 // updateSnapshot reads the update state the page draws.

@@ -122,9 +122,11 @@
     "updateInstalling": "Installation de la mise à jour",
     "updateCheckFailed": "Impossible de rechercher les mises à jour : %s",
     "updateInstallFailed": "Impossible d'installer la mise à jour : %s",
-    "groupAppearance": "Général",
+    "groupAppearance": "Apparence",
     "groupDownloads": "Téléchargements",
-    "groupShortcuts": "Raccourcis"
+    "groupShortcuts": "Raccourcis",
+    "groupContent": "Contenu",
+    "groupAbout": "À propos"
   },
   "history": {
     "empty": "Aucun historique pour l'instant",

@@ -310,10 +310,10 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 		}
 	}
 	width := a.masonryWidth()
-	items, tiles := feedTiles(st, v.items, width)
+	items, tiles := feedTiles(st, v.items, v.tiles, width)
 	switch {
 	case len(items) > 0:
-		ui.Column(c).Grow(1).Padding(t.SpaceM, contentPadding, contentPadding, contentPadding).Children(func() {
+		ui.Column(c).Grow(1).Padding(t.SpaceL, contentPadding, contentPadding, contentPadding).Children(func() {
 			widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
 				a.browseCard(c, st, items, i)
 			})
@@ -337,8 +337,8 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 	work := items[i]
 	key := work.CoverURL()
 	t := themeOf(c)
-	card := ui.Column(c).Fill().Background(t.Surface).Radius(t.RadiusL).
-		Border(1, t.Border).Clip().Focusable().
+	card, cover := cardShell(c)
+	card = card.Fill().Focusable().
 		Label(a.tf("a11y.card", work.Title, work.User.Name)).
 		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openViewer(&items[i], 0)
@@ -348,21 +348,18 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 			a.openUser(work.User.ID)
 		}
 	})
-	if card.Hovered() {
-		card = card.Border(1, t.Accent).Shadow(0, 8, 24, 0, t.Shadow)
-	}
+	cover.Children(func() {
+		if st.imageFailed(key) {
+			ui.Column(c).Fill().Center().Children(func() {
+				ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+			})
+			return
+		}
+		if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.imageReady(st, key)); bmp != nil {
+			ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", work.Title))
+		}
+	})
 	card.Children(func() {
-		ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceAlt).Children(func() {
-			if st.imageFailed(key) {
-				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
-				})
-				return
-			}
-			if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.imageReady(st, key)); bmp != nil {
-				ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", work.Title))
-			}
-		})
 		ui.Column(c).Padding(t.SpaceS, t.SpaceM, t.SpaceM, t.SpaceM).Gap(2).Children(func() {
 			ui.Text(c, work.Title).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(1)
 			ui.Text(c, work.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)

@@ -70,30 +70,28 @@ func (a *App) historyGrid(c *ui.Context) (int, float32) {
 // fetches the work and opens the viewer.
 func (a *App) historyCard(c *ui.Context, e HistoryEntry, width float32) {
 	t := themeOf(c)
-	card := ui.Column(c).Width(width).Background(t.Surface).Radius(t.RadiusL).
-		Border(1, t.Border).Clip().Focusable().
+	card, cover := cardShell(c)
+	card = card.Width(width).Focusable().
 		Label(a.tf("a11y.card", e.Title, e.Artist)).
 		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openHistory(e)
 	})
-	if card.Hovered() {
-		card = card.Border(1, t.Accent).Shadow(0, 8, 24, 0, t.Shadow)
-	}
+	cover.Grow(0).Height(width * 3 / 2)
+	cover.Children(func() {
+		if e.Cover == "" {
+			return // an entry saved without a cover has no image to draw
+		}
+		if a.historyFailed[e.Cover] {
+			ui.Column(c).Fill().Center().Children(func() {
+				ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+			})
+			return
+		}
+		if bmp := a.images.Thumb(e.Cover, coverWidth, coverHeight, a.historyCoverReady(e.Cover)); bmp != nil {
+			ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", e.Title))
+		}
+	})
 	card.Children(func() {
-		ui.Box(c).FillWidth().Height(width * 3 / 2).Background(t.SurfaceAlt).Children(func() {
-			if e.Cover == "" {
-				return // an entry saved without a cover has no image to draw
-			}
-			if a.historyFailed[e.Cover] {
-				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
-				})
-				return
-			}
-			if bmp := a.images.Thumb(e.Cover, coverWidth, coverHeight, a.historyCoverReady(e.Cover)); bmp != nil {
-				ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", e.Title))
-			}
-		})
 		ui.Column(c).Padding(t.SpaceS, t.SpaceM, t.SpaceM, t.SpaceM).Gap(2).Children(func() {
 			ui.Text(c, e.Title).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(1)
 			ui.Text(c, e.Artist).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)

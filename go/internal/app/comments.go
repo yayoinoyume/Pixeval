@@ -78,7 +78,6 @@ func (st *commentState) avatarFailedURL(url string) bool {
 }
 
 // commentsButton toggles the comment panel from the viewer's toolbar.
-// commentsButton is the toolbar's way into the comment panel.
 func (a *App) commentsButton(c *ui.Context) {
 	t := themeOf(c)
 	fg := t.ViewerBarMuted

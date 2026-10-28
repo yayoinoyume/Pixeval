@@ -102,6 +102,7 @@ func (a *App) nav(c *ui.Context) {
 		BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
 		Role(ui.RoleGroup).Label(a.t("nav.region")).Children(func() {
 		a.brand(c)
+		ui.Box(c).Height(1).FillWidth().Background(t.Border).MarginY(t.SpaceS)
 		a.navGroupLabel(c, a.t("nav.groupBrowse"))
 		for _, r := range browseRoutes {
 			a.navItem(c, r)
@@ -119,14 +120,17 @@ func (a *App) nav(c *ui.Context) {
 // brand is the app's mark and wordmark at the top of the navigation.
 func (a *App) brand(c *ui.Context) {
 	t := themeOf(c)
-	ui.Row(c).Height(64).Padding(0, t.SpaceS).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
-		ui.Box(c).Size(26, 26).Radius(t.RadiusM).Background(t.AccentFill).Center().Children(func() {
-			ui.Icon(c, iconLogo).Size(16, 16).TextColor(t.AccentText)
+	ui.Row(c).Height(64).Padding(0, t.SpaceS).Gap(t.SpaceM).AlignItems(ui.Center).Children(func() {
+		ui.Box(c).Size(28, 28).Radius(t.RadiusM).Background(t.AccentFill).Center().Children(func() {
+			ui.Icon(c, iconLogo).Size(17, 17).TextColor(t.AccentText)
 		})
-		ui.RichText(c,
-			ui.Span{Text: "Pixeval ", Size: t.TextBody, Weight: 700, Color: t.Text},
-			ui.Span{Text: "Go", Size: t.TextBody, Weight: 700, Color: t.Accent},
-		)
+		ui.Column(c).Gap(0).Children(func() {
+			ui.RichText(c,
+				ui.Span{Text: "Pixeval ", Size: t.TextBody, Weight: 700, Color: t.Text},
+				ui.Span{Text: "Go", Size: t.TextBody, Weight: 700, Color: t.Accent},
+			)
+			ui.Text(c, appVersion()).FontSize(t.TextTiny).TextColor(t.TextMuted)
+		})
 	})
 }
 
@@ -252,6 +256,7 @@ func (a *App) goBack() {
 // applyTheme makes the window use the saved theme; the system's is the one
 // the frame starts with when the setting follows it.
 func (a *App) applyTheme(c *ui.Context) {
+	prefs := c.Preferences()
 	dark := c.Theme().Dark
 	if a.settings != nil {
 		switch a.settings.Theme {
@@ -261,10 +266,32 @@ func (a *App) applyTheme(c *ui.Context) {
 			dark = true
 		}
 	}
-	c.SetTheme(designTheme(dark))
+	theme := designTheme(dark, textScale(c))
+	if prefs.HighContrast {
+		applyHighContrast(theme, dark)
+	}
+	// Following the system keeps the desktop's accent; an explicit light or
+	// dark choice keeps the app's own blue.
+	if (a.settings == nil || a.settings.Theme == themeSystem) && prefs.Accent.A != 0 {
+		accent := prefs.Accent
+		theme.Accent = accent
+		if dark {
+			theme.AccentHover = accent.Mix(ui.RGB(255, 255, 255), 0.15)
+			theme.AccentPressed = accent.Mix(ui.RGB(0, 0, 0), 0.15)
+		} else {
+			theme.AccentHover = accent.Mix(ui.RGB(0, 0, 0), 0.08)
+			theme.AccentPressed = accent.Mix(ui.RGB(0, 0, 0), 0.16)
+		}
+		if prefs.HighContrast {
+			theme.Focus = accent
+		} else {
+			theme.Focus = accent.Alpha(0.65)
+		}
+	}
+	c.SetTheme(theme)
 	// The desktop asks for less motion: every widget animation jumps to its
 	// target, while the layouts themselves are still.
-	if c.Preferences().ReduceMotion {
+	if prefs.ReduceMotion {
 		c.DisableAnimations()
 	}
 }
@@ -359,7 +386,7 @@ func (a *App) startSearch(st *browseState) {
 // expression, so switching tabs or searching again keeps it.
 func (a *App) filterBar(c *ui.Context, st *browseState) {
 	t := themeOf(c)
-	ui.Column(c).Gap(t.SpaceXS).Padding(t.SpaceM, contentPadding, 0, contentPadding).Children(func() {
+	ui.Column(c).Gap(t.SpaceXS).Padding(t.SpaceL, contentPadding, 0, contentPadding).Children(func() {
 		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 			ui.TextInput(c, &st.filterText).Grow(1).Placeholder(a.t("filter.placeholder"))
 			if ui.Button(c, a.t("filter.action")).Clicked() {
@@ -395,7 +422,7 @@ func (st *browseState) applyFilter() {
 // feedTiles returns the works a feed draws and the tiles they draw as: the
 // ones its applied filter passes, or all of them. The tiles are built again
 // while a filter is applied, since the passing set grows as pages load.
-func feedTiles(st *browseState, all []pixiv.Illustration, width float64) ([]pixiv.Illustration, []widgets.MasonryItem) {
+func feedTiles(st *browseState, all []pixiv.Illustration, tiles []widgets.MasonryItem, width float64) ([]pixiv.Illustration, []widgets.MasonryItem) {
 	items := all
 	if st.filterExpr != nil {
 		items = make([]pixiv.Illustration, 0, len(all))
@@ -405,7 +432,6 @@ func feedTiles(st *browseState, all []pixiv.Illustration, width float64) ([]pixi
 			}
 		}
 	}
-	tiles := st.tiles
 	if st.filterExpr != nil || width != st.tilesWidth {
 		st.tilesWidth = width
 		tiles = make([]widgets.MasonryItem, len(items))

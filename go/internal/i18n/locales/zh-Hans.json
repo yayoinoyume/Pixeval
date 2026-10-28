@@ -122,9 +122,11 @@
     "updateInstalling": "正在安装更新",
     "updateCheckFailed": "检查更新失败：%s",
     "updateInstallFailed": "安装更新失败：%s",
-    "groupAppearance": "通用",
-    "groupDownloads": "下载与存储",
-    "groupShortcuts": "快捷键"
+    "groupAppearance": "外观",
+    "groupDownloads": "下载",
+    "groupShortcuts": "快捷键",
+    "groupContent": "内容",
+    "groupAbout": "关于"
   },
   "history": {
     "empty": "还没有浏览记录",
