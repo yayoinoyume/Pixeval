@@ -80,6 +80,8 @@ func (a *App) page(c *ui.Context) {
 		a.homePage(c)
 	case routeSearch:
 		a.searchPage(c)
+	case routeDownloads:
+		a.downloadsPage(c)
 	default:
 		t := c.Theme()
 		ui.Column(c).Grow(1).Center().Children(func() {

@@ -291,6 +291,13 @@ func (a *App) viewerBar(c *ui.Context, v *viewerState, failed bool) {
 				a.viewerReload(v)
 			}
 		}
+		if ui.Button(c, "下载").Clicked() {
+			if n := a.downloadWork(v.work); n > 0 {
+				c.Toast(fmt.Sprintf("已加入 %d 页到下载队列", n))
+			} else {
+				c.Toast("无法创建下载目录")
+			}
+		}
 		if ui.Button(c, "上一页").Disabled(v.page <= 0).Clicked() {
 			a.viewerGo(-1)
 		}
