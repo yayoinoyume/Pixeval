@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
+	"github.com/yayoinoyume/pixeval-go/internal/subscription"
 )
 
 // avatarSize is the profile image's side in the user page header.
@@ -131,6 +132,7 @@ func (a *App) userPage(c *ui.Context) {
 			})
 			if s.err == "" && !s.loading {
 				a.followButton(c, v, s)
+				a.subscriptionButton(c, subscription.KindUser, s.user.ID, s.user.Name)
 			}
 		})
 		a.browsePage(c, v.feed)

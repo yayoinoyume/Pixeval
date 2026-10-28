@@ -2,6 +2,7 @@
   "nav": {
     "home": "Home",
     "search": "Search",
+    "subscriptions": "Updates",
     "downloads": "Downloads",
     "history": "History",
     "settings": "Settings",
@@ -123,6 +124,26 @@
   "series": {
     "open": "Series",
     "loadFailed": "Cannot load the series: %s"
+  },
+  "subs": {
+    "count": "%d subscriptions",
+    "check": "Check now",
+    "downloadAll": "Download all",
+    "empty": "No subscriptions yet",
+    "emptyHint": "Subscribe from a user or series page to see new works here",
+    "kindUser": "User",
+    "kindSeries": "Series",
+    "rowDetail": "%s · Last checked: %s",
+    "never": "never",
+    "remove": "Delete",
+    "newWorks": "%d new works",
+    "checkDone": "Check finished: %d new works",
+    "checkFailed": "Check failed: %s",
+    "newFound": "Background check found %d new works",
+    "queued": "Queued %d pages for download",
+    "add": "Subscribe",
+    "added": "Subscribed",
+    "addFailed": "The subscription list is full"
   },
   "novel": {
     "loadFailed": "Cannot load the novel: %s",

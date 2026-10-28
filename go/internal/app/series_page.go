@@ -7,6 +7,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
+	"github.com/yayoinoyume/pixeval-go/internal/subscription"
 )
 
 // seriesViewState is one series page: the description and the series' works
@@ -103,6 +104,7 @@ func (a *App) seriesPage(c *ui.Context) {
 				if s.detail.Description != "" {
 					ui.Text(c, s.detail.Description).TextColor(t.TextMuted).MaxLines(3)
 				}
+				a.subscriptionButton(c, subscription.KindSeries, s.detail.ID, s.detail.Title)
 			}
 		})
 		a.browsePage(c, v.feed)

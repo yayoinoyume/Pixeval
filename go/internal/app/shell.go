@@ -10,6 +10,7 @@ type route string
 const (
 	routeHome      route = "home"
 	routeSearch    route = "search"
+	routeSubs      route = "subscriptions"
 	routeDownloads route = "downloads"
 	routeHistory   route = "history"
 	routeSettings  route = "settings"
@@ -23,7 +24,7 @@ func (a *App) routeLabel(r route) string {
 	return a.t("nav." + string(r))
 }
 
-var navRoutes = []route{routeHome, routeSearch, routeDownloads, routeHistory, routeSettings}
+var navRoutes = []route{routeHome, routeSearch, routeSubs, routeDownloads, routeHistory, routeSettings}
 
 // View builds the shell: the navigation on the left, the page title and the
 // sign-in state above the page. The viewer takes the whole window instead.
@@ -84,6 +85,8 @@ func (a *App) page(c *ui.Context) {
 		a.homePage(c)
 	case routeSearch:
 		a.searchPage(c)
+	case routeSubs:
+		a.subscriptionsPage(c)
 	case routeDownloads:
 		a.downloadsPage(c)
 	case routeHistory:
