@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,8 +15,12 @@ import (
 	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
+	"github.com/yayoinoyume/pixeval-go/internal/mcp"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
+
+// mcpAddr is the loopback address the local MCP server listens on.
+const mcpAddr = "127.0.0.1:52163"
 
 // App holds the state of the window. Views are rebuilt from it on the main
 // thread, so state lives here and is changed from goroutines only through
@@ -190,6 +195,12 @@ func (a *App) Start() {
 	// page on every change.
 	a.downloads.OnChange(func() { a.update(func() {}) })
 	go a.downloads.Start(context.Background())
+	// A busy port or a failed listen leaves the app running without MCP.
+	go func() {
+		if err := mcp.ListenAndServe(mcpAddr, a); err != nil {
+			log.Printf("mcp: %v", err)
+		}
+	}()
 }
 
 // restoreSession adopts the saved token, refreshing it when expired. It runs
@@ -277,6 +288,71 @@ func (a *App) logout() {
 			a.armHome(a.homeTab)
 		})
 	}()
+}
+
+// Search returns the works matching query; the MCP search tool.
+func (a *App) Search(ctx context.Context, query string, limit int) ([]pixiv.Illustration, error) {
+	page, err := a.client.SearchIllustrations(ctx, pixiv.SearchOptions{Word: query})
+	if err != nil {
+		return nil, err
+	}
+	return page.Items[:min(limit, len(page.Items))], nil
+}
+
+// Recommended returns Pixiv's feed for the user; the MCP feed tool.
+func (a *App) Recommended(ctx context.Context, limit int) ([]pixiv.Illustration, error) {
+	page, err := a.client.Recommended(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items[:min(limit, len(page.Items))], nil
+}
+
+// Detail returns one work; the MCP detail tool.
+func (a *App) Detail(ctx context.Context, id int64) (*pixiv.Illustration, error) {
+	return a.client.Illustration(ctx, id)
+}
+
+// Ranking returns the top works of mode; the MCP ranking tool.
+func (a *App) Ranking(ctx context.Context, mode string, limit int) ([]pixiv.Illustration, error) {
+	page, err := a.client.Ranking(ctx, pixiv.RankMode(mode), "")
+	if err != nil {
+		return nil, err
+	}
+	return page.Items[:min(limit, len(page.Items))], nil
+}
+
+// SetBookmark adds or removes a work's bookmark; the MCP bookmark tool.
+func (a *App) SetBookmark(ctx context.Context, id int64, on bool) error {
+	if a.bookmarkFn == nil {
+		return errors.New("bookmarks are unavailable")
+	}
+	return a.bookmarkFn(ctx, id, on)
+}
+
+// QueueDownload queues every page of a work; the MCP download tool.
+func (a *App) QueueDownload(ctx context.Context, id int64) (int, error) {
+	if a.illustrationFn == nil {
+		return 0, errors.New("downloads are unavailable")
+	}
+	w, err := a.illustrationFn(ctx, id)
+	if err != nil {
+		return 0, err
+	}
+	n, ok := a.downloadWork(*w)
+	if !ok {
+		return 0, errors.New("downloads are off: no download directory")
+	}
+	return n, nil
+}
+
+// Status reports the download queue; the MCP status tool. It reads only the
+// queue, whose snapshot is safe off the main thread.
+func (a *App) Status() string {
+	if a.downloads == nil {
+		return "downloads: unavailable"
+	}
+	return fmt.Sprintf("downloads: %d task(s) in %s", len(a.downloads.Snapshot()), a.downloadsDir)
 }
 
 // update runs fn on the main thread, or at once before the window exists.
