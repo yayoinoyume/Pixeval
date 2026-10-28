@@ -48,9 +48,9 @@ func TestMissingKeyFallsBackToEnglish(t *testing.T) {
 // TestUnknownLanguageFallsBackToEnglish checks a language the app does not
 // ship reads as English.
 func TestUnknownLanguageFallsBackToEnglish(t *testing.T) {
-	b, err := Load("fr-FR")
+	b, err := Load("de-DE")
 	if err != nil {
-		t.Fatalf("Load fr-FR: %v", err)
+		t.Fatalf("Load de-DE: %v", err)
 	}
 	if got := b.Lang(); got != LangEnUS {
 		t.Errorf("lang %q, want %q", got, LangEnUS)
@@ -60,28 +60,43 @@ func TestUnknownLanguageFallsBackToEnglish(t *testing.T) {
 	}
 }
 
-// TestLocalesMatch checks both embedded files parse and carry the same keys: a
-// missing file fails Load, and a key added to one language alone fails here.
+// TestLocalesMatch checks every embedded file parses, carries the same keys
+// as English, and has a text for each: a missing file fails Load, and a key
+// added to one language alone fails here.
 func TestLocalesMatch(t *testing.T) {
-	zh, err := Load(LangZhHans)
-	if err != nil {
-		t.Fatalf("Load zh-Hans: %v", err)
-	}
 	en, err := Load(LangEnUS)
 	if err != nil {
 		t.Fatalf("Load en-US: %v", err)
 	}
-	if len(en.messages) < 70 || len(zh.messages) < 70 {
-		t.Fatalf("too few messages: zh %d, en %d", len(zh.messages), len(en.messages))
+	if len(en.messages) < 70 {
+		t.Fatalf("too few messages: en %d", len(en.messages))
 	}
-	for key := range en.messages {
-		if _, ok := zh.messages[key]; !ok {
-			t.Errorf("%s missing from zh-Hans", key)
+	for key, text := range en.messages {
+		if text == "" {
+			t.Errorf("%s is empty in en-US", key)
 		}
 	}
-	for key := range zh.messages {
-		if _, ok := en.messages[key]; !ok {
-			t.Errorf("%s missing from en-US", key)
+	for _, lang := range []string{LangZhHans, LangFrFR, LangRuRU} {
+		b, err := Load(lang)
+		if err != nil {
+			t.Fatalf("Load %s: %v", lang, err)
+		}
+		if got := b.Lang(); got != lang {
+			t.Errorf("lang %q, want %q", got, lang)
+		}
+		for key := range en.messages {
+			if _, ok := b.messages[key]; !ok {
+				t.Errorf("%s missing from %s", key, lang)
+				continue
+			}
+			if b.messages[key] == "" {
+				t.Errorf("%s is empty in %s", key, lang)
+			}
+		}
+		for key := range b.messages {
+			if _, ok := en.messages[key]; !ok {
+				t.Errorf("%s missing from en-US", key)
+			}
 		}
 	}
 }
@@ -114,8 +129,35 @@ func TestTraditionalChineseReadsAsSimplified(t *testing.T) {
 	}
 }
 
+// TestNormalize checks a tag lands on the language the app ships for it, and
+// anything else lands on English.
+func TestNormalize(t *testing.T) {
+	cases := []struct {
+		tag  string
+		want string
+	}{
+		{LangZhHans, LangZhHans},
+		{"zh-Hant", LangZhHans},
+		{"zh_TW.UTF-8", LangZhHans},
+		{LangEnUS, LangEnUS},
+		{"en-GB", LangEnUS},
+		{LangFrFR, LangFrFR},
+		{"fr", LangFrFR},
+		{"fr_CA.UTF-8", LangFrFR},
+		{LangRuRU, LangRuRU},
+		{"ru", LangRuRU},
+		{"ru_RU.UTF-8", LangRuRU},
+		{"de-DE", LangEnUS},
+	}
+	for _, c := range cases {
+		if got := Normalize(c.tag); got != c.want {
+			t.Errorf("Normalize(%q) = %q, want %q", c.tag, got, c.want)
+		}
+	}
+}
+
 // TestDetect checks the locale variables choose the language, LC_MESSAGES
-// first.
+// first, and that a French or Russian system gets its language.
 func TestDetect(t *testing.T) {
 	t.Setenv("LC_ALL", "")
 	t.Setenv("LC_MESSAGES", "")
@@ -131,6 +173,15 @@ func TestDetect(t *testing.T) {
 	t.Setenv("LANG", "en_US.UTF-8")
 	if got := Detect(); got != LangEnUS {
 		t.Errorf("en LANG %q, want %q", got, LangEnUS)
+	}
+	t.Setenv("LC_MESSAGES", "fr_FR.UTF-8")
+	if got := Detect(); got != LangFrFR {
+		t.Errorf("fr LC_MESSAGES %q, want %q", got, LangFrFR)
+	}
+	t.Setenv("LC_MESSAGES", "")
+	t.Setenv("LANG", "ru_RU.UTF-8")
+	if got := Detect(); got != LangRuRU {
+		t.Errorf("ru LANG %q, want %q", got, LangRuRU)
 	}
 	t.Setenv("LANG", "")
 	if got := Detect(); got != LangEnUS {

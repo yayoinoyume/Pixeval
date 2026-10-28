@@ -61,7 +61,13 @@ func (a *App) themeValue(label string) string {
 
 // languageChoices are the language labels the settings page shows.
 func (a *App) languageChoices() []string {
-	return []string{a.t("settings.langSystem"), a.t("settings.langZh"), a.t("settings.langEn")}
+	return []string{
+		a.t("settings.langSystem"),
+		a.t("settings.langZh"),
+		a.t("settings.langEn"),
+		a.t("settings.langFr"),
+		a.t("settings.langRu"),
+	}
 }
 
 // languageLabel is the label the settings page shows for a saved language.
@@ -71,6 +77,10 @@ func (a *App) languageLabel(lang string) string {
 		return a.t("settings.langZh")
 	case i18n.LangEnUS:
 		return a.t("settings.langEn")
+	case i18n.LangFrFR:
+		return a.t("settings.langFr")
+	case i18n.LangRuRU:
+		return a.t("settings.langRu")
 	default:
 		return a.t("settings.langSystem")
 	}
@@ -83,6 +93,10 @@ func (a *App) languageValue(label string) string {
 		return i18n.LangZhHans
 	case a.t("settings.langEn"):
 		return i18n.LangEnUS
+	case a.t("settings.langFr"):
+		return i18n.LangFrFR
+	case a.t("settings.langRu"):
+		return i18n.LangRuRU
 	default:
 		return i18n.LangAuto
 	}

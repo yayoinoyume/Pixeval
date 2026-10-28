@@ -15,6 +15,8 @@ const (
 	LangAuto   = "auto"
 	LangZhHans = "zh-Hans"
 	LangEnUS   = "en-US"
+	LangFrFR   = "fr-FR"
+	LangRuRU   = "ru-RU"
 )
 
 //go:embed locales/*.json
@@ -46,28 +48,37 @@ func Load(lang string) (*Bundle, error) {
 }
 
 // Normalize maps a language tag to the one the app ships, or to the system's
-// language when it is LangAuto. Every other zh tag reads as Simplified
-// Chinese: the app ships only these two languages for now.
+// language when it is LangAuto. Any other zh tag reads as Simplified Chinese,
+// any other fr tag as French, any other ru tag as Russian; the app ships no
+// other language, so everything else reads as English.
 func Normalize(lang string) string {
-	switch {
-	case lang == "" || lang == LangAuto:
+	if lang == "" || lang == LangAuto {
 		return Detect()
-	case strings.HasPrefix(strings.ToLower(lang), "zh"):
+	}
+	return tagLanguage(lang)
+}
+
+// tagLanguage maps a locale tag to a shipped language, English for the rest.
+func tagLanguage(tag string) string {
+	tag = strings.ToLower(tag)
+	switch {
+	case strings.HasPrefix(tag, "zh"):
 		return LangZhHans
+	case strings.HasPrefix(tag, "fr"):
+		return LangFrFR
+	case strings.HasPrefix(tag, "ru"):
+		return LangRuRU
 	default:
 		return LangEnUS
 	}
 }
 
-// Detect is the language the environment asks for: Chinese when the locale
-// names one, English otherwise.
+// Detect is the language the environment asks for: the shipped language its
+// locale names, English when it names none.
 func Detect() string {
 	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
 		if v := os.Getenv(name); v != "" {
-			if strings.Contains(strings.ToLower(v), "zh") {
-				return LangZhHans
-			}
-			return LangEnUS
+			return tagLanguage(v)
 		}
 	}
 	return LangEnUS

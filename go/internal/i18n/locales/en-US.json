@@ -93,6 +93,8 @@
     "langSystem": "Follow system",
     "langZh": "中文",
     "langEn": "English",
+    "langFr": "Français",
+    "langRu": "Русский",
     "saveFailed": "Save failed: %s",
     "saved": "Saved",
     "pathFailed": "Cannot save settings: %s",
