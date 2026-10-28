@@ -105,6 +105,32 @@ type App struct {
 	subsMsg string
 	// notice is a message a background task left for the next frame to show.
 	notice string
+	// updater checks for and installs new versions; tests replace it.
+	updater updater
+	// updateMu guards updateSt, which a check fills in off the main thread.
+	updateMu sync.Mutex
+	updateSt updateState
+}
+
+// updater checks for and installs new versions of the app. mygo's Install is
+// a method of the update it installs, so the interface takes the update.
+type updater interface {
+	Enabled() bool
+	Check(ctx context.Context) (*mygo.Update, error)
+	Install(ctx context.Context, u *mygo.Update) error
+}
+
+// mygoUpdater is the updater the app ships with.
+type mygoUpdater struct{}
+
+func (mygoUpdater) Enabled() bool { return mygo.Updater.Enabled() }
+
+func (mygoUpdater) Check(ctx context.Context) (*mygo.Update, error) {
+	return mygo.Updater.Check(ctx)
+}
+
+func (mygoUpdater) Install(ctx context.Context, u *mygo.Update) error {
+	return u.Install(ctx, nil)
 }
 
 func New() *App {
@@ -147,7 +173,10 @@ func New() *App {
 		route:            routeHome,
 		homeFeeds:        newHomeFeeds(),
 		search:           &browseState{},
+		updater:          mygoUpdater{},
 	}
+	// The check probes the install directory, so the settings page asks once.
+	a.updateSt.off = !a.updater.Enabled()
 	// The check runs on the timer goroutine, so it hands the works to the main
 	// thread; the subscription page toasts the result when it next draws.
 	subs.OnNew = func(works []pixiv.Illustration) {

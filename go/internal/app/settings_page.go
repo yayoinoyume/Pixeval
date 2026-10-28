@@ -1,13 +1,34 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 )
+
+// The check fetches a manifest; the install downloads an archive.
+const (
+	updateCheckTimeout   = 60 * time.Second
+	updateInstallTimeout = 30 * time.Minute
+)
+
+// updateState is what the settings page knows about updates: a build that
+// cannot update itself, the last check, and the update it found.
+type updateState struct {
+	off        bool
+	checking   bool
+	installing bool
+	version    string
+	latest     bool
+	err        string
+	pending    *mygo.Update
+}
 
 // themeChoices are the theme labels the settings page shows.
 func (a *App) themeChoices() []string {
@@ -119,7 +140,114 @@ func (a *App) settingsPage(c *ui.Context) {
 		if a.settingsErr != "" {
 			ui.Text(c, a.settingsErr).TextColor(t.Danger)
 		}
+		a.updatesSection(c)
 	})
+}
+
+// updatesSection draws the update check and what its last run found. The
+// check and the install run off the main thread and land in updateSt.
+func (a *App) updatesSection(c *ui.Context) {
+	t := c.Theme()
+	st := a.updateSnapshot()
+	ui.Text(c, a.t("settings.updates")).Bold()
+	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+		if ui.Button(c, a.t("settings.checkUpdate")).Disabled(st.off || st.checking || st.installing).Clicked() {
+			a.checkUpdate()
+			c.Invalidate()
+		}
+		if st.version != "" {
+			if ui.Button(c, a.t("settings.installRestart")).Disabled(st.installing).Clicked() {
+				a.installUpdate()
+				c.Invalidate()
+			}
+		}
+	})
+	switch {
+	case st.off:
+		ui.Text(c, a.t("settings.updatesOff")).TextColor(t.TextMuted)
+	case st.err != "":
+		ui.Text(c, st.err).TextColor(t.Danger)
+	case st.installing:
+		ui.Text(c, a.t("settings.updateInstalling")).TextColor(t.TextMuted)
+	case st.version != "":
+		ui.Text(c, a.tf("settings.updateAvailable", st.version))
+	case st.latest:
+		ui.Text(c, a.t("settings.updateLatest")).TextColor(t.TextMuted)
+	}
+}
+
+// updateSnapshot reads the update state the page draws.
+func (a *App) updateSnapshot() updateState {
+	a.updateMu.Lock()
+	defer a.updateMu.Unlock()
+	return a.updateSt
+}
+
+// checkUpdate asks the feed for a newer version off the main thread.
+func (a *App) checkUpdate() {
+	if a.updater == nil {
+		return
+	}
+	a.updateMu.Lock()
+	if a.updateSt.off || a.updateSt.checking || a.updateSt.installing {
+		a.updateMu.Unlock()
+		return
+	}
+	a.updateSt.checking = true
+	a.updateSt.err = ""
+	a.updateSt.version = ""
+	a.updateSt.latest = false
+	a.updateSt.pending = nil
+	a.updateMu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), updateCheckTimeout)
+		defer cancel()
+		u, err := a.updater.Check(ctx)
+		a.update(func() {
+			a.updateMu.Lock()
+			a.updateSt.checking = false
+			switch {
+			case err != nil:
+				a.updateSt.err = a.tf("settings.updateCheckFailed", err.Error())
+			case u == nil:
+				a.updateSt.latest = true
+			default:
+				a.updateSt.version = u.Version
+				a.updateSt.pending = u
+			}
+			a.updateMu.Unlock()
+		})
+	}()
+}
+
+// installUpdate installs the update the last check found, then restarts the
+// app so that the new version runs.
+func (a *App) installUpdate() {
+	a.updateMu.Lock()
+	u := a.updateSt.pending
+	if a.updater == nil || u == nil || a.updateSt.installing {
+		a.updateMu.Unlock()
+		return
+	}
+	a.updateSt.installing = true
+	a.updateSt.err = ""
+	a.updateMu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), updateInstallTimeout)
+		defer cancel()
+		err := a.updater.Install(ctx, u)
+		a.update(func() {
+			a.updateMu.Lock()
+			if err != nil {
+				a.updateSt.installing = false
+				a.updateSt.err = a.tf("settings.updateInstallFailed", err.Error())
+				a.updateMu.Unlock()
+				return
+			}
+			a.updateMu.Unlock()
+			mygo.App.Relaunch()
+		})
+	}()
 }
 
 // applySavedSettings picks up a save that finished off the main thread: it
