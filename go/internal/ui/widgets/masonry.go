@@ -4,6 +4,7 @@ package widgets
 
 import (
 	"math"
+	"reflect"
 	"sort"
 
 	"github.com/egoist/mygo/ui"
@@ -28,7 +29,7 @@ type MasonryState struct {
 	Scroll ui.ScrollState
 
 	rects   []masonryRect
-	bottoms []float32 // the height each column has so far
+	bottoms []float32 // the height each column has so far, with gap
 	cols    int
 	// width, columnWidth and gap are what rects were laid out for: when one
 	// changes, the layout is computed again.
@@ -37,13 +38,16 @@ type MasonryState struct {
 	gap         float32
 	total       float32
 	maxH        float32
-	// windowW and windowH are the window size of the last frame, to lay the
-	// masonry out again once more after the window resized.
-	windowW, windowH float32
+	// vh is the height of the view in the last frame, which AtEnd tells a
+	// content that fits from one whose layout is yet to come.
+	vh float32
+	// firstKey and lastKey are the keys rects were laid out for: when they
+	// change, the items were replaced, and the layout is computed again.
+	firstKey, lastKey any
 }
 
-// masonryFallback is the size a Masonry lays out for before its container
-// has been laid out once.
+// masonryFallback is the width a Masonry lays out for before its container
+// has been laid out once, or while it has no width.
 const masonryFallback = 400
 
 // Masonry creates a scroll container of items in columns, each item placed
@@ -53,8 +57,8 @@ const masonryFallback = 400
 // screen above and below, are built.
 //
 // st keeps the place and the layout, or nil for a masonry that keeps none.
-// The layout is computed again when the number of items or the width of the
-// container changes; items added keep the scroll where it is.
+// The layout is computed again when the number of items, their keys, or the
+// width of the container changes; items added keep the scroll where it is.
 func Masonry(c *ui.Context, st *MasonryState, items []MasonryItem, columnWidth, gap float64, build func(i int)) {
 	if st == nil {
 		st = &MasonryState{}
@@ -63,32 +67,26 @@ func Masonry(c *ui.Context, st *MasonryState, items []MasonryItem, columnWidth, 
 	// The container is laid out after the view that fills it: its width is
 	// that of the last frame.
 	b := e.LayoutBounds()
-	winW, winH := c.Size()
 	width := b.W
-	needFrame := false
 	if width <= 0 {
+		// A container yet to be laid out, or one squeezed to no width: lay
+		// out for a width of its own without asking for another frame, as a
+		// frame that keeps it at no width would come again and again.
 		width = masonryFallback
-		needFrame = true
-	}
-	if winW != st.windowW || winH != st.windowH {
-		st.windowW, st.windowH = winW, winH
-		needFrame = true
 	}
 	if st.layout(items, width, float32(columnWidth), float32(gap)) {
-		needFrame = true
-	}
-	if needFrame {
-		// The width laid out for may be the one before this frame's layout,
-		// as after a resize: one more frame lays out the real one.
+		// The width laid out for was the one before this frame's layout, as
+		// after a resize: one more frame lays out the real one.
 		c.Invalidate()
 	}
 	vh := b.H
 	if vh <= 0 {
-		vh = winH
+		_, vh = c.Size()
 	}
 	if vh <= 0 {
 		vh = masonryFallback
 	}
+	st.vh = vh
 	top := min(max(st.Scroll.Y, 0), max(st.total-vh, 0))
 	from, to := top-vh/2, top+vh+vh/2
 	start := st.firstVisible(from)
@@ -109,7 +107,12 @@ func Masonry(c *ui.Context, st *MasonryState, items []MasonryItem, columnWidth, 
 // AtEnd reports whether the masonry shows its end: nothing to scroll, or the
 // scroll is as far down as it goes.
 func (st *MasonryState) AtEnd() bool {
-	return st.Scroll.MaxY <= 0 || st.Scroll.Y >= st.Scroll.MaxY
+	if st.Scroll.MaxY <= 0 {
+		// Nothing scrolls: the content fits, or the layout is yet to find the
+		// view's height.
+		return st.total <= st.vh
+	}
+	return st.Scroll.Y >= st.Scroll.MaxY
 }
 
 // layout places items in columns width wide, and reports whether it computed
@@ -135,8 +138,28 @@ func (st *MasonryState) layout(items []MasonryItem, width, columnWidth, gap floa
 	case len(items) < len(st.rects):
 		st.compute(items, width, columnWidth, gap)
 		return true
+	case len(items) > 0 && (!sameKey(items[0].Key, st.firstKey) || !sameKey(items[len(items)-1].Key, st.lastKey)):
+		// The items were replaced, not added to.
+		st.compute(items, width, columnWidth, gap)
+		return true
 	}
 	return false
+}
+
+// sameKey reports whether a and b are the same key. A key Go cannot compare,
+// as a slice, is taken as unchanged, as such a key is no identity to follow.
+func sameKey(a, b any) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	ta, tb := reflect.TypeOf(a), reflect.TypeOf(b)
+	if ta != tb {
+		return false
+	}
+	if !ta.Comparable() {
+		return true
+	}
+	return a == b
 }
 
 // masonryColumns returns how many columns at least columnWidth wide, gap
@@ -146,12 +169,17 @@ func masonryColumns(width, columnWidth, gap float32) int {
 }
 
 // masonryHeight returns how high an item width wide with aspect goes, as wide
-// as it is high.
+// as it is high. An aspect no height comes of, as one not above zero or
+// beyond what a float holds, makes the item square.
 func masonryHeight(width float32, aspect float64) float32 {
-	if !(aspect > 0) {
-		aspect = 1
+	if !(aspect > 0) || math.IsInf(aspect, 0) {
+		return width
 	}
-	return width / float32(aspect)
+	h := width / float32(aspect)
+	if math.IsInf(float64(h), 0) || math.IsNaN(float64(h)) {
+		return width
+	}
+	return h
 }
 
 // compute lays out all items again, from the first.
@@ -173,23 +201,37 @@ func (st *MasonryState) compute(items []MasonryItem, width, columnWidth, gap flo
 	for _, item := range items {
 		st.place(item, colW, gap)
 	}
-	st.total = 0
-	for _, b := range st.bottoms {
-		st.total = max(st.total, b)
+	st.total = st.columnHeight()
+	st.firstKey, st.lastKey = nil, nil
+	if len(items) > 0 {
+		st.firstKey, st.lastKey = items[0].Key, items[len(items)-1].Key
 	}
 }
 
 // extend lays out the items added since the last layout, from the columns as
 // they were.
 func (st *MasonryState) extend(items []MasonryItem) {
+	start := len(st.rects)
 	colW := (st.width - st.gap*float32(st.cols-1)) / float32(st.cols)
-	for _, item := range items[len(st.rects):] {
+	for _, item := range items[start:] {
 		st.place(item, colW, st.gap)
 	}
-	st.total = 0
-	for _, b := range st.bottoms {
-		st.total = max(st.total, b)
+	st.total = st.columnHeight()
+	if start == 0 && len(items) > 0 {
+		st.firstKey = items[0].Key
 	}
+	if len(items) > 0 {
+		st.lastKey = items[len(items)-1].Key
+	}
+}
+
+// columnHeight returns how high the tallest column makes the content.
+func (st *MasonryState) columnHeight() float32 {
+	var tallest float32
+	for _, b := range st.bottoms {
+		tallest = max(tallest, b)
+	}
+	return max(0, tallest-st.gap)
 }
 
 // place puts item at the top of the shortest column.
@@ -203,7 +245,7 @@ func (st *MasonryState) place(item MasonryItem, colW, gap float32) {
 	y := st.bottoms[col]
 	h := masonryHeight(colW, item.Aspect)
 	st.rects = append(st.rects, masonryRect{x: float32(col) * (colW + gap), y: y, w: colW, h: h})
-	st.bottoms[col] = y + h
+	st.bottoms[col] = y + h + gap
 	st.maxH = max(st.maxH, h)
 }
 

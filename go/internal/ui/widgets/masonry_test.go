@@ -68,6 +68,9 @@ func TestMasonryColumnsAndRects(t *testing.T) {
 		{1200, 600, 5},
 	} {
 		tt.SetSize(tc.width, tc.height)
+		// The width comes from the frame before: a frame after the resize lays
+		// the new one out.
+		tt.Frame()
 		if st.width != float32(tc.width) {
 			t.Fatalf("laid out for %v wide, not %d", st.width, tc.width)
 		}
@@ -101,7 +104,7 @@ func checkMasonry(t *testing.T, st *MasonryState, width float32, cols int) {
 		if math.Abs(float64(r.y-want)) > 0.01 {
 			t.Fatalf("item %d at y %v, not the shortest column at %v", i, r.y, want)
 		}
-		bottoms[col] = r.y + r.h
+		bottoms[col] = r.y + r.h + st.gap
 		if r.x < 0 || r.x+r.w > width+0.01 {
 			t.Fatalf("item %d at x %v..%v leaves %v wide", i, r.x, r.x+r.w, width)
 		}
@@ -118,8 +121,12 @@ func checkMasonry(t *testing.T, st *MasonryState, width float32, cols int) {
 	for _, b := range bottoms {
 		tallest = max(tallest, b)
 	}
-	if math.Abs(float64(st.total-tallest)) > 0.01 {
-		t.Fatalf("content is %v high, not %v", st.total, tallest)
+	want := max(0, tallest-st.gap)
+	if len(st.rects) == 0 {
+		want = 0
+	}
+	if math.Abs(float64(st.total-want)) > 0.01 {
+		t.Fatalf("content is %v high, not %v", st.total, want)
 	}
 }
 
@@ -143,6 +150,83 @@ func TestMasonryPlacesItems(t *testing.T) {
 			t.Errorf("item %d at %v,%v, laid out at %v,%v", i, got.X, got.Y, r.x, r.y)
 		}
 	}
+}
+
+func TestMasonryAspectFallback(t *testing.T) {
+	items := []MasonryItem{
+		{Key: 0, Aspect: 0},
+		{Key: 1, Aspect: -2},
+		{Key: 2, Aspect: math.NaN()},
+		{Key: 3, Aspect: math.Inf(1)},
+		{Key: 4, Aspect: 1e-300},
+	}
+	st := &MasonryState{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		Masonry(c, st, items, 200, 8, func(i int) {})
+	}, 800, 600)
+	tt.Frame()
+	for i, r := range st.rects {
+		if r.h != r.w {
+			t.Errorf("item %d is %v high for %v wide, not a square", i, r.h, r.w)
+		}
+		if math.IsInf(float64(r.h), 0) || math.IsNaN(float64(r.h)) {
+			t.Errorf("item %d is %v high", i, r.h)
+		}
+	}
+}
+
+func TestMasonryZeroWidthDoesNotLoop(t *testing.T) {
+	items := testItems(100)
+	st := &MasonryState{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Box(c).Width(0).Children(func() {
+			Masonry(c, st, items, 200, 8, func(i int) {})
+		})
+	}, 800, 600)
+	if tt.FramePending() {
+		t.Fatal("a masonry of no width keeps asking for frames")
+	}
+}
+
+func TestMasonryEmpty(t *testing.T) {
+	st := &MasonryState{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		Masonry(c, st, nil, 200, 8, func(i int) { t.Fatal("built an item") })
+	}, 800, 600)
+	tt.Frame()
+	if st.total != 0 || len(st.rects) != 0 {
+		t.Fatalf("an empty masonry is %v high with %d items", st.total, len(st.rects))
+	}
+	if !st.AtEnd() {
+		t.Error("an empty masonry is not at its end")
+	}
+}
+
+func TestMasonryColumnWiderThanContainer(t *testing.T) {
+	items := testItems(20)
+	st := &MasonryState{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		Masonry(c, st, items, 600, 8, func(i int) {})
+	}, 400, 600)
+	tt.Frame()
+	checkMasonry(t, st, 400, 1)
+}
+
+func TestMasonryReplacesItems(t *testing.T) {
+	items := testItems(60)
+	st := &MasonryState{}
+	tt := ui.NewTester(func(c *ui.Context) {
+		Masonry(c, st, items, 200, 8, func(i int) {})
+	}, 800, 600)
+	// The same count, replaced by taller items under other keys.
+	for i := range items {
+		items[i] = MasonryItem{Key: 1000 + i, Aspect: 0.25}
+	}
+	tt.Frame()
+	if h, w := st.rects[0].h, st.rects[0].w; h != w*4 {
+		t.Fatalf("item 0 is %v high for %v wide, not the new aspect", h, w)
+	}
+	checkMasonry(t, st, 800, 3)
 }
 
 func TestMasonryAppendKeepsScroll(t *testing.T) {
