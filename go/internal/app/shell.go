@@ -114,11 +114,11 @@ func (a *App) applyTheme(c *ui.Context) {
 	}
 }
 
-// homePage draws the home tabs above the feed of the one chosen. Following
-// and ranking need a session, so a signed-out user gets the login prompt
-// instead.
+// homePage draws the home tabs above the feed of the one chosen. Pixiv's
+// recommendation also needs a token, so every tab asks a signed-out user to
+// sign in instead of fetching.
 func (a *App) homePage(c *ui.Context) {
-	if ui.Tabs(c, &a.homeTab, homeTabLabels...).Padding(12, 12, 0, 12).Changed() {
+	if ui.Tabs(c, &a.homeTab, homeTabLabels[:]...).Padding(12, 12, 0, 12).Changed() {
 		a.armHome(a.homeTab)
 	}
 	if a.session == nil {

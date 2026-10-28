@@ -71,6 +71,9 @@ type browseState struct {
 	tilesWidth float64
 }
 
+// homeTabCount is the number of home tabs, one feed each.
+const homeTabCount = 3
+
 // The home tabs, in the order ui.Tabs shows them: recommended, following and
 // ranking.
 const (
@@ -78,7 +81,16 @@ const (
 	homeTabRanking
 )
 
-var homeTabLabels = []string{"推荐", "关注", "排行"}
+var homeTabLabels = [homeTabCount]string{"推荐", "关注", "排行"}
+
+// newHomeFeeds makes one empty feed per home tab.
+func newHomeFeeds() [homeTabCount]*browseState {
+	feeds := [homeTabCount]*browseState{}
+	for i := range feeds {
+		feeds[i] = &browseState{}
+	}
+	return feeds
+}
 
 // armHome sets a home tab's fetch and lets it load, once. The first page is
 // fetched as the tab draws it; a tab already armed keeps its pages and place.
@@ -103,7 +115,7 @@ func (a *App) homeFetch(st *browseState, tab int) func(context.Context) (*pixiv.
 			return a.client.Following(ctx)
 		case homeTabRanking:
 			return a.client.Ranking(ctx, pixiv.Day, "")
-		default: // homeTabRecommended
+		default: // tab 0, recommended
 			return a.client.Recommended(ctx)
 		}
 	}

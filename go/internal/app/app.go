@@ -39,7 +39,7 @@ type App struct {
 	homeTab int
 	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
 	// so switching tabs loses nothing.
-	homeFeeds [3]*browseState
+	homeFeeds [homeTabCount]*browseState
 	// search is the last search's results.
 	search *browseState
 	// settings are the user's preferences, loaded at start and saved from the
@@ -81,7 +81,7 @@ func New() *App {
 			return client.RemoveBookmark(ctx, id)
 		},
 		route:     routeHome,
-		homeFeeds: [3]*browseState{{}, {}, {}},
+		homeFeeds: newHomeFeeds(),
 		search:    &browseState{},
 	}
 }
@@ -199,6 +199,10 @@ func (a *App) logout() {
 				a.client.SetToken(nil)
 			}
 			a.setTitle()
+			// The feeds hold the signed-out account's works: drop them so the
+			// next login starts empty.
+			a.homeFeeds = newHomeFeeds()
+			a.armHome(a.homeTab)
 		})
 	}()
 }
