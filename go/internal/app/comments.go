@@ -20,8 +20,9 @@ const (
 
 // commentState is one work's comment panel: the comments loaded so far, the
 // offset of the next page, the composer and the comment a reply answers.
-// draft and replyTo are edited on the main thread; the rest is written by the
-// load goroutine and read by the view through snapshot, under mu.
+// draft and replyTo belong to the composer and are only touched on the main
+// thread, so they need no lock; the rest is written by the load goroutine and
+// read by the view through snapshot, under mu.
 type commentState struct {
 	workID int64
 
@@ -65,18 +66,6 @@ func (st *commentState) snapshot() commentsView {
 		hasMore: st.next != "",
 		err:     st.err,
 	}
-}
-
-func (st *commentState) reply() *pixiv.Comment {
-	st.mu.Lock()
-	defer st.mu.Unlock()
-	return st.replyTo
-}
-
-func (st *commentState) setReply(cm *pixiv.Comment) {
-	st.mu.Lock()
-	st.replyTo = cm
-	st.mu.Unlock()
 }
 
 func (st *commentState) avatarFailedURL(url string) bool {
@@ -160,25 +149,32 @@ func (a *App) loadComments(st *commentState, reset bool) {
 }
 
 // submitComment posts the draft off the main thread. A reply goes as the
-// comment the API takes: the author's name in front of the text. On success
-// the composer clears and the first page loads again, so the new comment is
-// shown in place.
+// author's name in front of the text, because the API only takes a comment
+// field and has no reply target. On success the composer clears and the first
+// page loads again, so the new comment is shown in place.
 func (a *App) submitComment(st *commentState) {
 	if st == nil {
 		return
 	}
-	st.mu.Lock()
-	text := strings.TrimSpace(st.draft)
-	if text == "" || st.sending || a.addCommentFn == nil {
-		st.mu.Unlock()
+
+	draft := st.draft
+	text := strings.TrimSpace(draft)
+	if text == "" || a.addCommentFn == nil {
 		return
 	}
-	if st.replyTo != nil {
-		text = "@" + st.replyTo.User.Name + " " + text
+
+	st.mu.Lock()
+	if st.sending {
+		st.mu.Unlock()
+		return
 	}
 	st.sending = true
 	workID := st.workID
 	st.mu.Unlock()
+
+	if st.replyTo != nil {
+		text = "@" + st.replyTo.User.Name + " " + text
+	}
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
@@ -187,13 +183,16 @@ func (a *App) submitComment(st *commentState) {
 		a.update(func() {
 			st.mu.Lock()
 			st.sending = false
+			st.mu.Unlock()
 			if err != nil {
-				st.mu.Unlock()
 				a.notice = a.tf("comments.sendFailed", err.Error())
 				return
 			}
-			st.draft, st.replyTo = "", nil
-			st.mu.Unlock()
+			// Clear only the text that was sent: anything typed during the
+			// send stays in the composer.
+			if st.draft == draft {
+				st.draft, st.replyTo = "", nil
+			}
 			a.loadComments(st, true)
 		})
 	}()
@@ -226,7 +225,7 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 						}
 					})
 				}
-				if len(v.items) == 0 && !v.loading && v.err == "" {
+				if len(v.items) == 0 && !v.loading && !v.hasMore && v.err == "" {
 					ui.Text(c, a.t("comments.empty")).TextColor(t.TextMuted)
 				}
 				for i := range v.items {
@@ -242,12 +241,12 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 				}
 			})
 		})
-		if reply := st.reply(); reply != nil {
+		if reply := st.replyTo; reply != nil {
 			ui.Row(c).Gap(8).Padding(12, 0, 12, 0).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, a.tf("comments.replyingTo", reply.User.Name)).
 					FontSize(12).TextColor(t.TextMuted).Grow(1).MaxLines(1)
 				if ui.Button(c, a.t("comments.cancel")).Clicked() {
-					st.setReply(nil)
+					st.replyTo = nil
 				}
 			})
 		}
@@ -282,7 +281,7 @@ func (a *App) commentItem(c *ui.Context, st *commentState, cm *pixiv.Comment) {
 			})
 			ui.Text(c, cm.Comment).MaxLines(4)
 			if ui.Button(c, a.t("comments.reply")).Clicked() {
-				st.setReply(cm)
+				st.replyTo = cm
 			}
 		})
 	})

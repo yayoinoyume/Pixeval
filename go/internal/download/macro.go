@@ -31,17 +31,21 @@ type Context struct {
 	GroupID     int64
 }
 
-// DefaultMacro is the C# Pixeval default download path macro.
+// DefaultMacro is the C# Pixeval default download path macro. Its group prefix
+// is empty for a work that is not in a group, so the rendered text still starts
+// with "/": callers must filepath.Join it under the download base instead of
+// using the text as a path.
 const DefaultMacro = "@{is_group?@{group_id}:}/@{is_pic_set?[@{artist_name}] @{title}:}/[@{artist_name}] @{id}@{is_pic_set?p@{pic_set_index}:}.@{ext}"
 
 // defaultTimeFormat is the C# Pixeval fallback for publish_time without format.
 const defaultTimeFormat = "yyyy-M-d"
 
 // macroValues is the closed set of keys that render a value. The dynamic type
-// returned by each getter picks the formatter: string, int64 or time.Time.
+// returned by each getter picks the formatter: string, macroID, int64 or
+// time.Time.
 var macroValues = map[string]func(Context) any{
-	"id":            func(c Context) any { return c.ID },
-	"artist_id":     func(c Context) any { return c.ArtistID },
+	"id":            func(c Context) any { return macroID(c.ID) },
+	"artist_id":     func(c Context) any { return macroID(c.ArtistID) },
 	"series_id":     func(c Context) any { return c.SeriesID },
 	"group_id":      func(c Context) any { return c.GroupID },
 	"pic_set_index": func(c Context) any { return int64(c.PicSetIndex) },
@@ -88,6 +92,10 @@ type valueNode struct {
 	offset int // byte offset of the key, reported by format errors
 }
 
+// macroID is an id that the C# macro context holds as a string: it takes the
+// string formatters u and l, and the digit formats pad it like a number.
+type macroID int64
+
 func (n valueNode) render(ctx Context, b *strings.Builder) error {
 	var (
 		s   string
@@ -97,6 +105,8 @@ func (n valueNode) render(ctx Context, b *strings.Builder) error {
 	switch v := n.get(ctx).(type) {
 	case string:
 		s, err = formatString(v, n.format)
+	case macroID:
+		s, err = formatID(int64(v), n.format)
 	case int64:
 		s, err = formatInt(v, n.format)
 	case time.Time:
@@ -309,21 +319,36 @@ func formatString(value, format string) (string, error) {
 	}
 }
 
-// formatInt implements the C# "0" custom format: the digit count is the minimum
-// width, and the sign does not count towards it.
-func formatInt(value int64, format string) (string, error) {
-	if format == "" {
-		return strconv.FormatInt(value, 10), nil
+// formatID formats an id: u and l as the string the C# context holds, any other
+// format as a padded number.
+func formatID(value int64, format string) (string, error) {
+	switch format {
+	case "u", "l":
+		return formatString(strconv.FormatInt(value, 10), format)
+	default:
+		return formatInt(value, format)
 	}
+}
 
-	if strings.Trim(format, "0") != "" {
-		return "", fmt.Errorf("invalid integer format %q", format)
+// formatInt implements the digit part of the C# custom number format: '0' is a
+// required digit, so its count is the minimum width, and '#' is optional, so it
+// adds no width. Grouping and the other number specifiers are not supported.
+func formatInt(value int64, format string) (string, error) {
+	width := 0
+	for i := 0; i < len(format); i++ {
+		switch format[i] {
+		case '0':
+			width++
+		case '#':
+		default:
+			return "", fmt.Errorf("invalid integer format %q", format)
+		}
 	}
 
 	s := strconv.FormatInt(value, 10)
 	digits := strings.TrimPrefix(s, "-")
-	if len(digits) < len(format) {
-		digits = strings.Repeat("0", len(format)-len(digits)) + digits
+	if len(digits) < width {
+		digits = strings.Repeat("0", width-len(digits)) + digits
 	}
 
 	if strings.HasPrefix(s, "-") {
@@ -346,19 +371,21 @@ func formatTime(value time.Time, format string) (string, error) {
 	return value.Format(layout), nil
 }
 
-// timeTokens maps a C# custom date token to its unpadded and padded Go layout
-// text.
-var timeTokens = map[rune][2]string{
-	'y': {"06", "2006"},
-	'M': {"1", "01"},
-	'd': {"2", "02"},
-	'H': {"15", "15"},
-	'h': {"3", "03"},
-	'm': {"4", "04"},
-	's': {"5", "05"},
+// timeTokens maps a C# custom date token to the Go layout text for each run
+// length it models. A length missing from the map is not supported.
+var timeTokens = map[rune]map[int]string{
+	'y': {1: "2006", 2: "06", 4: "2006"},
+	'M': {1: "1", 2: "01"},
+	'd': {1: "2", 2: "02"},
+	'H': {2: "15"},
+	'h': {1: "3", 2: "03"},
+	'm': {1: "4", 2: "04"},
+	's': {1: "5", 2: "05"},
 }
 
 // goTimeLayout rewrites the C# custom date tokens in format as Go layout text.
+// An unmodelled token returns "", so the caller reports the format rather than
+// printing text that would mean something else in Go.
 func goTimeLayout(format string) string {
 	runes := []rune(format)
 	var b strings.Builder
@@ -369,12 +396,17 @@ func goTimeLayout(format string) string {
 			j++
 		}
 
-		if token, ok := timeTokens[c]; ok {
-			if j-i >= 2 {
-				b.WriteString(token[1])
-			} else {
-				b.WriteString(token[0])
+		if layouts, ok := timeTokens[c]; ok {
+			layout, ok := layouts[j-i]
+			if !ok {
+				return ""
 			}
+
+			b.WriteString(layout)
+		} else if c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z' {
+			// A letter run that is not a modelled token is one C# would
+			// format; printing it as Go layout text would be a wrong date.
+			return ""
 		} else {
 			b.WriteString(string(runes[i:j]))
 		}

@@ -101,6 +101,9 @@ func (a *App) closeViewer() {
 		return
 	}
 	a.viewer = nil
+	// Drop the panel with the viewer: a page still in flight then writes to a
+	// state nothing shows, instead of reviving it on the next work.
+	a.comments, a.commentsOpen = nil, false
 	if a.win != nil {
 		a.win.Invalidate()
 	}

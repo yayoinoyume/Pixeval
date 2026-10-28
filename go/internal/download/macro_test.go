@@ -194,15 +194,108 @@ func TestParseErrors(t *testing.T) {
 	}
 }
 
+func TestSeriesContextDiffersFromSingleImage(t *testing.T) {
+	template := `@{is_series?@{series_title}-@{series_id}:single}`
+
+	if got := render(t, template, Context{IsSeries: true, SeriesID: 9, SeriesTitle: "系列"}); got != "系列-9" {
+		t.Errorf("series work: got %q, want %q", got, "系列-9")
+	}
+
+	if got := render(t, template, Context{IsPicOne: true}); got != "single" {
+		t.Errorf("single image: got %q, want %q", got, "single")
+	}
+}
+
+func TestEmptyConditionalBranch(t *testing.T) {
+	template := `a@{is_group?:}b`
+
+	tests := []struct {
+		name string
+		ctx  Context
+	}{
+		{"branch taken", Context{IsGroup: true}},
+		{"branch skipped", Context{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := render(t, template, tc.ctx); got != "ab" {
+				t.Fatalf("got %q, want %q", got, "ab")
+			}
+		})
+	}
+}
+
+func TestIDsTakeStringAndDigitFormats(t *testing.T) {
+	ctx := Context{ID: 7, ArtistID: 1234}
+
+	tests := []struct {
+		template string
+		want     string
+	}{
+		{`@{id:u}`, "7"},
+		{`@{id:l}`, "7"},
+		{`@{id:000}`, "007"},
+		{`@{artist_id:000}`, "1234"},
+		{`@{artist_id:00000}`, "01234"},
+	}
+
+	for _, tc := range tests {
+		if got := render(t, tc.template, ctx); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.template, got, tc.want)
+		}
+	}
+}
+
+func TestFormatIntAcceptsOptionalDigits(t *testing.T) {
+	tests := []struct {
+		template string
+		want     string
+	}{
+		{`@{id:#}`, "7"},
+		{`@{id:##}`, "7"},
+		{`@{id:#000}`, "007"},
+	}
+
+	for _, tc := range tests {
+		if got := render(t, tc.template, Context{ID: 7}); got != tc.want {
+			t.Errorf("%s: got %q, want %q", tc.template, got, tc.want)
+		}
+	}
+}
+
+// TestParseErrorReportsUnclosedOffset checks an unclosed macro reports the
+// offset of its key, not of the end of the template.
+func TestParseErrorReportsUnclosedOffset(t *testing.T) {
+	_, err := Parse(`abc@{id`)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+
+	if !strings.Contains(err.Error(), "offset 3") {
+		t.Fatalf("error %q does not mention the key offset", err)
+	}
+}
+
 func TestRenderRejectsUnsupportedFormat(t *testing.T) {
-	tests := []string{`@{title:upper}`, `@{id:abc}`}
+	tests := []string{
+		`@{title:upper}`,
+		`@{id:abc}`,
+		`@{publish_time:ddd}`,
+		`@{publish_time:dddd}`,
+		`@{publish_time:MMM}`,
+		`@{publish_time:MMMM}`,
+		`@{publish_time:tt}`,
+		`@{publish_time:H}`,
+		`@{publish_time:fff}`,
+	}
 	for _, template := range tests {
 		tmpl, err := Parse(template)
 		if err != nil {
 			t.Fatalf("Parse(%q): %v", template, err)
 		}
 
-		if _, err = tmpl.Render(Context{Title: "x", ID: 1}); err == nil {
+		if _, err = tmpl.Render(Context{Title: "x", ID: 1, PublishTime: macroTestTime}); err == nil {
 			t.Errorf("Render(%q) succeeded, want error", template)
 		}
 	}
