@@ -72,6 +72,9 @@ type App struct {
 	// settings page. shortcutsOpen shows the shortcut hint in its About card.
 	settings      *Settings
 	shortcutsOpen bool
+	// cardText is the card title-and-author height for the current text scale,
+	// read on the main thread before a load goroutine uses it.
+	cardText float64
 	// lang is the language the bundle speaks, and bundle holds its messages.
 	lang   string
 	bundle *i18n.Bundle
@@ -180,6 +183,7 @@ func New() *App {
 		novelContent:     client.NovelContent,
 		illustrationFn:   client.Illustration,
 		route:            routeHome,
+		cardText:         60,
 		homeFeeds:        newHomeFeeds(),
 		search:           &browseState{},
 		searchNovels:     &novelFeedState{},

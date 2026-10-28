@@ -60,8 +60,11 @@ func TestSystemAccentTextContrast(t *testing.T) {
 	if text.R != 24 || text.G != 24 || text.B != 27 {
 		t.Errorf("accent text %v, want near black", text)
 	}
-	if tok.Accent.R != 255 || tok.Accent.G != 212 || tok.Accent.B != 0 {
-		t.Errorf("token accent %v, want the system accent", tok.Accent)
+	if tok.AccentFill.R != 255 || tok.AccentFill.G != 212 || tok.AccentFill.B != 0 {
+		t.Errorf("token fill %v, want the raw system accent", tok.AccentFill)
+	}
+	if got := contrastRatio(tok.Accent, lightTokens.Surface); got < 4.5 {
+		t.Errorf("foreground accent contrast %v, want at least 4.5", got)
 	}
 	if tok.AccentText.R != 24 || tok.AccentText.G != 24 || tok.AccentText.B != 27 {
 		t.Errorf("token accent text %v, want near black", tok.AccentText)
@@ -87,5 +90,22 @@ func TestThemeTokensFollowTextScale(t *testing.T) {
 	tt.Frame()
 	if want := darkTokens.TextBody * 1.25; tok.TextBody != want {
 		t.Errorf("body text %v, want %v", tok.TextBody, want)
+	}
+}
+
+// TestCardTextHeightScales checks the masonry leaves more room for a card's
+// text when the desktop scales text, so the card body is not clipped.
+func TestCardTextHeightScales(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	var tok tokens
+	tt := ui.NewTester(func(c *ui.Context) {
+		a.View(c)
+		tok = themeOf(c)
+	}, 400, 300)
+	tt.SetPreferences(ui.Preferences{TextScale: 2})
+	tt.Frame()
+	if got, base := cardTextHeight(tok), cardTextHeight(lightTokens); got <= base {
+		t.Errorf("card text height %v at scale 2, want more than %v", got, base)
 	}
 }

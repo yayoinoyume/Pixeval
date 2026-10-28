@@ -70,17 +70,17 @@ func (a *App) loadSeries(v *seriesViewState, seriesID int64) {
 			}
 			return &pixiv.Page[pixiv.Illustration]{Items: next.Illusts, NextURL: next.NextURL}, nil
 		})
-		st.seed(page.Illusts, page.NextURL, a.masonryWidth())
+		st.seed(page.Illusts, page.NextURL, a.masonryWidth(), a.cardText)
 	})
 }
 
 // seed fills a fresh feed with a page already fetched, so the first frame
 // shows the works without asking for the page again. Later pages come from
 // the feed's cursor.
-func (st *browseState) seed(items []pixiv.Illustration, next string, width float64) {
+func (st *browseState) seed(items []pixiv.Illustration, next string, width, textHeight float64) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.add(items, width)
+	st.add(items, width, textHeight)
 	st.next, st.started, st.armed = next, true, true
 }
 

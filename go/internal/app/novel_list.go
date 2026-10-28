@@ -52,10 +52,11 @@ type novelFeedState struct {
 	// for the novel tab to show.
 	armed bool
 
-	// masonry is the list's place, and tilesWidth the column width its tiles
-	// were built for; the view rebuilds them when the setting changes.
+	// masonry is the list's place; tilesWidth and tilesText are what its tiles
+	// were built for, so the view rebuilds them when either changes.
 	masonry    widgets.MasonryState
 	tilesWidth float64
+	tilesText  float64
 }
 
 // snapshot returns what the view draws.
@@ -113,6 +114,7 @@ func (st *novelFeedState) restart() {
 	st.gen++
 	st.items = nil
 	st.tiles = nil
+	st.tilesText = 0
 	st.next = ""
 	st.started = false
 	st.err = ""
@@ -130,27 +132,27 @@ func (st *novelFeedState) retry() {
 
 // add appends a page's novels to the list, with the tiles they draw as. st.mu
 // must be held.
-func (st *novelFeedState) add(items []pixiv.Novel, width float64) {
+func (st *novelFeedState) add(items []pixiv.Novel, width, textHeight float64) {
 	st.items = append(st.items, items...)
-	st.tiles = append(st.tiles, novelTiles(items, width)...)
+	st.tiles = append(st.tiles, novelTiles(items, width, textHeight)...)
 }
 
 // novelTiles are the tiles of items at the column width width.
-func novelTiles(items []pixiv.Novel, width float64) []widgets.MasonryItem {
+func novelTiles(items []pixiv.Novel, width, textHeight float64) []widgets.MasonryItem {
 	tiles := make([]widgets.MasonryItem, len(items))
 	for i := range items {
-		tiles[i] = widgets.MasonryItem{Key: items[i].ID, Aspect: cardAspect(items[i].Aspect(), width)}
+		tiles[i] = widgets.MasonryItem{Key: items[i].ID, Aspect: cardAspect(items[i].Aspect(), width, textHeight)}
 	}
 	return tiles
 }
 
 // tilesFor returns the tiles of items at width, and keeps them for the next
 // frame.
-func (st *novelFeedState) tilesFor(items []pixiv.Novel, width float64) []widgets.MasonryItem {
+func (st *novelFeedState) tilesFor(items []pixiv.Novel, width, textHeight float64) []widgets.MasonryItem {
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	st.tilesWidth = width
-	st.tiles = novelTiles(items, width)
+	st.tilesWidth, st.tilesText = width, textHeight
+	st.tiles = novelTiles(items, width, textHeight)
 	return st.tiles
 }
 
@@ -194,6 +196,7 @@ func (a *App) startNovelSearch(word string) {
 	})
 	st.masonry = widgets.MasonryState{}
 	st.tilesWidth = 0
+	st.tilesText = 0
 }
 
 // loadMoreNovels fetches the next page of novels off the main thread and
@@ -207,9 +210,9 @@ func (a *App) loadMoreNovels(st *novelFeedState) {
 	st.loading = true
 	gen, fetch := st.gen, st.fetch
 	st.mu.Unlock()
-	// Read the width on the main thread; the load goroutine must not touch
-	// the settings the view edits.
-	width := a.masonryWidth()
+	// Read the width and text height on the main thread; the load goroutine
+	// must not touch the settings the view edits.
+	width, textHeight := a.masonryWidth(), a.cardText
 
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
@@ -231,7 +234,7 @@ func (a *App) loadMoreNovels(st *novelFeedState) {
 			st.err = err.Error()
 		default:
 			st.started = true
-			st.add(page.Items, width)
+			st.add(page.Items, width, textHeight)
 			st.next = page.NextURL
 		}
 		st.mu.Unlock()
@@ -261,9 +264,11 @@ func (a *App) novelResults(c *ui.Context) {
 		}
 	}
 	width := a.masonryWidth()
+	textHeight := cardTextHeight(t)
+	a.cardText = textHeight
 	tiles := v.tiles
-	if width != st.tilesWidth {
-		tiles = st.tilesFor(v.items, width)
+	if width != st.tilesWidth || textHeight != st.tilesText {
+		tiles = st.tilesFor(v.items, width, textHeight)
 	}
 	switch {
 	case len(v.items) > 0:

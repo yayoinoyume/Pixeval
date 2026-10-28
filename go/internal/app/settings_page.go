@@ -248,14 +248,16 @@ func (a *App) numberStepper[T int | float64](c *ui.Context, value *T, lo, hi, st
 		return strconv.FormatFloat(float64(*value), 'f', -1, 64)
 	})
 	field := ui.TextInput(c, text).Width(72).Height(36).Label(label)
+	focused := ui.Local(c.Root(), "stepper.focus."+label, func() bool { return false })
 	if field.Changed() {
 		if n, err := strconv.ParseFloat(strings.TrimSpace(*text), 64); err == nil {
 			*value = T(min(max(n, float64(lo)), float64(hi)))
 		}
 	}
-	if field.Submitted() {
+	if field.Submitted() || *focused && !field.Focused() {
 		*text = strconv.FormatFloat(float64(*value), 'f', -1, 64)
 	}
+	*focused = field.Focused()
 	dec := a.t("settings.decrease")
 	inc := a.t("settings.increase")
 	if a.stepperButton(c, iconMinus, label+" "+dec).Clicked() {
