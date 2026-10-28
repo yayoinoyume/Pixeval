@@ -1,19 +1,23 @@
 package app
 
 import (
+	"errors"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
-// TestShellLoggedOut checks the home page guides a signed-out user to login.
+// TestShellLoggedOut checks the home page shows the login button to a
+// signed-out user. Find is exact, so the prompt text alone does not pass.
 func TestShellLoggedOut(t *testing.T) {
 	a := New()
 	tt := ui.NewTester(a.View, 1000, 700)
-	if !tt.HasText("登录 Pixiv") {
-		t.Errorf("texts %q", tt.Texts())
+	if _, ok := tt.Find("登录 Pixiv"); !ok {
+		t.Errorf("login button missing: %q", tt.Texts())
 	}
 	if !tt.HasText("首页") {
 		t.Errorf("texts %q", tt.Texts())
@@ -58,5 +62,46 @@ func TestShellLoggedIn(t *testing.T) {
 	}
 	if tt.HasText("登录 Pixiv") {
 		t.Errorf("login prompt shown while signed in: %q", tt.Texts())
+	}
+}
+
+// TestSessionLifecycle checks a saved token restores the session and a logout
+// removes the token file.
+func TestSessionLifecycle(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path, err := tokenPath()
+	if err != nil {
+		t.Fatalf("tokenPath: %v", err)
+	}
+	tok := &pixiv.Token{
+		AccessToken:  "access",
+		RefreshToken: "refresh",
+		ExpiresIn:    3600,
+		User:         pixiv.TokenUser{Name: "测试用户"},
+	}
+	if err := pixiv.SaveToken(path, tok); err != nil {
+		t.Fatalf("SaveToken: %v", err)
+	}
+
+	a := New()
+	a.restoreSession()
+	if a.session == nil {
+		t.Fatal("session not restored")
+	}
+	if got := a.userName(); got != "测试用户" {
+		t.Errorf("userName %q", got)
+	}
+
+	a.logout()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		_, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("token file still at %s after logout (stat err %v)", path, err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

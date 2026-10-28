@@ -21,6 +21,7 @@ import (
 type App struct {
 	win    *mygo.Window
 	client *pixiv.Client
+	// images is reserved for the M1 browse page: thumbnails and originals.
 	images *imagex.Loader
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
@@ -53,7 +54,6 @@ func imageDir() string {
 }
 
 func (a *App) Start() {
-	a.restoreSession()
 	a.win = mygo.NewWindow(mygo.WindowOptions{
 		Title:     a.title(),
 		Width:     1280,
@@ -62,11 +62,14 @@ func (a *App) Start() {
 		MinHeight: 600,
 		Content:   ui.View(a.View),
 	})
+	// A refresh can take a network round trip: the window opens first and
+	// applySession fills in the session when it lands.
+	go a.restoreSession()
 }
 
-// restoreSession adopts the saved token before the window opens, refreshing
-// it when expired. A failure leaves the app logged out instead of blocking
-// the start.
+// restoreSession adopts the saved token, refreshing it when expired. It runs
+// off the main thread once the window is open, so a failure leaves the app
+// logged out instead of blocking the start.
 func (a *App) restoreSession() {
 	path, err := tokenPath()
 	if err != nil {
@@ -128,7 +131,10 @@ func (a *App) logout() {
 	go func() {
 		if err == nil {
 			if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				// The token is still there: stay signed in rather than claim
+				// a logout that did not happen.
 				log.Printf("pixiv logout: %v", err)
+				return
 			}
 		}
 		a.update(func() {
@@ -151,10 +157,11 @@ func (a *App) update(fn func()) {
 }
 
 func (a *App) title() string {
-	if a.session == nil {
+	name := a.userName()
+	if name == "" {
 		return "Pixeval Go"
 	}
-	return "Pixeval Go — " + a.userName()
+	return "Pixeval Go — " + name
 }
 
 func (a *App) setTitle() {
