@@ -15,7 +15,7 @@ type illustList struct {
 func (c *Client) Recommended(ctx context.Context) (*Page[Illustration], error) {
 	q := url.Values{}
 	q.Set("filter", "for_android")
-	return c.illustPage(ctx, PageURL("/v1/illust/recommended", q))
+	return c.illustPage(ctx, c.pageURL("/v1/illust/recommended", q))
 }
 
 // SearchOptions are the filters of an illustration search.
@@ -63,7 +63,7 @@ func (c *Client) SearchIllustrations(ctx context.Context, opts SearchOptions) (*
 	addInt("width_max", opts.MaxWidth)
 	addInt("height_min", opts.MinHeight)
 	addInt("height_max", opts.MaxHeight)
-	return c.illustPage(ctx, PageURL("/v1/search/illust", q))
+	return c.illustPage(ctx, c.pageURL("/v1/search/illust", q))
 }
 
 // Illustration fetches one work by ID.
@@ -74,7 +74,7 @@ func (c *Client) Illustration(ctx context.Context, id int64) (*Illustration, err
 	var r struct {
 		Illust Illustration `json:"illust"`
 	}
-	if err := c.get(ctx, PageURL("/v1/illust/detail", q), &r); err != nil {
+	if err := c.get(ctx, c.pageURL("/v1/illust/detail", q), &r); err != nil {
 		return nil, err
 	}
 	return &r.Illust, nil

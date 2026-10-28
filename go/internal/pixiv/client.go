@@ -104,8 +104,10 @@ func (c *Client) get(ctx context.Context, rawURL string, out any) error {
 	return c.do(ctx, http.MethodGet, rawURL, "", nil, out)
 }
 
-// post performs a rate limited form POST with the same retries and JSON
-// decoding as get. out may be nil when the response body is not needed.
+// post performs a rate limited form POST with the same pacing, auth and
+// decoding as get. Only a 429 is retried: a POST may already have reached
+// Pixiv, so repeating it could duplicate a comment or a bookmark. out may be
+// nil when the response body is not needed.
 func (c *Client) post(ctx context.Context, path string, form url.Values, out any) error {
 	const contentType = "application/x-www-form-urlencoded"
 	return c.do(ctx, http.MethodPost, c.baseURL+path, contentType, []byte(form.Encode()), out)
@@ -153,12 +155,13 @@ func (c *Client) doOnce(ctx context.Context, method, rawURL, contentType string,
 
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return true, err
+		// A failed POST may have been sent already, so it is not retried.
+		return method == http.MethodGet, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return true, err
+		return method == http.MethodGet, err
 	}
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
@@ -167,10 +170,14 @@ func (c *Client) doOnce(ctx context.Context, method, rawURL, contentType string,
 		return true, fmt.Errorf("pixiv: rate limited for %s", d)
 	case resp.StatusCode == http.StatusUnauthorized:
 		return false, errors.New("pixiv: unauthorized (token expired or revoked)")
+	case resp.StatusCode == http.StatusForbidden:
+		return false, ErrForbidden
+	case resp.StatusCode == http.StatusNotFound:
+		return false, ErrNotFound
 	case resp.StatusCode == http.StatusBadRequest && method == http.MethodGet && isNextURLExhausted(body):
 		return false, ErrNoMore
 	case resp.StatusCode >= 500 || resp.StatusCode == http.StatusRequestTimeout || resp.StatusCode == http.StatusTooEarly:
-		return true, fmt.Errorf("pixiv: %s: %s", resp.Status, truncate(string(body), 200))
+		return method == http.MethodGet, fmt.Errorf("pixiv: %s: %s", resp.Status, truncate(string(body), 200))
 	case resp.StatusCode != http.StatusOK:
 		return false, fmt.Errorf("pixiv: %s: %s", resp.Status, truncate(string(body), 200))
 	}
@@ -185,6 +192,12 @@ func (c *Client) doOnce(ctx context.Context, method, rawURL, contentType string,
 
 // ErrNoMore means the list has no more pages.
 var ErrNoMore = errors.New("pixiv: no more pages")
+
+// ErrForbidden means the token may not perform the request (403).
+var ErrForbidden = errors.New("pixiv: forbidden")
+
+// ErrNotFound means the work, user or comment does not exist (404).
+var ErrNotFound = errors.New("pixiv: not found")
 
 func isNextURLExhausted(body []byte) bool {
 	// Pixiv answers 400 when next_url runs past the last page.

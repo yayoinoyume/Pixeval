@@ -2,6 +2,7 @@ package pixiv
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -122,7 +123,7 @@ func TestFollowWrites(t *testing.T) {
 
 func TestCommentsReadsPage(t *testing.T) {
 	const body = `{"comments":[{"id":7,"comment":"nice","user":{"id":9,"name":"someone"},` +
-		`"create_date":"2024-05-01T10:00:00+09:00","parent_comment":{"id":3,"comment":"root"}}],` +
+		`"date":"2024-05-01T10:00:00+09:00","has_replies":true,"parent_comment":{"id":3,"comment":"root"}}],` +
 		`"next_url":"https://app-api.pixiv.net/v3/illust/comments?illust_id=123&offset=10"}`
 	var got recordedRequest
 	c := newWriteClient(t, recordInto(&got, body))
@@ -150,8 +151,11 @@ func TestCommentsReadsPage(t *testing.T) {
 	if cm.ID != 7 || cm.Comment != "nice" || cm.User.Name != "someone" {
 		t.Errorf("comment = %+v", cm)
 	}
-	if cm.CreateDate.Year() != 2024 {
-		t.Errorf("create_date = %v", cm.CreateDate)
+	if cm.CreateDate.IsZero() || cm.CreateDate.Year() != 2024 {
+		t.Errorf("date = %v, want 2024 parsed from the date field", cm.CreateDate)
+	}
+	if !cm.HasReplies {
+		t.Error("has_replies = false, want true")
 	}
 	if cm.ParentComment == nil || cm.ParentComment.ID != 3 {
 		t.Errorf("parent_comment = %+v", cm.ParentComment)
@@ -162,21 +166,38 @@ func TestCommentsReadsPage(t *testing.T) {
 }
 
 func TestCommentWrites(t *testing.T) {
+	const body = `{"comment":{"id":1,"comment":"hello world","date":"2024-05-01T10:00:00+09:00"}}`
 	var got recordedRequest
-	c := newWriteClient(t, recordInto(&got, `{"comment":{"id":1}}`))
+	c := newWriteClient(t, recordInto(&got, body))
 	ctx := context.Background()
 
-	if err := c.AddComment(ctx, 123, "hello world"); err != nil {
+	cm, err := c.AddComment(ctx, 123, "hello world")
+	if err != nil {
 		t.Fatalf("AddComment: %v", err)
 	}
 	checkWrite(t, got, http.MethodPost, "/v1/illust/comment/add",
 		url.Values{"illust_id": {"123"}, "comment": {"hello world"}})
+	if cm == nil || cm.ID != 1 || cm.Comment != "hello world" || cm.CreateDate.IsZero() {
+		t.Errorf("AddComment returned %+v", cm)
+	}
 
 	if err := c.DeleteComment(ctx, 99); err != nil {
 		t.Fatalf("DeleteComment: %v", err)
 	}
 	checkWrite(t, got, http.MethodPost, "/v1/illust/comment/delete",
 		url.Values{"comment_id": {"99"}})
+}
+
+func TestReadEndpointUsesBaseURL(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, `{"illusts":[],"next_url":""}`))
+
+	if _, err := c.Recommended(context.Background()); err != nil {
+		t.Fatalf("Recommended: %v", err)
+	}
+	if got.method != http.MethodGet || got.path != "/v1/illust/recommended" {
+		t.Errorf("request = %s %s, want GET /v1/illust/recommended", got.method, got.path)
+	}
 }
 
 func TestRateLimitPausesRequests(t *testing.T) {
@@ -215,7 +236,7 @@ func TestRateLimitPausesRequests(t *testing.T) {
 	}
 }
 
-func TestServerErrorRetries(t *testing.T) {
+func TestServerErrorRetriesReads(t *testing.T) {
 	var calls int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls++
@@ -223,7 +244,7 @@ func TestServerErrorRetries(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		io.WriteString(w, `{}`)
+		io.WriteString(w, `{"comments":[],"next_url":""}`)
 	}))
 	t.Cleanup(srv.Close)
 
@@ -232,11 +253,55 @@ func TestServerErrorRetries(t *testing.T) {
 	c.SetCooldown(0)
 	c.backoff = []time.Duration{time.Millisecond}
 
-	if err := c.Follow(context.Background(), 1, false); err != nil {
-		t.Fatalf("Follow: %v", err)
+	if _, err := c.Comments(context.Background(), 1, 0); err != nil {
+		t.Fatalf("Comments: %v", err)
 	}
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2 (500 then success)", calls)
+	}
+}
+
+func TestPostServerErrorIsNotRetried(t *testing.T) {
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := NewClient()
+	c.baseURL = srv.URL
+	c.SetCooldown(0)
+	c.backoff = []time.Duration{0}
+
+	if _, err := c.AddComment(context.Background(), 1, "hi"); err == nil {
+		t.Fatal("AddComment with 500 = nil error")
+	}
+	if calls != 1 {
+		t.Errorf("calls = %d, want 1 (a POST is not replayed)", calls)
+	}
+}
+
+func TestStatusSentinels(t *testing.T) {
+	cases := []struct {
+		status int
+		want   error
+	}{
+		{http.StatusForbidden, ErrForbidden},
+		{http.StatusNotFound, ErrNotFound},
+	}
+	for _, tc := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(tc.status)
+		}))
+		c := NewClient()
+		c.baseURL = srv.URL
+		c.SetCooldown(0)
+		err := c.RemoveBookmark(context.Background(), 1)
+		srv.Close()
+		if !errors.Is(err, tc.want) {
+			t.Errorf("status %d: err = %v, want %v", tc.status, err, tc.want)
+		}
 	}
 }
 
