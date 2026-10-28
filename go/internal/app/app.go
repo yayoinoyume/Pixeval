@@ -38,19 +38,30 @@ type App struct {
 	// home is the recommended feed, search the last search's results.
 	home   *browseState
 	search *browseState
+	// settings are the user's preferences, loaded at start and saved from the
+	// settings page.
+	settings *Settings
+	// settingsSaved carries a save's result back to the main thread, which
+	// applies it in the view.
+	settingsSaved chan error
+	settingsMsg   string
+	settingsErr   string
 }
 
 func New() *App {
 	client := pixiv.NewClient()
+	settings := loadSettings()
 	return &App{
-		client:       client,
-		images:       imagex.New(client, imageDir()),
-		downloads:    download.New(client, downloadConcurrency),
-		downloadsDir: downloadDir(),
-		paused:       map[string]bool{},
-		route:        routeHome,
-		home:         newHomeState(client),
-		search:       &browseState{},
+		client:        client,
+		images:        imagex.New(client, imageDir()),
+		downloads:     download.New(client, settings.DownloadConcurrency),
+		downloadsDir:  settingsDownloadDir(settings),
+		settings:      settings,
+		settingsSaved: make(chan error, 1),
+		paused:        map[string]bool{},
+		route:         routeHome,
+		home:          newHomeState(client),
+		search:        &browseState{},
 	}
 }
 

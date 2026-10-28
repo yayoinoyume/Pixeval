@@ -32,6 +32,7 @@ var navRoutes = []route{routeHome, routeSearch, routeDownloads, routeSettings}
 // View builds the shell: the navigation on the left, the page title and the
 // sign-in state above the page. The viewer takes the whole window instead.
 func (a *App) View(c *ui.Context) {
+	a.applyTheme(c)
 	if a.viewer != nil {
 		a.viewerPage(c)
 		return
@@ -82,11 +83,27 @@ func (a *App) page(c *ui.Context) {
 		a.searchPage(c)
 	case routeDownloads:
 		a.downloadsPage(c)
+	case routeSettings:
+		a.settingsPage(c)
 	default:
 		t := c.Theme()
 		ui.Column(c).Grow(1).Center().Children(func() {
 			ui.Text(c, a.route.label()+"（M1 占位）").TextColor(t.TextMuted)
 		})
+	}
+}
+
+// applyTheme makes the window use the saved theme; the system's is the one
+// the frame starts with when the setting follows it.
+func (a *App) applyTheme(c *ui.Context) {
+	if a.settings == nil {
+		return
+	}
+	switch a.settings.Theme {
+	case themeLight:
+		c.SetTheme(ui.LightTheme())
+	case themeDark:
+		c.SetTheme(ui.DarkTheme())
 	}
 }
 
