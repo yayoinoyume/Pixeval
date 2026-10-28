@@ -113,6 +113,10 @@ func (c *Client) post(ctx context.Context, path string, form url.Values, out any
 	return c.do(ctx, http.MethodPost, c.baseURL+path, contentType, []byte(form.Encode()), out)
 }
 
+// rawText asks do for the undecoded body, for endpoints that answer a page
+// instead of JSON.
+type rawText struct{ text *string }
+
 func (c *Client) do(ctx context.Context, method, rawURL, contentType string, payload []byte, out any) error {
 	for attempt := 0; ; attempt++ {
 		retry, err := c.doOnce(ctx, method, rawURL, contentType, payload, out)
@@ -182,6 +186,10 @@ func (c *Client) doOnce(ctx context.Context, method, rawURL, contentType string,
 		return false, fmt.Errorf("pixiv: %s: %s", resp.Status, truncate(string(body), 200))
 	}
 	if out == nil {
+		return false, nil
+	}
+	if raw, ok := out.(*rawText); ok {
+		*raw.text = string(body)
 		return false, nil
 	}
 	if err := json.Unmarshal(body, out); err != nil {
