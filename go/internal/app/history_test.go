@@ -176,7 +176,7 @@ func TestOpenViewerRecordsHistory(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries %d, want 1", len(entries))
 	}
-	if entries[0].ID != w.ID || entries[0].Title != w.Title || entries[0].Cover != w.CoverURL() {
+	if entries[0].ID != w.ID || entries[0].Title != w.Title || entries[0].Cover != w.ThumbURL() {
 		t.Errorf("entry %+v, want the opened work", entries[0])
 	}
 }

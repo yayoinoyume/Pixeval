@@ -336,7 +336,7 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 // and shadow when the pointer is over it.
 func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustration, i int) {
 	work := items[i]
-	key := work.CoverURL()
+	key := work.ThumbURL()
 	t := themeOf(c)
 	card, cover := cardShell(c)
 	card = card.Fill().Focusable().
