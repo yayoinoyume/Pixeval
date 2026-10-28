@@ -41,6 +41,8 @@
   "search": {
     "placeholder": "搜索作品",
     "action": "搜索",
+    "illust": "插画",
+    "novel": "小说",
     "hint": "输入关键词开始搜索"
   },
   "viewer": {
@@ -169,7 +171,8 @@
   },
   "novel": {
     "loadFailed": "加载小说失败：%s",
-    "imageUnsupported": "正文图片暂不支持"
+    "imageUnsupported": "正文图片暂不支持",
+    "pages": "%d 页"
   },
   "filter": {
     "placeholder": "过滤表达式，如 bookmarks>100",

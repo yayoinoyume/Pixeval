@@ -41,6 +41,8 @@
   "search": {
     "placeholder": "Поиск работ",
     "action": "Поиск",
+    "illust": "Illustrations",
+    "novel": "Novels",
     "hint": "Введите ключевое слово для поиска"
   },
   "viewer": {
@@ -169,7 +171,8 @@
   },
   "novel": {
     "loadFailed": "Не удалось загрузить новеллу: %s",
-    "imageUnsupported": "Встроенные изображения пока не поддерживаются"
+    "imageUnsupported": "Встроенные изображения пока не поддерживаются",
+    "pages": "%d pages"
   },
   "filter": {
     "placeholder": "Фильтр работ, например bookmarks>100",
