@@ -458,3 +458,20 @@ func TestFilterClearedRestoresList(t *testing.T) {
 	}
 	checkShown(t, tt, "作品 0", "作品 1", "作品 2")
 }
+
+// TestBrowseCardMetrics checks the feed keeps the card width the settings
+// choose, the design's gap, and the cover size the thumbnails are cached at.
+func TestBrowseCardMetrics(t *testing.T) {
+	if cardWidth != 240 {
+		t.Errorf("card width %v, want the default 240", cardWidth)
+	}
+	if cardGap != 16 {
+		t.Errorf("card gap %v, want 16", cardGap)
+	}
+	if coverWidth != 480 || coverHeight != 720 {
+		t.Errorf("cover %vx%v, want 480x720", coverWidth, coverHeight)
+	}
+	if contentPadding != 28 {
+		t.Errorf("content padding %v, want 28", contentPadding)
+	}
+}

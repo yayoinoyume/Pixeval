@@ -176,7 +176,7 @@ func TestOpenViewerRecordsHistory(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries %d, want 1", len(entries))
 	}
-	if entries[0].ID != w.ID || entries[0].Title != w.Title || entries[0].Cover != w.CoverURL() {
+	if entries[0].ID != w.ID || entries[0].Title != w.Title || entries[0].Cover != w.ThumbURL() {
 		t.Errorf("entry %+v, want the opened work", entries[0])
 	}
 }
@@ -250,9 +250,9 @@ func TestHistoryGridFitsWidth(t *testing.T) {
 		cols int
 		card float32
 	}{
-		{"narrow", 960, 700, 3, 224},
-		{"wide", 1280, 820, 4, 245},
-		{"wider", 1600, 900, 5, 257.6},
+		{"narrow", 960, 700, 3, 261.33334},
+		{"wide", 1280, 820, 4, 272},
+		{"wider", 1600, 900, 5, 278.4},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

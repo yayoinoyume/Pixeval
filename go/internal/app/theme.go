@@ -10,8 +10,8 @@ import (
 // reads them with themeOf(c); applyTheme installs the same values into the
 // widgets' ui.Theme, so stock controls and hand-built parts share one look.
 const (
-	navWidth       = 200
-	contentPadding = 32
+	navWidth       = 88
+	contentPadding = 28
 )
 
 // tokens is one theme's palette, spacing, radii and type scale.
@@ -27,6 +27,29 @@ type tokens struct {
 	BorderStrong   ui.Color
 	Text           ui.Color
 	TextMuted      ui.Color
+
+	// The Material You roles a view may name instead of one of the older
+	// aliases above: Bg is the surface, Surface the container-low role, and
+	// so on, so a new view can say which role it means.
+	Primary                 ui.Color
+	OnPrimary               ui.Color
+	PrimaryContainer        ui.Color
+	OnPrimaryContainer      ui.Color
+	Secondary               ui.Color
+	OnSecondary             ui.Color
+	SecondaryContainer      ui.Color
+	OnSecondaryContainer    ui.Color
+	Tertiary                ui.Color
+	OnTertiary              ui.Color
+	TertiaryContainer       ui.Color
+	OnTertiaryContainer     ui.Color
+	SurfaceContainerLow     ui.Color
+	SurfaceContainer        ui.Color
+	SurfaceContainerHigh    ui.Color
+	SurfaceContainerHighest ui.Color
+	OutlineVariant          ui.Color
+	InverseSurface          ui.Color
+	InverseOnSurface        ui.Color
 
 	Accent        ui.Color
 	AccentSoft    ui.Color
@@ -65,8 +88,10 @@ type tokens struct {
 	RadiusM    float32
 	RadiusL    float32
 	RadiusXL   float32
+	Radius2XL  float32
 	RadiusFull float32
 
+	TextDetail  float32
 	TextDisplay float32
 	TextTitle   float32
 	TextBody    float32
@@ -74,15 +99,16 @@ type tokens struct {
 	TextTiny    float32
 }
 
-// designTokens returns the dark or the light set. The dark set is the first
-// one: the app is a picture browser, and the viewer is always dark.
+// designTokens returns the dark or the light set. Both are Material You
+// roles from one seed, #9b7bb8: the dark set is the light one's roles in the
+// dark scheme, not a separate palette.
 func designTokens(dark bool) tokens {
 	t := tokens{
 		Dark: dark,
 
 		SpaceXS: 4, SpaceS: 8, SpaceM: 12, SpaceL: 16, SpaceXL: 24, Space2XL: 32,
-		RadiusS: 6, RadiusM: 10, RadiusL: 12, RadiusXL: 16, RadiusFull: 999,
-		TextDisplay: 28, TextTitle: 20, TextBody: 15, TextSmall: 13, TextTiny: 11,
+		RadiusS: 8, RadiusM: 12, RadiusL: 16, RadiusXL: 24, Radius2XL: 32, RadiusFull: 999,
+		TextDetail: 36, TextDisplay: 30, TextTitle: 20, TextBody: 14, TextSmall: 13, TextTiny: 11,
 
 		ViewerBg:        ui.Hex("#0a0b0e"),
 		ViewerBar:       ui.RGBA(22, 25, 32, 0.9),
@@ -92,61 +118,92 @@ func designTokens(dark bool) tokens {
 		ViewerBarMuted:  ui.Hex("#a6adbb"),
 	}
 	if dark {
-		t.Bg = ui.Hex("#0e1014")
-		t.Surface = ui.Hex("#161920")
-		t.SurfaceAlt = ui.Hex("#1c2029")
-		t.SurfaceHover = ui.Hex("#222733")
-		t.SurfacePressed = ui.Hex("#2a3040")
-		t.Border = ui.Hex("#272c36")
-		t.BorderStrong = ui.Hex("#353c49")
-		t.Text = ui.Hex("#eef1f6")
-		t.TextMuted = ui.Hex("#98a1b2")
+		t.Bg = ui.Hex("#151217")             // surface
+		t.Surface = ui.Hex("#1d1a20")        // surface-container-low
+		t.SurfaceAlt = ui.Hex("#211e24")     // surface-container
+		t.SurfaceHover = ui.Hex("#2c282e")   // surface-container-high
+		t.SurfacePressed = ui.Hex("#373339") // surface-container-highest
+		t.Border = ui.Hex("#4a454e")         // outline-variant
+		t.BorderStrong = ui.Hex("#958e99")   // outline
+		t.Text = ui.Hex("#e8e1e8")           // on-surface
+		t.TextMuted = ui.Hex("#cbc4cf")      // on-surface-variant
 
-		t.Accent = ui.Hex("#7fb0ff")
-		t.AccentSoft = ui.Hex("#1b2b46")
-		t.AccentFill = ui.Hex("#2f6fed")
-		t.AccentHover = ui.Hex("#2a63d8")
-		t.AccentPressed = ui.Hex("#1f56b8")
-		t.AccentText = ui.Hex("#ffffff")
+		t.Accent = ui.Hex("#dcb8ff")     // primary
+		t.AccentSoft = ui.Hex("#573471") // primary-container
+		t.AccentFill = ui.Hex("#dcb8ff") // primary
+		t.AccentHover = ui.Hex("#e9ccff")
+		t.AccentPressed = ui.Hex("#c9a2ea")
+		t.AccentText = ui.Hex("#3f1d5a") // on-primary
 
-		t.Danger = ui.Hex("#ff7b7b")
+		t.OnPrimaryContainer = ui.Hex("#f2dbff")
+		t.Secondary = ui.Hex("#d3c0dd")
+		t.OnSecondary = ui.Hex("#382e41")
+		t.SecondaryContainer = ui.Hex("#4f4459")
+		t.OnSecondaryContainer = ui.Hex("#eedcf8")
+		t.Tertiary = ui.Hex("#eeb8cd")
+		t.OnTertiary = ui.Hex("#472635")
+		t.TertiaryContainer = ui.Hex("#5f3b4a")
+		t.OnTertiaryContainer = ui.Hex("#ffd8e6")
+
+		t.Danger = ui.Hex("#ffb4ab") // error
 		t.Warning = ui.Hex("#f2b35b")
 		t.Success = ui.Hex("#5ddc9a")
-		t.Selection = ui.RGBA(127, 176, 255, 0.3)
-		t.Focus = ui.RGBA(127, 176, 255, 0.75)
+		t.Selection = ui.RGBA(220, 184, 255, 0.3)
+		t.Focus = ui.RGBA(220, 184, 255, 0.75)
 		t.Scrollbar = ui.RGBA(255, 255, 255, 0.22)
 		t.Shadow = ui.RGBA(0, 0, 0, 0.55)
-		t.Inverse = ui.Hex("#f2f4f8")
-		t.InverseText = ui.Hex("#0e1014")
-		return t
+		t.Inverse = ui.Hex("#e8e1e8")     // inverse-surface
+		t.InverseText = ui.Hex("#322f35") // inverse-on-surface
+	} else {
+		t.Bg = ui.Hex("#fdf7ff")             // surface
+		t.Surface = ui.Hex("#f7f0fa")        // surface-container-low
+		t.SurfaceAlt = ui.Hex("#f1eaf4")     // surface-container
+		t.SurfaceHover = ui.Hex("#ebe4ee")   // surface-container-high
+		t.SurfacePressed = ui.Hex("#e5dee9") // surface-container-highest
+		t.Border = ui.Hex("#ccc4d0")         // outline-variant
+		t.BorderStrong = ui.Hex("#7b7582")   // outline
+		t.Text = ui.Hex("#1c1a1f")           // on-surface
+		t.TextMuted = ui.Hex("#4a4550")      // on-surface-variant
+
+		t.Accent = ui.Hex("#6b4a86")     // primary
+		t.AccentSoft = ui.Hex("#eedbff") // primary-container
+		t.AccentFill = ui.Hex("#6b4a86") // primary
+		t.AccentHover = ui.Hex("#5a3c74")
+		t.AccentPressed = ui.Hex("#4a305f")
+		t.AccentText = ui.Hex("#ffffff") // on-primary
+
+		t.OnPrimaryContainer = ui.Hex("#2a0f42")
+		t.Secondary = ui.Hex("#63596e")
+		t.OnSecondary = ui.Hex("#ffffff")
+		t.SecondaryContainer = ui.Hex("#eadcf2")
+		t.OnSecondaryContainer = ui.Hex("#201a26")
+		t.Tertiary = ui.Hex("#7c5265")
+		t.OnTertiary = ui.Hex("#ffffff")
+		t.TertiaryContainer = ui.Hex("#ffd8e6")
+		t.OnTertiaryContainer = ui.Hex("#31101f")
+
+		t.Danger = ui.Hex("#ba1a1a") // error
+		t.Warning = ui.Hex("#a85f00")
+		t.Success = ui.Hex("#0f7b4f")
+		t.Selection = ui.RGBA(107, 74, 134, 0.22)
+		t.Focus = ui.RGBA(107, 74, 134, 0.65)
+		t.Scrollbar = ui.RGBA(28, 26, 31, 0.26)
+		t.Shadow = ui.RGBA(43, 34, 49, 0.14)
+		t.Inverse = ui.Hex("#322f35")     // inverse-surface
+		t.InverseText = ui.Hex("#f5eef7") // inverse-on-surface
 	}
-
-	t.Bg = ui.Hex("#f5f6f8")
-	t.Surface = ui.Hex("#ffffff")
-	t.SurfaceAlt = ui.Hex("#eef1f6")
-	t.SurfaceHover = ui.Hex("#e7ebf2")
-	t.SurfacePressed = ui.Hex("#dde3ed")
-	t.Border = ui.Hex("#e1e5ec")
-	t.BorderStrong = ui.Hex("#cbd2dd")
-	t.Text = ui.Hex("#141821")
-	t.TextMuted = ui.Hex("#5b6474")
-
-	t.Accent = ui.Hex("#1a63d6")
-	t.AccentSoft = ui.Hex("#e7efff")
-	t.AccentFill = ui.Hex("#1f6feb")
-	t.AccentHover = ui.Hex("#1a63d6")
-	t.AccentPressed = ui.Hex("#155cc7")
-	t.AccentText = ui.Hex("#ffffff")
-
-	t.Danger = ui.Hex("#d92d20")
-	t.Warning = ui.Hex("#a85f00")
-	t.Success = ui.Hex("#0f7b4f")
-	t.Selection = ui.RGBA(26, 99, 214, 0.22)
-	t.Focus = ui.RGBA(26, 99, 214, 0.65)
-	t.Scrollbar = ui.RGBA(20, 24, 33, 0.26)
-	t.Shadow = ui.RGBA(20, 28, 45, 0.14)
-	t.Inverse = ui.Hex("#141821")
-	t.InverseText = ui.Hex("#ffffff")
+	// The older names are the same roles: a view keeps its spelling while a
+	// new one names the Material role it means.
+	t.Primary = t.Accent
+	t.OnPrimary = t.AccentText
+	t.PrimaryContainer = t.AccentSoft
+	t.SurfaceContainerLow = t.Surface
+	t.SurfaceContainer = t.SurfaceAlt
+	t.SurfaceContainerHigh = t.SurfaceHover
+	t.SurfaceContainerHighest = t.SurfacePressed
+	t.OutlineVariant = t.Border
+	t.InverseSurface = t.Inverse
+	t.InverseOnSurface = t.InverseText
 	return t
 }
 
@@ -169,6 +226,7 @@ func tokensFor(dark bool) tokens {
 func themeOf(c *ui.Context) tokens {
 	t := tokensFor(c.Theme().Dark)
 	if s := textScale(c); s != 1 {
+		t.TextDetail *= s
 		t.TextDisplay *= s
 		t.TextTitle *= s
 		t.TextBody *= s

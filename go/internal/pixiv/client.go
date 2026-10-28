@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -34,8 +35,22 @@ type Client struct {
 
 func NewClient() *Client {
 	return &Client{
-		baseURL:  appBaseURL,
-		hc:       &http.Client{Timeout: 100 * time.Second},
+		baseURL: appBaseURL,
+		hc: &http.Client{
+			Timeout: 100 * time.Second,
+			// A feed loads six covers at once; the default pool of two idle
+			// connections per host would redo TLS for the rest of every batch.
+			Transport: &http.Transport{
+				Proxy:                 http.ProxyFromEnvironment,
+				DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          16,
+				MaxIdleConnsPerHost:   8,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+		},
 		cooldown: 700 * time.Millisecond,
 		backoff:  []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second},
 	}

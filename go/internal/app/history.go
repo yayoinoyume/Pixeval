@@ -139,7 +139,7 @@ func (a *App) recordHistory(w pixiv.Illustration) {
 		ID:     w.ID,
 		Title:  w.Title,
 		Artist: w.User.Name,
-		Cover:  w.CoverURL(),
+		Cover:  w.ThumbURL(),
 		At:     time.Now(),
 	})
 	a.saveHistory()

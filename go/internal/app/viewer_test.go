@@ -79,9 +79,12 @@ func (tr *imageTransport) count(url string) int {
 	return tr.calls[url]
 }
 
-// newViewerApp is an app whose images come from tr, without a network.
+// newViewerApp is an app whose images come from tr, without a network. It is
+// signed out, so opening the viewer fetches neither the detail nor the
+// comments.
 func newViewerApp(tr *imageTransport) *App {
 	a := New()
+	a.session = nil
 	client := pixiv.NewClient()
 	client.HTTP().Transport = tr
 	a.images = imagex.New(client, "")
@@ -205,7 +208,7 @@ func TestViewerLoading(t *testing.T) {
 	if !tt.HasText("查看器作品") {
 		t.Errorf("title not shown: %q", tt.Texts())
 	}
-	if !tt.HasText("2/3") {
+	if !tt.HasText("第 2 页，共 3 页") {
 		t.Errorf("page not shown: %q", tt.Texts())
 	}
 }
@@ -223,7 +226,7 @@ func TestViewerLoaded(t *testing.T) {
 	if tt.HasText("重试") {
 		t.Errorf("retry shown for a loaded image: %q", tt.Texts())
 	}
-	if !tt.HasText("1/3") {
+	if !tt.HasText("第 1 页，共 3 页") {
 		t.Errorf("page not shown: %q", tt.Texts())
 	}
 	if _, ok := tt.Find("作品图片：查看器作品（第 1/3 页）"); !ok {
@@ -316,5 +319,50 @@ func TestViewerShortcuts(t *testing.T) {
 	}
 	if !tt.HasText("首页") {
 		t.Errorf("shell not back: %q", tt.Texts())
+	}
+}
+
+// TestViewerZoomAfterActionClick checks clicking an action keeps the canvas
+// focused, so the zoom keys still reach it.
+func TestViewerZoomAfterActionClick(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("评论"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Key(0, ui.KeyEqual)
+	if got := a.viewer.zoom; got <= 1 {
+		t.Errorf("zoom %v after the + key, want more than 1", got)
+	}
+}
+
+// TestViewerPageThumbsUseDetail checks the thumbnails take the smaller
+// renditions the detail carries, not the feed's originals.
+func TestViewerPageThumbsUseDetail(t *testing.T) {
+	tr := newImageTransport(nil)
+	a := newViewerApp(tr)
+	w := viewerWork()
+	detail := w
+	detail.ImageUrls.Medium = "https://example.invalid/0-medium.jpg"
+	detail.MetaPages[1].ImageUrls.Medium = "https://example.invalid/1-medium.jpg"
+	detail.MetaPages[2].ImageUrls.Medium = "https://example.invalid/2-medium.jpg"
+	a.openViewer(&w, 0)
+	a.viewer.mu.Lock()
+	a.viewer.detail = &detail
+	a.viewer.mu.Unlock()
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	for _, url := range []string{detail.ImageUrls.Medium,
+		detail.MetaPages[1].ImageUrls.Medium, detail.MetaPages[2].ImageUrls.Medium} {
+		deadline := time.Now().Add(2 * time.Second)
+		for tr.count(url) == 0 {
+			if time.Now().After(deadline) {
+				t.Fatalf("the thumbnail %q was not requested", url)
+			}
+			time.Sleep(time.Millisecond)
+		}
 	}
 }

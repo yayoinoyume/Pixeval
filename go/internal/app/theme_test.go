@@ -109,3 +109,124 @@ func TestCardTextHeightScales(t *testing.T) {
 		t.Errorf("card text height %v at scale 2, want more than %v", got, base)
 	}
 }
+
+// sameColor reports whether two colors show the same pixel.
+func sameColor(a, b ui.Color) bool {
+	return a.R == b.R && a.G == b.G && a.B == b.B && a.A == b.A
+}
+
+// TestMaterialPalette checks the light and the dark set are the Material You
+// roles of the design, from the one seed, and that the older names are those
+// roles.
+func TestMaterialPalette(t *testing.T) {
+	light := lightTokens
+	roles := []struct {
+		name string
+		got  ui.Color
+		want ui.Color
+	}{
+		{"surface", light.Bg, ui.Hex("#fdf7ff")},
+		{"surface-container-low", light.Surface, ui.Hex("#f7f0fa")},
+		{"surface-container", light.SurfaceAlt, ui.Hex("#f1eaf4")},
+		{"surface-container-high", light.SurfaceHover, ui.Hex("#ebe4ee")},
+		{"surface-container-highest", light.SurfacePressed, ui.Hex("#e5dee9")},
+		{"on-surface", light.Text, ui.Hex("#1c1a1f")},
+		{"on-surface-variant", light.TextMuted, ui.Hex("#4a4550")},
+		{"outline-variant", light.Border, ui.Hex("#ccc4d0")},
+		{"primary", light.Accent, ui.Hex("#6b4a86")},
+		{"primary-container", light.AccentSoft, ui.Hex("#eedbff")},
+		{"on-primary", light.AccentText, ui.Hex("#ffffff")},
+		{"error", light.Danger, ui.Hex("#ba1a1a")},
+		{"inverse-surface", light.Inverse, ui.Hex("#322f35")},
+		{"inverse-on-surface", light.InverseText, ui.Hex("#f5eef7")},
+	}
+	for _, r := range roles {
+		if !sameColor(r.got, r.want) {
+			t.Errorf("%s %v, want %v", r.name, r.got, r.want)
+		}
+	}
+	if !sameColor(light.Primary, light.Accent) || !sameColor(light.SurfaceContainerLow, light.Surface) ||
+		!sameColor(light.OutlineVariant, light.Border) || !sameColor(light.InverseOnSurface, light.InverseText) {
+		t.Error("the Material roles are not the older names")
+	}
+
+	dark := darkTokens
+	if !dark.Dark || !sameColor(dark.Bg, ui.Hex("#151217")) || !sameColor(dark.Accent, ui.Hex("#dcb8ff")) {
+		t.Errorf("dark set %v / %v, want the dark roles from the same seed", dark.Bg, dark.Accent)
+	}
+}
+
+// TestMaterialContrast checks text stays readable in both sets: body text and
+// the filled primary at 4.5:1, secondary text and the tonal pairs at 3:1.
+func TestMaterialContrast(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		tok  tokens
+	}{{"light", lightTokens}, {"dark", darkTokens}} {
+		tok := tt.tok
+		checks := []struct {
+			name string
+			fg   ui.Color
+			bg   ui.Color
+			min  float32
+		}{
+			{"body text", tok.Text, tok.Bg, 4.5},
+			{"body text on a card", tok.Text, tok.SurfaceContainerLow, 4.5},
+			{"secondary text", tok.TextMuted, tok.SurfaceContainerLow, 3},
+			{"primary text", tok.Accent, tok.SurfaceContainerLow, 4.5},
+			{"text on the primary fill", tok.AccentText, tok.AccentFill, 4.5},
+			{"text on the primary container", tok.OnPrimaryContainer, tok.PrimaryContainer, 4.5},
+			{"text on the secondary container", tok.OnSecondaryContainer, tok.SecondaryContainer, 4.5},
+			{"text on the tertiary container", tok.OnTertiaryContainer, tok.TertiaryContainer, 4.5},
+			{"error text", tok.Danger, tok.SurfaceContainerLow, 4.5},
+		}
+		for _, c := range checks {
+			if got := contrastRatio(c.fg, c.bg); got < c.min {
+				t.Errorf("%s %s contrast %v, want at least %v", tt.name, c.name, got, c.min)
+			}
+		}
+	}
+}
+
+// TestDesignScale checks the window uses the design's rail, padding, radii
+// and type scale.
+func TestDesignScale(t *testing.T) {
+	tok := lightTokens
+	if navWidth != 88 || contentPadding != 28 {
+		t.Errorf("rail %v, padding %v, want 88 and 28", navWidth, contentPadding)
+	}
+	radii := []struct {
+		name string
+		got  float32
+		want float32
+	}{
+		{"small", tok.RadiusS, 8},
+		{"medium", tok.RadiusM, 12},
+		{"large", tok.RadiusL, 16},
+		{"extra large", tok.RadiusXL, 24},
+		{"extra extra large", tok.Radius2XL, 32},
+		{"full", tok.RadiusFull, 999},
+	}
+	for _, r := range radii {
+		if r.got != r.want {
+			t.Errorf("radius %s %v, want %v", r.name, r.got, r.want)
+		}
+	}
+	sizes := []struct {
+		name string
+		got  float32
+		want float32
+	}{
+		{"detail", tok.TextDetail, 36},
+		{"display", tok.TextDisplay, 30},
+		{"title", tok.TextTitle, 20},
+		{"body", tok.TextBody, 14},
+		{"small", tok.TextSmall, 13},
+		{"tiny", tok.TextTiny, 11},
+	}
+	for _, s := range sizes {
+		if s.got != s.want {
+			t.Errorf("text %s %v, want %v", s.name, s.got, s.want)
+		}
+	}
+}

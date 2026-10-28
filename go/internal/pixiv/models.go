@@ -141,6 +141,19 @@ func (w *Illustration) CoverURL() string {
 	}
 }
 
+// ThumbURL is the smallest thumbnail, used where a card is a few hundred
+// pixels wide: Medium is about half the pixels of Large to decode.
+func (w *Illustration) ThumbURL() string {
+	switch {
+	case w.ImageUrls.Medium != "":
+		return w.ImageUrls.Medium
+	case w.ImageUrls.Large != "":
+		return w.ImageUrls.Large
+	default:
+		return w.ImageUrls.SquareMedium
+	}
+}
+
 // Aspect is width divided by height; 1 when the work has no size.
 func (w *Illustration) Aspect() float64 {
 	if w.Width <= 0 || w.Height <= 0 {

@@ -12,11 +12,8 @@ import (
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
-// The comment panel's width in DIPs, and the side of one comment's avatar.
-const (
-	commentsWidth = 360
-	commentAvatar = 28
-)
+// commentAvatar is the side of one comment's avatar.
+const commentAvatar = 28
 
 // commentState is one work's comment panel: the comments loaded so far, the
 // offset of the next page, the composer and the comment a reply answers.
@@ -77,20 +74,8 @@ func (st *commentState) avatarFailedURL(url string) bool {
 	return st.avatarFailed[url]
 }
 
-// commentsButton toggles the comment panel from the viewer's toolbar.
-func (a *App) commentsButton(c *ui.Context) {
-	t := themeOf(c)
-	fg := t.ViewerBarMuted
-	if a.commentsOpen {
-		fg = t.Accent
-	}
-	if iconButton(c, iconComment, a.t("comments.title"), 36, fg, t.ViewerBarHover).Clicked() {
-		a.toggleComments()
-	}
-}
-
-// toggleComments shows or hides the comment panel, loading the first page the
-// first time it opens.
+// toggleComments shows or hides the comment section, loading the first page
+// the first time it opens.
 func (a *App) toggleComments() {
 	if a.viewer == nil {
 		return
@@ -164,6 +149,11 @@ func (a *App) submitComment(st *commentState) {
 	if st == nil {
 		return
 	}
+	if a.session == nil {
+		// Signed out, the card draws no composer; this guards a stale send.
+		a.notice = a.t("comments.login")
+		return
+	}
 
 	draft := st.draft
 	text := strings.TrimSpace(draft)
@@ -219,9 +209,10 @@ func (st *commentState) retry() {
 	st.mu.Unlock()
 }
 
-// commentsPanel draws the comment panel beside the work: its title, the
-// scrollable list, and the composer.
-func (a *App) commentsPanel(c *ui.Context, st *commentState) {
+// commentsSection draws the viewer's comments inside the info card: the title
+// and count, the list, and the composer. The card's padding frames it, so it
+// sets no width or outer border of its own.
+func (a *App) commentsSection(c *ui.Context, st *commentState) {
 	t := themeOf(c)
 	// The composer is edited on the main thread only: a send leaves the text
 	// it posted here, and this frame clears it if it is still what was sent.
@@ -229,40 +220,41 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 		st.draft, st.replyTo = "", nil
 	}
 	v := st.snapshot()
-	ui.Column(c).Width(commentsWidth).Shrink(0).FillHeight().
-		Background(t.Surface).BorderWidth(0, 0, 0, 1).BorderColor(t.Border).Children(func() {
-		ui.Row(c).Padding(t.SpaceM).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.t("comments.title")).FontSize(t.TextBody).Bold().TextColor(t.Text).Grow(1)
+	ui.Column(c).Gap(t.SpaceM).Padding(t.SpaceL, 0, 0, 0).
+		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Row(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, a.t("comments.title")).FontSize(t.TextBody).FontWeight(600).
+				TextColor(t.Text)
+			if len(v.items) > 0 {
+				ui.Text(c, detailCount(len(v.items))).FontSize(t.TextTiny).
+					TextColor(t.TextMuted)
+			}
 		})
-		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Padding(t.SpaceM).Gap(t.SpaceM).Children(func() {
-				if v.err != "" {
-					ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
-						ui.Text(c, a.tf("common.loadFailed", v.err)).TextColor(t.Danger).Grow(1)
-						if ui.Button(c, a.t("common.retry")).Clicked() {
-							st.retry()
-							a.loadComments(st, false)
-						}
-					})
-				}
-				if len(v.items) == 0 && !v.loading && !v.hasMore && v.err == "" {
-					ui.Text(c, a.t("comments.empty")).TextColor(t.TextMuted)
-				}
-				for i := range v.items {
-					a.commentItem(c, st, &v.items[i])
-				}
-				if v.loading {
-					ui.Text(c, a.t("common.loading")).FontSize(t.TextTiny).TextColor(t.TextMuted)
-				}
-				if v.hasMore && !v.loading && v.err == "" {
-					if ui.Button(c, a.t("comments.loadMore")).Clicked() {
-						a.loadComments(st, false)
-					}
+		if v.err != "" {
+			ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, a.tf("common.loadFailed", v.err)).TextColor(t.Danger).Grow(1)
+				if ui.Button(c, a.t("common.retry")).Clicked() {
+					st.retry()
+					a.loadComments(st, false)
 				}
 			})
-		})
+		}
+		if len(v.items) == 0 && !v.loading && !v.hasMore && v.err == "" {
+			ui.Text(c, a.t("comments.empty")).TextColor(t.TextMuted)
+		}
+		for i := range v.items {
+			a.commentItem(c, st, &v.items[i])
+		}
+		if v.loading {
+			ui.Text(c, a.t("common.loading")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+		}
+		if v.hasMore && !v.loading && v.err == "" {
+			if ui.Button(c, a.t("comments.loadMore")).Clicked() {
+				a.loadComments(st, false)
+			}
+		}
 		if reply := st.replyTo; reply != nil {
-			ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceM, 0, t.SpaceM, 0).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, a.tf("comments.replyingTo", reply.User.Name)).
 					FontSize(t.TextTiny).TextColor(t.TextMuted).Grow(1).MaxLines(1)
 				if ui.Button(c, a.t("comments.cancel")).Clicked() {
@@ -270,7 +262,7 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 				}
 			})
 		}
-		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceM).Children(func() {
+		ui.Row(c).Gap(t.SpaceS).Children(func() {
 			ui.TextInput(c, &st.draft).Grow(1).
 				Placeholder(a.t("comments.placeholder")).Label(a.t("comments.placeholder"))
 			if ui.Button(c, a.t("comments.send")).Disabled(v.sending).Clicked() {
