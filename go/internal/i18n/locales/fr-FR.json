@@ -1,0 +1,168 @@
+{
+  "nav": {
+    "home": "Accueil",
+    "search": "Recherche",
+    "subscriptions": "Abonnements",
+    "downloads": "Téléchargements",
+    "history": "Historique",
+    "settings": "Paramètres",
+    "login": "Se connecter",
+    "logout": "Se déconnecter",
+    "loggedIn": "Connecté : %s",
+    "placeholder": "%s (espace réservé M1)",
+    "user": "Utilisateur",
+    "series": "Séries",
+    "novel": "Roman"
+  },
+  "home": {
+    "recommended": "Recommandés",
+    "following": "Suivis",
+    "ranking": "Classement"
+  },
+  "common": {
+    "retry": "Réessayer",
+    "loading": "Chargement…",
+    "loadFailed": "Échec du chargement : %s",
+    "coverFailed": "Échec du chargement de la couverture",
+    "noWorks": "Aucune œuvre",
+    "save": "Enregistrer",
+    "back": "Retour"
+  },
+  "search": {
+    "placeholder": "Rechercher des œuvres",
+    "action": "Rechercher",
+    "hint": "Saisissez un mot-clé pour lancer la recherche"
+  },
+  "viewer": {
+    "imageFailed": "Échec du chargement de l'image",
+    "bookmark": "Ajouter aux favoris",
+    "bookmarked": "Ajouté aux favoris",
+    "download": "Télécharger",
+    "noDownloadDir": "Impossible de créer le dossier de téléchargement",
+    "alreadyQueued": "Déjà dans la file de téléchargement",
+    "queued": "%d pages ajoutées à la file de téléchargement",
+    "prev": "Précédent",
+    "next": "Suivant",
+    "close": "Fermer",
+    "bookmarkFailed": "Échec de l'ajout aux favoris : %s"
+  },
+  "comments": {
+    "title": "Commentaires",
+    "empty": "Aucun commentaire pour l'instant",
+    "loadMore": "Charger plus",
+    "placeholder": "Écrire un commentaire…",
+    "send": "Envoyer",
+    "reply": "Répondre",
+    "replyingTo": "Réponse à @%s",
+    "cancel": "Annuler",
+    "justNow": "à l'instant",
+    "minutesAgo": "il y a %d minutes",
+    "hoursAgo": "il y a %d heures",
+    "daysAgo": "il y a %d jours",
+    "sendFailed": "Échec de l'envoi du commentaire : %s"
+  },
+  "download": {
+    "running": "Téléchargement",
+    "done": "Terminé",
+    "failed": "Échec",
+    "canceled": "Annulé",
+    "queued": "En attente",
+    "paused": "En pause",
+    "empty": "Aucun téléchargement pour l'instant",
+    "emptyHint": "Cliquez sur « Télécharger » dans la visionneuse pour ajouter une œuvre",
+    "count": "%d tâches",
+    "clearDone": "Effacer les tâches terminées",
+    "page": "Page %d",
+    "resume": "Reprendre",
+    "pause": "Pause",
+    "cancel": "Annuler",
+    "remove": "Retirer"
+  },
+  "settings": {
+    "theme": "Thème",
+    "themeSystem": "Suivre le système",
+    "themeLight": "Clair",
+    "themeDark": "Sombre",
+    "downloadDir": "Dossier de téléchargement",
+    "downloadDirHint": "Vide signifie le dossier par défaut, créé s'il n'existe pas",
+    "concurrency": "Téléchargements simultanés",
+    "showR18": "Afficher R18",
+    "showR18Hint": "Le filtre R18 arrivera en M2",
+    "cardWidth": "Largeur des colonnes de la mosaïque",
+    "language": "Langue",
+    "langSystem": "Suivre le système",
+    "langZh": "中文",
+    "langEn": "English",
+    "langFr": "Français",
+    "langRu": "Русский",
+    "saveFailed": "Échec de l'enregistrement : %s",
+    "saved": "Enregistré",
+    "pathFailed": "Impossible d'enregistrer les paramètres : %s",
+    "updates": "Mises à jour",
+    "checkUpdate": "Rechercher des mises à jour",
+    "updatesOff": "Aucune source de mise à jour configurée",
+    "updateAvailable": "La version %s est disponible",
+    "updateLatest": "Déjà à jour",
+    "installRestart": "Installer et redémarrer",
+    "updateInstalling": "Installation de la mise à jour",
+    "updateCheckFailed": "Impossible de rechercher les mises à jour : %s",
+    "updateInstallFailed": "Impossible d'installer la mise à jour : %s"
+  },
+  "history": {
+    "empty": "Aucun historique pour l'instant",
+    "emptyHint": "Les œuvres que vous ouvrez sont enregistrées ici",
+    "count": "%d entrées",
+    "clear": "Effacer l'historique",
+    "openFailed": "Impossible d'ouvrir l'œuvre : %s"
+  },
+  "login": {
+    "title": "Se connecter à Pixiv",
+    "prompt": "Connectez-vous à Pixiv pour commencer à parcourir",
+    "busy": "Connexion…",
+    "refreshAction": "Se connecter avec un refresh token",
+    "refreshHint": "Connexion manuelle : collez le refresh token obtenu sur la page de connexion web de Pixiv",
+    "pageFailed": "Impossible de créer la page de connexion",
+    "refreshEmpty": "Collez d'abord un refresh token",
+    "saveFailed": "Impossible d'enregistrer la connexion"
+  },
+  "user": {
+    "open": "Auteur",
+    "follow": "Suivre",
+    "following": "Abonné",
+    "followFailed": "Échec de l'abonnement : %s",
+    "loadFailed": "Impossible de charger l'utilisateur : %s"
+  },
+  "series": {
+    "open": "Série",
+    "loadFailed": "Impossible de charger la série : %s"
+  },
+  "subs": {
+    "count": "%d abonnements",
+    "check": "Vérifier maintenant",
+    "downloadAll": "Tout télécharger",
+    "empty": "Aucun abonnement pour l'instant",
+    "emptyHint": "Abonnez-vous depuis une page utilisateur ou série pour voir les nouvelles œuvres ici",
+    "kindUser": "Utilisateur",
+    "kindSeries": "Série",
+    "rowDetail": "%s · Dernière vérification : %s",
+    "never": "jamais",
+    "remove": "Supprimer",
+    "newWorks": "%d nouvelles œuvres",
+    "checkDone": "Vérification terminée : %d nouvelles œuvres",
+    "checkFailed": "Échec de la vérification : %s",
+    "newFound": "La vérification en arrière-plan a trouvé %d nouvelles œuvres",
+    "queued": "%d pages ajoutées à la file de téléchargement",
+    "add": "S'abonner",
+    "added": "Abonné",
+    "addFailed": "La liste d'abonnements est pleine"
+  },
+  "novel": {
+    "loadFailed": "Impossible de charger le roman : %s",
+    "imageUnsupported": "Les images intégrées ne sont pas encore prises en charge"
+  },
+  "filter": {
+    "placeholder": "Filtrer les œuvres, p. ex. bookmarks>100",
+    "action": "Appliquer",
+    "invalid": "Filtre invalide : %s"
+  }
+}

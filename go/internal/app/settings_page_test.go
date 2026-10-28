@@ -8,6 +8,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
+
+	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 )
 
 // fakeUpdater answers the settings page's update check without a feed.
@@ -100,5 +102,26 @@ func TestSettingsPageShowsLatest(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText("已是最新") {
 		t.Errorf("up-to-date text missing: %q", tt.Texts())
+	}
+}
+
+// TestSettingsPageLanguageChoices checks the language select offers the five
+// shipped choices and that each label maps back to its tag.
+func TestSettingsPageLanguageChoices(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	want := []string{"跟随系统", "中文", "English", "Français", "Русский"}
+	if got := a.languageChoices(); len(got) != len(want) {
+		t.Fatalf("choices %q, want %q", got, want)
+	}
+	for i, label := range want {
+		if got := a.languageChoices()[i]; got != label {
+			t.Errorf("choice %d is %q, want %q", i, got, label)
+		}
+	}
+	for _, tag := range []string{i18n.LangAuto, i18n.LangZhHans, i18n.LangEnUS, i18n.LangFrFR, i18n.LangRuRU} {
+		if got := a.languageValue(a.languageLabel(tag)); got != tag {
+			t.Errorf("label of %q maps back to %q", tag, got)
+		}
 	}
 }

@@ -93,6 +93,8 @@
     "langSystem": "跟随系统",
     "langZh": "中文",
     "langEn": "English",
+    "langFr": "Français",
+    "langRu": "Русский",
     "saveFailed": "保存失败：%s",
     "saved": "已保存",
     "pathFailed": "无法保存设置：%s",
