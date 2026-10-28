@@ -122,9 +122,11 @@
     "updateInstalling": "Installing the update",
     "updateCheckFailed": "Cannot check for updates: %s",
     "updateInstallFailed": "Cannot install the update: %s",
-    "groupAppearance": "General",
+    "groupAppearance": "Appearance",
     "groupDownloads": "Downloads",
-    "groupShortcuts": "Shortcuts"
+    "groupShortcuts": "Shortcuts",
+    "groupContent": "Content",
+    "groupAbout": "About"
   },
   "history": {
     "empty": "No history yet",

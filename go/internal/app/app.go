@@ -69,8 +69,9 @@ type App struct {
 	searchNovels *novelFeedState
 	searchKind   int
 	// settings are the user's preferences, loaded at start and saved from the
-	// settings page.
-	settings *Settings
+	// settings page. shortcutsOpen shows the shortcut hint in its About card.
+	settings      *Settings
+	shortcutsOpen bool
 	// lang is the language the bundle speaks, and bundle holds its messages.
 	lang   string
 	bundle *i18n.Bundle

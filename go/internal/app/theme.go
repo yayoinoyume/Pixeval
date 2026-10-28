@@ -7,7 +7,7 @@ import "github.com/egoist/mygo/ui"
 // widgets' ui.Theme, so stock controls and hand-built parts share one look.
 const (
 	navWidth       = 200
-	contentPadding = 24
+	contentPadding = 32
 )
 
 // tokens is one theme's palette, spacing, radii and type scale.

@@ -122,9 +122,11 @@
     "updateInstalling": "Установка обновления",
     "updateCheckFailed": "Не удалось проверить обновления: %s",
     "updateInstallFailed": "Не удалось установить обновление: %s",
-    "groupAppearance": "Общие",
+    "groupAppearance": "Внешний вид",
     "groupDownloads": "Загрузки",
-    "groupShortcuts": "Горячие клавиши"
+    "groupShortcuts": "Горячие клавиши",
+    "groupContent": "Содержимое",
+    "groupAbout": "О программе"
   },
   "history": {
     "empty": "История просмотров пуста",
