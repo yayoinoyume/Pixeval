@@ -13,6 +13,14 @@ import (
 )
 
 func main() {
+	// A capture is a preview, not the user's session: keep its settings out of
+	// the real config so the theme and the paths are the defaults.
+	if os.Getenv("XDG_CONFIG_HOME") == "" {
+		if dir, err := os.MkdirTemp("", "pixeval-capture-"); err == nil {
+			os.Setenv("XDG_CONFIG_HOME", dir)
+			defer os.RemoveAll(dir)
+		}
+	}
 	out := os.Getenv("OUT")
 	if out == "" {
 		out = "/tmp/shots"
@@ -21,7 +29,15 @@ func main() {
 		log.Fatal(err)
 	}
 	a := app.New()
-	tt := ui.NewTester(a.View, 1280, 820)
+	theme := ui.DarkTheme
+	if os.Getenv("THEME") == "light" {
+		theme = ui.LightTheme
+	}
+	view := func(c *ui.Context) {
+		c.SetTheme(theme())
+		a.View(c)
+	}
+	tt := ui.NewTester(view, 1280, 820)
 	pages := []struct{ name, button string }{
 		{"01-home", ""},
 		{"02-search", "搜索"},

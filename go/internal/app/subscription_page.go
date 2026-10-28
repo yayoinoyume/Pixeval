@@ -128,11 +128,15 @@ func (a *App) subscriptionButton(c *ui.Context, kind subscription.Kind, targetID
 	if a.subsStore == nil || targetID <= 0 {
 		return
 	}
-	t := c.Theme()
+	t := themeOf(c)
 	label := a.t("subs.add")
+	added := a.isSubscribed(kind, targetID)
+	if added {
+		label = a.t("subs.added")
+	}
 	b := ui.Button(c, label)
-	if a.isSubscribed(kind, targetID) {
-		b = ui.Button(c, a.t("subs.added")).TextColor(t.Accent)
+	if added {
+		b = b.TextColor(t.Accent)
 	}
 	if b.Clicked() {
 		a.toggleSubscription(kind, targetID, name)
@@ -202,7 +206,7 @@ func (a *App) downloadNewWorks(works []pixiv.Illustration) {
 // subscriptionsPage draws the followed targets and the works the last check
 // found.
 func (a *App) subscriptionsPage(c *ui.Context) {
-	t := c.Theme()
+	t := themeOf(c)
 	var subs []subscription.Subscription
 	if a.subsStore != nil {
 		subs = a.subsStore.List()
@@ -212,8 +216,10 @@ func (a *App) subscriptionsPage(c *ui.Context) {
 		c.Toast(msg)
 	}
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.tf("subs.count", len(subs))).Grow(1).TextColor(t.TextMuted)
+		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, t.SpaceS, contentPadding).
+			AlignItems(ui.Center).Children(func() {
+			ui.Text(c, a.tf("subs.count", len(subs))).FontSize(t.TextSmall).
+				TextColor(t.TextMuted).Grow(1)
 			if ui.Button(c, a.t("subs.check")).Disabled(checking).Clicked() {
 				a.checkSubscriptions()
 			}
@@ -222,14 +228,12 @@ func (a *App) subscriptionsPage(c *ui.Context) {
 			}
 		})
 		if len(subs) == 0 && len(works) == 0 {
-			ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
-				ui.Text(c, a.t("subs.empty")).TextColor(t.TextMuted)
-				ui.Text(c, a.t("subs.emptyHint")).FontSize(12).TextColor(t.TextMuted)
-			})
+			emptyState(c, iconBell, a.t("subs.empty"), a.t("subs.emptyHint"), nil)
 			return
 		}
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Padding(12).Gap(4).Children(func() {
+			ui.Column(c).Padding(0, contentPadding, contentPadding, contentPadding).
+				Gap(t.SpaceS).Children(func() {
 				for _, sub := range subs {
 					a.subscriptionRow(c, sub)
 				}
@@ -242,16 +246,18 @@ func (a *App) subscriptionsPage(c *ui.Context) {
 // subscriptionRow draws one subscription: what it follows, when it was last
 // checked, and the button removing it.
 func (a *App) subscriptionRow(c *ui.Context, sub subscription.Subscription) {
-	t := c.Theme()
+	t := themeOf(c)
 	kind := a.t("subs.kindUser")
 	if sub.Kind == subscription.KindSeries {
 		kind = a.t("subs.kindSeries")
 	}
-	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).
+	ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, t.SpaceL).AlignItems(ui.Center).
+		Background(t.Surface).Radius(t.RadiusM).Border(1, t.Border).
 		Label(a.tf("a11y.subscription", sub.TargetName)).Children(func() {
-		ui.Column(c).Grow(1).Gap(2).Children(func() {
-			ui.Text(c, sub.TargetName).MaxLines(1)
-			ui.Text(c, a.tf("subs.rowDetail", kind, a.checkedLabel(sub))).FontSize(12).TextColor(t.TextMuted)
+		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+			ui.Text(c, sub.TargetName).FontSize(t.TextBody).TextColor(t.Text).MaxLines(1)
+			ui.Text(c, a.tf("subs.rowDetail", kind, a.checkedLabel(sub))).
+				FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 		})
 		if ui.Button(c, a.t("subs.remove")).Clicked() {
 			a.subsStore.Remove(sub.ID)
@@ -274,18 +280,26 @@ func (a *App) newWorksList(c *ui.Context, works []pixiv.Illustration) {
 	if len(works) == 0 {
 		return
 	}
-	t := c.Theme()
-	ui.Column(c).Padding(0, 0, 12, 0).Gap(4).Children(func() {
-		ui.Text(c, a.tf("subs.newWorks", len(works))).FontSize(14).Bold().Padding(0, 12)
+	t := themeOf(c)
+	ui.Column(c).Gap(t.SpaceS).Children(func() {
+		ui.Text(c, a.tf("subs.newWorks", len(works))).FontSize(t.TextSmall).
+			TextColor(t.TextMuted).Padding(t.SpaceL, 0, t.SpaceXS, 0)
 		for i := range works {
 			work := works[i]
-			ui.Column(c).Gap(2).Padding(6, 12).Focusable().
-				Label(a.tf("a11y.card", work.Title, work.User.Name)).
+			card := ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, t.SpaceL).
+				Background(t.Surface).Radius(t.RadiusM).Border(1, t.Border).
+				Focusable().Label(a.tf("a11y.card", work.Title, work.User.Name)).
 				Cursor(ui.CursorPointer).OnClick(func() {
 				a.openViewer(&work, 0)
-			}).Children(func() {
-				ui.Text(c, work.Title).MaxLines(1)
-				ui.Text(c, work.User.Name).FontSize(12).TextColor(t.TextMuted).MaxLines(1)
+			})
+			if card.Hovered() {
+				card = card.Border(1, t.Accent)
+			}
+			card.Children(func() {
+				ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+					ui.Text(c, work.Title).FontSize(t.TextBody).TextColor(t.Text).MaxLines(1)
+					ui.Text(c, work.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
+				})
 			})
 		}
 	})

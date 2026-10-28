@@ -93,7 +93,7 @@ func (a *App) downloadStateLabel(s download.State) string {
 	}
 }
 
-func downloadStateColor(t *ui.Theme, s download.State) ui.Color {
+func downloadStateColor(t tokens, s download.State) ui.Color {
 	switch s {
 	case download.Failed:
 		return t.Danger
@@ -109,57 +109,62 @@ func downloadStateColor(t *ui.Theme, s download.State) ui.Color {
 // finished ones. The manager reports a paused task as queued, so the pause
 // state is kept here, on the main thread.
 func (a *App) downloadsPage(c *ui.Context) {
-	t := c.Theme()
+	t := themeOf(c)
 	tasks := a.downloads.Snapshot()
 	if len(tasks) == 0 {
-		ui.Column(c).Grow(1).Center().Gap(8).Children(func() {
-			ui.Text(c, a.t("download.empty")).TextColor(t.TextMuted)
-			ui.Text(c, a.t("download.emptyHint")).FontSize(12).TextColor(t.TextMuted)
-		})
+		emptyState(c, iconDownload, a.t("download.empty"), a.t("download.emptyHint"), nil)
 		return
 	}
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.tf("download.count", len(tasks))).Grow(1).TextColor(t.TextMuted)
+		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, t.SpaceS, contentPadding).
+			AlignItems(ui.Center).Children(func() {
+			ui.Text(c, a.tf("download.count", len(tasks))).FontSize(t.TextSmall).
+				TextColor(t.TextMuted).Grow(1)
 			if ui.Button(c, a.t("download.clearDone")).Disabled(!anyDownloadDone(tasks)).Clicked() {
 				a.clearDoneDownloads()
 			}
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
-			for _, task := range tasks {
-				a.downloadRow(c, task)
-			}
+			ui.Column(c).Padding(0, contentPadding, contentPadding, contentPadding).
+				Gap(t.SpaceS).Children(func() {
+				for _, task := range tasks {
+					a.downloadRow(c, task)
+				}
+			})
 		})
 	})
 }
 
 // downloadRow draws one task: what it is, how far it got, and its buttons.
 func (a *App) downloadRow(c *ui.Context, task download.Task) {
-	t := c.Theme()
+	t := themeOf(c)
 	// A paused task reads as queued in a snapshot; only this page knows.
 	paused := task.State == download.Queued && a.paused[task.ID]
 	label := a.downloadStateLabel(task.State)
 	if paused {
 		label = a.t("download.paused")
 	}
-	ui.Row(c).Gap(12).Padding(10, 12).AlignItems(ui.Center).
+	ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, t.SpaceL).AlignItems(ui.Center).
+		Background(t.Surface).Radius(t.RadiusM).Border(1, t.Border).
 		Label(a.tf("a11y.download", task.Title)).Children(func() {
-		ui.Column(c).Grow(1).Gap(2).Children(func() {
-			ui.Text(c, task.Title).MaxLines(1)
-			ui.Text(c, a.tf("download.page", task.Page+1)).FontSize(12).TextColor(t.TextMuted)
+		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+			ui.Text(c, task.Title).FontSize(t.TextBody).TextColor(t.Text).MaxLines(1)
+			ui.Text(c, a.tf("download.page", task.Page+1)).FontSize(t.TextTiny).TextColor(t.TextMuted)
 			if task.State == download.Failed && task.Err != "" {
-				ui.Text(c, task.Err).FontSize(12).TextColor(t.Danger).MaxLines(1)
+				ui.Text(c, task.Err).FontSize(t.TextTiny).TextColor(t.Danger).MaxLines(1)
 			}
 		})
-		ui.Text(c, label).TextColor(downloadStateColor(t, task.State))
-		ui.Column(c).Width(160).AlignItems(ui.Center).Children(func() {
-			switch {
-			case task.Total > 0:
-				ui.Progress(c, float64(task.Bytes)/float64(task.Total)).Width(160)
-			case task.State == download.Running:
-				ui.Spinner(c)
-			}
-		})
+		ui.Text(c, label).FontSize(t.TextSmall).TextColor(downloadStateColor(t, task.State))
+		if task.Total > 0 || task.State == download.Running {
+			ui.Column(c).Width(160).AlignItems(ui.Center).Children(func() {
+				switch {
+				case task.Total > 0:
+					ui.Progress(c, float64(task.Bytes)/float64(task.Total)).Width(160)
+				default:
+					ui.Spinner(c)
+				}
+			})
+		}
 		if task.State == download.Failed {
 			if ui.Button(c, a.t("common.retry")).Clicked() {
 				a.retryDownload(task)

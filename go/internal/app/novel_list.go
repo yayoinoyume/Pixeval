@@ -243,12 +243,14 @@ func (a *App) loadMoreNovels(st *novelFeedState) {
 // novelResults draws the novel list, and loads its next page once it is at the
 // end.
 func (a *App) novelResults(c *ui.Context) {
-	t := c.Theme()
+	t := themeOf(c)
 	st := a.searchNovels
 	v := st.snapshot()
 	if v.err != "" {
-		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.tf("common.loadFailed", v.err)).TextColor(t.Danger).Grow(1)
+		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, contentPadding).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconAlert).Size(18, 18).TextColor(t.Danger)
+			ui.Text(c, a.tf("common.loadFailed", v.err)).FontSize(t.TextSmall).
+				TextColor(t.Danger).Grow(1)
 			if ui.Button(c, a.t("common.retry")).Clicked() {
 				st.retry()
 			}
@@ -263,18 +265,17 @@ func (a *App) novelResults(c *ui.Context) {
 	if width != st.tilesWidth {
 		tiles = st.tilesFor(v.items, width)
 	}
-	if len(v.items) == 0 {
-		msg := a.t("common.noWorks")
-		if !v.started {
-			msg = a.t("common.loading")
-		}
-		ui.Column(c).Grow(1).Center().Children(func() {
-			ui.Text(c, msg).TextColor(t.TextMuted)
+	switch {
+	case len(v.items) > 0:
+		ui.Column(c).Grow(1).Padding(t.SpaceM, contentPadding, contentPadding, contentPadding).Children(func() {
+			widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
+				a.novelCard(c, st, v.items, i)
+			})
 		})
-	} else {
-		widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
-			a.novelCard(c, st, v.items, i)
-		})
+	case !v.started:
+		skeletonFeed(c, width)
+	default:
+		emptyState(c, iconImage, a.t("common.noWorks"), "", nil)
 	}
 	if st.canLoad() && (len(v.items) == 0 || st.masonry.AtEnd()) {
 		a.loadMoreNovels(st)
@@ -282,31 +283,41 @@ func (a *App) novelResults(c *ui.Context) {
 }
 
 // novelCard draws one novel: the cover, its title, author and page count. A
-// cover not loaded yet, or one that failed, is a plain block.
+// cover not loaded yet, or one that failed, is a plain block. The card lifts
+// its border and shadow when the pointer is over it.
 func (a *App) novelCard(c *ui.Context, st *novelFeedState, items []pixiv.Novel, i int) {
 	novel := items[i]
 	key := novel.CoverURL()
-	t := c.Theme()
-	ui.Column(c).Fill().Gap(4).Padding(2).Focusable().
+	t := themeOf(c)
+	card := ui.Column(c).Fill().Background(t.Surface).Radius(t.RadiusL).
+		Border(1, t.Border).Clip().Focusable().
 		Label(a.tf("a11y.card", novel.Title, novel.User.Name)).
 		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openNovel(novel.ID, novel.Title)
-	}).Children(func() {
-		ui.Box(c).Grow(1).FillWidth().Radius(8).Background(t.Surface).Clip().Children(func() {
+	})
+	if card.Hovered() {
+		card = card.Border(1, t.Accent).Shadow(0, 8, 24, 0, t.Shadow)
+	}
+	card.Children(func() {
+		ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceAlt).Children(func() {
 			if st.imageFailed(key) {
 				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, a.t("common.coverFailed")).FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
 				})
 				return
 			}
 			if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.novelImageReady(st, key)); bmp != nil {
-				ui.Image(c, bmp).Fill().Label(a.tf("a11y.cover", novel.Title))
+				ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", novel.Title))
 			}
 		})
-		ui.Text(c, novel.Title).MaxLines(1)
-		ui.Row(c).Gap(6).Children(func() {
-			ui.Text(c, novel.User.Name).FontSize(12).TextColor(t.TextMuted).MaxLines(1)
-			ui.Text(c, a.tf("novel.pages", novel.PageCount)).FontSize(12).TextColor(t.TextMuted)
+		ui.Column(c).Padding(t.SpaceS, t.SpaceM, t.SpaceM, t.SpaceM).Gap(2).Children(func() {
+			ui.Text(c, novel.Title).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(1)
+			ui.Row(c).Gap(6).Children(func() {
+				ui.Text(c, novel.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).
+					MaxLines(1).Grow(1)
+				ui.Text(c, a.tf("novel.pages", novel.PageCount)).FontSize(t.TextTiny).
+					TextColor(t.TextMuted)
+			})
 		})
 	})
 }

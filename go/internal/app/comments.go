@@ -78,8 +78,14 @@ func (st *commentState) avatarFailedURL(url string) bool {
 }
 
 // commentsButton toggles the comment panel from the viewer's toolbar.
+// commentsButton is the toolbar's way into the comment panel.
 func (a *App) commentsButton(c *ui.Context) {
-	if ui.Button(c, a.t("comments.title")).Clicked() {
+	t := themeOf(c)
+	fg := t.ViewerBarMuted
+	if a.commentsOpen {
+		fg = t.Accent
+	}
+	if iconButton(c, iconComment, a.t("comments.title"), 36, fg, t.ViewerBarHover).Clicked() {
 		a.toggleComments()
 	}
 }
@@ -217,7 +223,7 @@ func (st *commentState) retry() {
 // commentsPanel draws the comment panel beside the work: its title, the
 // scrollable list, and the composer.
 func (a *App) commentsPanel(c *ui.Context, st *commentState) {
-	t := c.Theme()
+	t := themeOf(c)
 	// The composer is edited on the main thread only: a send leaves the text
 	// it posted here, and this frame clears it if it is still what was sent.
 	if sent, ok := st.takeSentDraft(); ok && st.draft == sent {
@@ -226,13 +232,13 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 	v := st.snapshot()
 	ui.Column(c).Width(commentsWidth).Shrink(0).FillHeight().
 		Background(t.Surface).BorderWidth(0, 0, 0, 1).BorderColor(t.Border).Children(func() {
-		ui.Row(c).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.t("comments.title")).FontSize(16).Bold().Grow(1)
+		ui.Row(c).Padding(t.SpaceM).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, a.t("comments.title")).FontSize(t.TextBody).Bold().TextColor(t.Text).Grow(1)
 		})
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Padding(12).Gap(12).Children(func() {
+			ui.Column(c).Padding(t.SpaceM).Gap(t.SpaceM).Children(func() {
 				if v.err != "" {
-					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+					ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 						ui.Text(c, a.tf("common.loadFailed", v.err)).TextColor(t.Danger).Grow(1)
 						if ui.Button(c, a.t("common.retry")).Clicked() {
 							st.retry()
@@ -247,7 +253,7 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 					a.commentItem(c, st, &v.items[i])
 				}
 				if v.loading {
-					ui.Text(c, a.t("common.loading")).FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, a.t("common.loading")).FontSize(t.TextTiny).TextColor(t.TextMuted)
 				}
 				if v.hasMore && !v.loading && v.err == "" {
 					if ui.Button(c, a.t("comments.loadMore")).Clicked() {
@@ -257,15 +263,15 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 			})
 		})
 		if reply := st.replyTo; reply != nil {
-			ui.Row(c).Gap(8).Padding(12, 0, 12, 0).AlignItems(ui.Center).Children(func() {
+			ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceM, 0, t.SpaceM, 0).AlignItems(ui.Center).Children(func() {
 				ui.Text(c, a.tf("comments.replyingTo", reply.User.Name)).
-					FontSize(12).TextColor(t.TextMuted).Grow(1).MaxLines(1)
+					FontSize(t.TextTiny).TextColor(t.TextMuted).Grow(1).MaxLines(1)
 				if ui.Button(c, a.t("comments.cancel")).Clicked() {
 					st.replyTo = nil
 				}
 			})
 		}
-		ui.Row(c).Gap(8).Padding(12).Children(func() {
+		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceM).Children(func() {
 			ui.TextInput(c, &st.draft).Grow(1).
 				Placeholder(a.t("comments.placeholder")).Label(a.t("comments.placeholder"))
 			if ui.Button(c, a.t("comments.send")).Disabled(v.sending).Clicked() {
@@ -278,11 +284,11 @@ func (a *App) commentsPanel(c *ui.Context, st *commentState) {
 // commentItem draws one comment: its avatar, author, age, text and reply
 // button.
 func (a *App) commentItem(c *ui.Context, st *commentState, cm *pixiv.Comment) {
-	t := c.Theme()
-	ui.Row(c).Gap(8).AlignItems(ui.Start).
+	t := themeOf(c)
+	ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Start).
 		Label(a.tf("a11y.comment", cm.User.Name)).Children(func() {
 		avatar := ui.Box(c).Width(commentAvatar).Height(commentAvatar).Shrink(0).
-			Radius(commentAvatar / 2).Background(t.Background).Clip().
+			Radius(t.RadiusFull).Background(t.SurfaceAlt).Clip().
 			Label(a.tf("a11y.avatar", cm.User.Name))
 		url := cm.User.ProfileImageUrls.Px50x50
 		if url != "" && !st.avatarFailedURL(url) {
@@ -292,12 +298,12 @@ func (a *App) commentItem(c *ui.Context, st *commentState, cm *pixiv.Comment) {
 				}
 			})
 		}
-		ui.Column(c).Grow(1).Gap(2).Children(func() {
-			ui.Row(c).Gap(6).Children(func() {
-				ui.Text(c, cm.User.Name).Bold().MaxLines(1).Grow(1)
-				ui.Text(c, a.commentTime(cm.CreateDate)).FontSize(11).TextColor(t.TextMuted)
+		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+			ui.Row(c).Gap(t.SpaceXS).Children(func() {
+				ui.Text(c, cm.User.Name).FontSize(t.TextSmall).Bold().TextColor(t.Text).MaxLines(1).Grow(1)
+				ui.Text(c, a.commentTime(cm.CreateDate)).FontSize(t.TextTiny).TextColor(t.TextMuted)
 			})
-			ui.Text(c, cm.Comment).MaxLines(4)
+			ui.Text(c, cm.Comment).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(4)
 			if ui.Button(c, a.t("comments.reply")).Clicked() {
 				st.replyTo = cm
 			}

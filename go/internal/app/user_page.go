@@ -109,48 +109,58 @@ func (a *App) userPage(c *ui.Context) {
 	if v == nil {
 		return
 	}
-	t := c.Theme()
+	t := themeOf(c)
 	s := v.snapshot()
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Row(c).Gap(12).Padding(16).AlignItems(ui.Start).Children(func() {
-			a.userAvatar(c, v, s)
-			ui.Column(c).Grow(1).Gap(6).Children(func() {
-				switch {
-				case s.err != "":
-					ui.Text(c, a.tf("user.loadFailed", s.err)).TextColor(t.Danger)
-				case s.loading:
-					ui.Text(c, a.t("common.loading")).TextColor(t.TextMuted)
-				default:
-					ui.Text(c, s.user.Name).FontSize(20).Bold().MaxLines(1)
-					if s.user.Account != "" {
-						ui.Text(c, "@"+s.user.Account).FontSize(12).TextColor(t.TextMuted)
+		ui.Row(c).Padding(t.SpaceL, contentPadding, 0, contentPadding).Children(func() {
+			ui.Row(c).FillWidth().Gap(t.SpaceL).Padding(t.SpaceL).AlignItems(ui.Start).
+				Background(t.Surface).Radius(t.RadiusL).Border(1, t.Border).Children(func() {
+				a.userAvatar(c, v, s)
+				ui.Column(c).Grow(1).Gap(t.SpaceXS).MinWidth(0).Children(func() {
+					switch {
+					case s.err != "":
+						ui.Text(c, a.tf("user.loadFailed", s.err)).FontSize(t.TextSmall).TextColor(t.Danger)
+					case s.loading:
+						ui.Text(c, a.t("common.loading")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+					default:
+						ui.Text(c, s.user.Name).FontSize(t.TextTitle).Bold().TextColor(t.Text).MaxLines(1)
+						if s.user.Account != "" {
+							ui.Text(c, "@"+s.user.Account).FontSize(t.TextSmall).TextColor(t.TextMuted)
+						}
+						if comment := s.comment(); comment != "" {
+							ui.Text(c, comment).FontSize(t.TextSmall).TextColor(t.TextMuted).MaxLines(3)
+						}
 					}
-					if comment := s.comment(); comment != "" {
-						ui.Text(c, comment).TextColor(t.TextMuted).MaxLines(3)
-					}
+				})
+				if s.err == "" && !s.loading {
+					ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+						a.followButton(c, v, s)
+						a.subscriptionButton(c, subscription.KindUser, s.user.ID, s.user.Name)
+					})
 				}
 			})
-			if s.err == "" && !s.loading {
-				a.followButton(c, v, s)
-				a.subscriptionButton(c, subscription.KindUser, s.user.ID, s.user.Name)
-			}
 		})
 		a.browsePage(c, v.feed)
 	})
 }
 
-// userAvatar draws the profile image, a plain block until it loads.
+// userAvatar draws the profile image, the name's initial until it loads, and
+// the initial again if the image fails.
 func (a *App) userAvatar(c *ui.Context, v *userViewState, s userPageView) {
+	t := themeOf(c)
 	url := s.user.ProfileImageUrls.Px50x50
 	box := ui.Box(c).Width(avatarSize).Height(avatarSize).Shrink(0).
-		Radius(avatarSize / 2).Background(c.Theme().Surface).Clip().
+		Radius(t.RadiusFull).Background(t.SurfaceAlt).Clip().
 		Label(a.tf("a11y.avatar", s.user.Name))
 	if url == "" || s.avatarFailed {
+		box.Center().Children(func() {
+			ui.Text(c, initialOf(s.user.Name)).FontSize(t.TextDisplay).Bold().TextColor(t.TextMuted)
+		})
 		return
 	}
 	box.Children(func() {
 		if bmp := a.images.Thumb(url, avatarSize, avatarSize, a.avatarReady(v, url)); bmp != nil {
-			ui.Image(c, bmp).Fill()
+			ui.Image(c, bmp).Fill().Fit(ui.Cover)
 		}
 	})
 }
@@ -174,15 +184,15 @@ func (a *App) avatarReady(v *userViewState, url string) func() {
 // followButton draws the follow state and sends the request its click asks
 // for.
 func (a *App) followButton(c *ui.Context, v *userViewState, s userPageView) {
-	t := c.Theme()
+	t := themeOf(c)
 	label := a.t("user.follow")
+	var b ui.Element
 	if s.user.IsFollowed {
-		label = a.t("user.following")
+		b = ui.Button(c, a.t("user.following")).TextColor(t.Accent)
+	} else {
+		b = ui.PrimaryButton(c, label)
 	}
-	b := ui.Button(c, label).Disabled(s.followBusy)
-	if s.user.IsFollowed {
-		b = b.TextColor(t.Accent)
-	}
+	b = b.Disabled(s.followBusy)
 	if b.Clicked() {
 		a.toggleFollow(v)
 	}

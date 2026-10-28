@@ -13,7 +13,9 @@
     "user": "Utilisateur",
     "series": "Séries",
     "novel": "Roman",
-    "region": "Navigation"
+    "region": "Navigation",
+    "groupBrowse": "Parcourir",
+    "groupLibrary": "Bibliothèque"
   },
   "home": {
     "recommended": "Recommandés",
@@ -119,7 +121,10 @@
     "installRestart": "Installer et redémarrer",
     "updateInstalling": "Installation de la mise à jour",
     "updateCheckFailed": "Impossible de rechercher les mises à jour : %s",
-    "updateInstallFailed": "Impossible d'installer la mise à jour : %s"
+    "updateInstallFailed": "Impossible d'installer la mise à jour : %s",
+    "groupAppearance": "Général",
+    "groupDownloads": "Téléchargements",
+    "groupShortcuts": "Raccourcis"
   },
   "history": {
     "empty": "Aucun historique pour l'instant",
@@ -137,7 +142,8 @@
     "pageFailed": "Impossible de créer la page de connexion",
     "refreshEmpty": "Collez d'abord un refresh token",
     "saveFailed": "Impossible d'enregistrer la connexion",
-    "noWebView": "Aucune WebView disponible : connectez-vous avec un refresh token"
+    "noWebView": "Aucune WebView disponible : connectez-vous avec un refresh token",
+    "promptHint": "Connectez-vous pour parcourir les recommandations, les abonnements et le classement"
   },
   "user": {
     "open": "Auteur",
@@ -158,7 +164,7 @@
     "emptyHint": "Abonnez-vous depuis une page utilisateur ou série pour voir les nouvelles œuvres ici",
     "kindUser": "Utilisateur",
     "kindSeries": "Série",
-    "rowDetail": "%s · Dernière vérification : %s",
+    "rowDetail": "%s, dernière vérification : %s",
     "never": "jamais",
     "remove": "Supprimer",
     "newWorks": "%d nouvelles œuvres",

@@ -22,8 +22,9 @@ const (
 	cardGap     = 12
 	coverWidth  = 480
 	coverHeight = 720
-	// cardText is the height the title and author take under a cover.
-	cardText = 44
+	// cardText is the height the title and author take under a cover, with
+	// the card's own padding.
+	cardText = 56
 )
 
 // browseView is what the view draws, read from the state in one go. The
@@ -291,12 +292,14 @@ func (a *App) imageReady(st *browseState, key string) func() {
 
 // browsePage draws a feed, and loads its next page once it is at the end.
 func (a *App) browsePage(c *ui.Context, st *browseState) {
-	t := c.Theme()
+	t := themeOf(c)
 	a.filterBar(c, st)
 	v := st.snapshot()
 	if v.err != "" {
-		ui.Row(c).Gap(8).Padding(12).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.tf("common.loadFailed", v.err)).TextColor(t.Danger).Grow(1)
+		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, contentPadding).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconAlert).Size(18, 18).TextColor(t.Danger)
+			ui.Text(c, a.tf("common.loadFailed", v.err)).FontSize(t.TextSmall).
+				TextColor(t.Danger).Grow(1)
 			if ui.Button(c, a.t("common.retry")).Clicked() {
 				st.retry()
 			}
@@ -308,18 +311,17 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 	}
 	width := a.masonryWidth()
 	items, tiles := feedTiles(st, v.items, width)
-	if len(items) == 0 {
-		msg := a.t("common.noWorks")
-		if !v.started {
-			msg = a.t("common.loading")
-		}
-		ui.Column(c).Grow(1).Center().Children(func() {
-			ui.Text(c, msg).TextColor(t.TextMuted)
+	switch {
+	case len(items) > 0:
+		ui.Column(c).Grow(1).Padding(t.SpaceM, contentPadding, contentPadding, contentPadding).Children(func() {
+			widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
+				a.browseCard(c, st, items, i)
+			})
 		})
-	} else {
-		widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
-			a.browseCard(c, st, items, i)
-		})
+	case !v.started:
+		skeletonFeed(c, width)
+	default:
+		emptyState(c, iconImage, a.t("common.noWorks"), "", nil)
 	}
 	// A filtered feed is not paged on past its first page: a strict expression
 	// would fetch page after page looking for a match that is not in them.
@@ -329,12 +331,14 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 }
 
 // browseCard draws one tile: the cover, its title and the author. A cover not
-// loaded yet, or one that failed, is a plain block.
+// loaded yet, or one that failed, is a plain block. The card lifts its border
+// and shadow when the pointer is over it.
 func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustration, i int) {
 	work := items[i]
 	key := work.CoverURL()
-	t := c.Theme()
-	ui.Column(c).Fill().Gap(4).Padding(2).Focusable().
+	t := themeOf(c)
+	card := ui.Column(c).Fill().Background(t.Surface).Radius(t.RadiusL).
+		Border(1, t.Border).Clip().Focusable().
 		Label(a.tf("a11y.card", work.Title, work.User.Name)).
 		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openViewer(&items[i], 0)
@@ -343,19 +347,25 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 		if m.Item(a.t("user.open")).Chosen() {
 			a.openUser(work.User.ID)
 		}
-	}).Children(func() {
-		ui.Box(c).Grow(1).FillWidth().Radius(8).Background(t.Surface).Clip().Children(func() {
+	})
+	if card.Hovered() {
+		card = card.Border(1, t.Accent).Shadow(0, 8, 24, 0, t.Shadow)
+	}
+	card.Children(func() {
+		ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceAlt).Children(func() {
 			if st.imageFailed(key) {
 				ui.Column(c).Fill().Center().Children(func() {
-					ui.Text(c, a.t("common.coverFailed")).FontSize(12).TextColor(t.TextMuted)
+					ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
 				})
 				return
 			}
 			if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.imageReady(st, key)); bmp != nil {
-				ui.Image(c, bmp).Fill().Label(a.tf("a11y.cover", work.Title))
+				ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", work.Title))
 			}
 		})
-		ui.Text(c, work.Title).MaxLines(1)
-		ui.Text(c, work.User.Name).FontSize(12).TextColor(t.TextMuted).MaxLines(1)
+		ui.Column(c).Padding(t.SpaceS, t.SpaceM, t.SpaceM, t.SpaceM).Gap(2).Children(func() {
+			ui.Text(c, work.Title).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(1)
+			ui.Text(c, work.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
+		})
 	})
 }

@@ -13,7 +13,9 @@
     "user": "User",
     "series": "Series",
     "novel": "Novel",
-    "region": "Navigation"
+    "region": "Navigation",
+    "groupBrowse": "Browse",
+    "groupLibrary": "Library"
   },
   "home": {
     "recommended": "Recommended",
@@ -119,7 +121,10 @@
     "installRestart": "Install and restart",
     "updateInstalling": "Installing the update",
     "updateCheckFailed": "Cannot check for updates: %s",
-    "updateInstallFailed": "Cannot install the update: %s"
+    "updateInstallFailed": "Cannot install the update: %s",
+    "groupAppearance": "General",
+    "groupDownloads": "Downloads",
+    "groupShortcuts": "Shortcuts"
   },
   "history": {
     "empty": "No history yet",
@@ -137,7 +142,8 @@
     "pageFailed": "Cannot create the login page",
     "refreshEmpty": "Paste a refresh token first",
     "saveFailed": "Cannot save the sign-in",
-    "noWebView": "No WebView is available here: sign in with a refresh token"
+    "noWebView": "No WebView is available here: sign in with a refresh token",
+    "promptHint": "Sign in to browse recommendations, following and ranking"
   },
   "user": {
     "open": "Author",
@@ -158,7 +164,7 @@
     "emptyHint": "Subscribe from a user or series page to see new works here",
     "kindUser": "User",
     "kindSeries": "Series",
-    "rowDetail": "%s · Last checked: %s",
+    "rowDetail": "%s, last checked %s",
     "never": "never",
     "remove": "Delete",
     "newWorks": "%d new works",
