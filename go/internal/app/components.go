@@ -2,6 +2,7 @@ package app
 
 import (
 	"runtime/debug"
+	"sync"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -104,8 +105,9 @@ func initialOf(name string) string {
 }
 
 // appVersion is the version the brand shows: the packaged app's, the module
-// version of a source build, or "dev" for a plain go build.
-func appVersion() string {
+// version of a source build, or "dev" for a plain go build. It is computed
+// once, not on every frame.
+var appVersion = sync.OnceValue(func() string {
 	v := mygo.App.Version()
 	if v == "" {
 		if info, ok := debug.ReadBuildInfo(); ok {
@@ -119,7 +121,7 @@ func appVersion() string {
 		return "v" + v
 	}
 	return v
-}
+})
 
 // contentWidth is the width a page may use inside the navigation and the
 // page's padding.

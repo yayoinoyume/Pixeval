@@ -23,8 +23,8 @@ const (
 	coverWidth  = 480
 	coverHeight = 720
 	// cardText is the height the title and author take under a cover, with
-	// the card's own padding.
-	cardText = 56
+	// the card's own padding and room for the desktop's text scale.
+	cardText = 64
 )
 
 // browseView is what the view draws, read from the state in one go. The

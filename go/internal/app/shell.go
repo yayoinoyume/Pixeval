@@ -275,6 +275,7 @@ func (a *App) applyTheme(c *ui.Context) {
 	if (a.settings == nil || a.settings.Theme == themeSystem) && prefs.Accent.A != 0 {
 		accent := prefs.Accent
 		theme.Accent = accent
+		theme.AccentText = accentText(accent)
 		if dark {
 			theme.AccentHover = accent.Mix(ui.RGB(255, 255, 255), 0.15)
 			theme.AccentPressed = accent.Mix(ui.RGB(0, 0, 0), 0.15)

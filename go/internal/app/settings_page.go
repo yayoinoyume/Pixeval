@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -144,22 +146,18 @@ func (a *App) settingsPage(c *ui.Context) {
 						row(a.t("settings.downloadDir"), a.t("settings.downloadDirHint"), func() {
 							ui.TextInput(c, &s.DownloadDir).Width(360).Height(36).Label(a.t("settings.downloadDir"))
 						})
-						concurrency := float64(s.DownloadConcurrency)
 						row(a.t("settings.concurrency"), "", func() {
-							ui.NumberInput(c, &concurrency, 1, 8, 1).Width(140).Height(36).Label(a.t("settings.concurrency"))
+							a.numberStepper(c, &s.DownloadConcurrency, 1, 8, 1, a.t("settings.concurrency"))
 						})
-						s.DownloadConcurrency = int(concurrency)
 					})
 
 					a.settingsGroup(c, a.t("settings.groupContent"), func(row settingsRow) {
 						row(a.t("settings.showR18"), a.t("settings.showR18Hint"), func() {
 							switchControl(c, &s.ShowR18, a.t("settings.showR18"))
 						})
-						width := s.CardWidth
 						row(a.t("settings.cardWidth"), "", func() {
-							ui.NumberInput(c, &width, 180, 360, 10).Width(140).Height(36).Label(a.t("settings.cardWidth"))
+							a.numberStepper(c, &s.CardWidth, 180, 360, 10, a.t("settings.cardWidth"))
 						})
-						s.CardWidth = width
 					})
 
 					a.settingsGroup(c, a.t("settings.groupAbout"), func(row settingsRow) {
@@ -226,19 +224,62 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 	})
 }
 
-// settingsRow places the control at the end of a 44 high row.
+// settingsRow places the control at the end of a row at least 44 high. A
+// long hint may take two lines and grow the row.
 func (a *App) settingsRow(c *ui.Context, label, hint string, control func()) {
 	t := themeOf(c)
-	ui.Row(c).FillWidth().Height(44).Padding(0, settingsPad).Gap(t.SpaceXL).
+	ui.Row(c).FillWidth().MinHeight(44).Padding(0, settingsPad).Gap(t.SpaceXL).
 		AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(100).Gap(2).Children(func() {
 			ui.Text(c, label).FontSize(t.TextBody).TextColor(t.Text)
 			if hint != "" {
-				ui.Text(c, hint).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
+				ui.Text(c, hint).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(2)
 			}
 		})
 		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Shrink(0).Children(control)
 	})
+}
+
+// numberStepper is a labelled number field with square minus and plus
+// buttons. The label is on the text field itself, so the focus announces the
+// setting instead of an anonymous role group.
+func (a *App) numberStepper[T int | float64](c *ui.Context, value *T, lo, hi, step T, label string) {
+	text := ui.Local(c.Root(), "stepper."+label, func() string {
+		return strconv.FormatFloat(float64(*value), 'f', -1, 64)
+	})
+	field := ui.TextInput(c, text).Width(72).Height(36).Label(label)
+	if field.Changed() {
+		if n, err := strconv.ParseFloat(strings.TrimSpace(*text), 64); err == nil {
+			*value = T(min(max(n, float64(lo)), float64(hi)))
+		}
+	}
+	if field.Submitted() {
+		*text = strconv.FormatFloat(float64(*value), 'f', -1, 64)
+	}
+	dec := a.t("settings.decrease")
+	inc := a.t("settings.increase")
+	if a.stepperButton(c, iconMinus, label+" "+dec).Clicked() {
+		*value = T(max(float64(*value)-float64(step), float64(lo)))
+		*text = strconv.FormatFloat(float64(*value), 'f', -1, 64)
+	}
+	if a.stepperButton(c, iconPlus, label+" "+inc).Clicked() {
+		*value = T(min(float64(*value)+float64(step), float64(hi)))
+		*text = strconv.FormatFloat(float64(*value), 'f', -1, 64)
+	}
+}
+
+// stepperButton is one square button of a number stepper.
+func (a *App) stepperButton(c *ui.Context, glyph *ui.SVG, label string) ui.Element {
+	t := themeOf(c)
+	b := ui.ButtonBase(c).Size(36, 36).Radius(t.RadiusM).Label(label).Tooltip(label).
+		Background(t.SurfaceAlt)
+	if b.Hovered() {
+		b = b.Background(t.SurfaceHover)
+	}
+	b.Children(func() {
+		ui.Icon(c, glyph).Size(16, 16).TextColor(t.TextMuted)
+	})
+	return b
 }
 
 // settingsToggleRow is a whole-row disclosure control: its label, and a
