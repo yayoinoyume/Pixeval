@@ -1,13 +1,17 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 func TestSettingsRoundTrip(t *testing.T) {
@@ -120,6 +124,77 @@ func TestSettingsPageShowsFields(t *testing.T) {
 	}
 	if !tt.HasText("保存") {
 		t.Errorf("save button missing: %q", tt.Texts())
+	}
+}
+
+// TestCardWidthFollowsSettings checks a wider setting lays the feed out in
+// wider columns.
+func TestCardWidthFollowsSettings(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	st := &browseState{fetch: func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(0, 20)}, nil
+	}}
+	a, tt := newBrowseTest(st)
+	waitBrowse(t, st, "load", func(v browseView) bool { return len(v.items) == 20 })
+	tt.Frame()
+	narrow, ok := tt.Find("作品 1")
+	if !ok {
+		t.Fatalf("second card missing: %q", tt.Texts())
+	}
+
+	a.settings.CardWidth = 360
+	tt.Frame()
+	wide, ok := tt.Find("作品 1")
+	if !ok {
+		t.Fatalf("second card missing after resize: %q", tt.Texts())
+	}
+	if wide.X <= narrow.X+50 {
+		t.Errorf("second card X = %v at width 360, want well right of %v at 240", wide.X, narrow.X)
+	}
+}
+
+// TestSaveConcurrent checks saves racing on one path still leave a readable
+// file.
+func TestSaveConcurrent(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "pixeval-go", "settings.json")
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			s := Default()
+			s.DownloadConcurrency = 1 + i%8
+			if err := Save(path, s); err != nil {
+				t.Errorf("Save: %v", err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if _, err := Load(path); err != nil {
+		t.Fatalf("Load after concurrent saves: %v", err)
+	}
+}
+
+// TestSettingsPageCreatesDownloadDir checks a saved directory is created.
+func TestSettingsPageCreatesDownloadDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	dir := filepath.Join(t.TempDir(), "downloads", "nested")
+	a.settings.DownloadDir = dir
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(dir); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("download directory %s not created", dir)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

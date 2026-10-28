@@ -99,24 +99,42 @@ func (s *Settings) normalize() {
 }
 
 // Save writes s to path as JSON only the user can read, replacing the file in
-// one step so a crash cannot leave a half written one.
+// one step so a crash cannot leave a half written one. A temporary file of its
+// own keeps two saves at once from writing the same one.
 func Save(path string, s *Settings) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	f, err := os.CreateTemp(dir, ".settings-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	defer os.Remove(tmp)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
-		os.Remove(tmp)
 		return err
 	}
 	return nil
+}
+
+// masonryWidth is the column width the settings ask for.
+func (a *App) masonryWidth() float64 {
+	if a.settings != nil && a.settings.CardWidth > 0 {
+		return a.settings.CardWidth
+	}
+	return cardWidth
 }
 
 // settingsDownloadDir is where downloads go: the saved directory, or the

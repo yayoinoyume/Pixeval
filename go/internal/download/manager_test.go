@@ -105,6 +105,41 @@ func TestConcurrencyLimit(t *testing.T) {
 	}
 }
 
+func TestSetConcurrency(t *testing.T) {
+	var active, peak atomic.Int64
+	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := active.Add(1)
+		defer active.Add(-1)
+		for {
+			seen := peak.Load()
+			if n <= seen || peak.CompareAndSwap(seen, n) {
+				break
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+		w.Write([]byte("image"))
+	}))
+
+	dir := t.TempDir()
+	m := newManager(3)
+	m.SetConcurrency(1)
+	tasks := make([]Task, 4)
+	for i := range tasks {
+		tasks[i] = Task{
+			ID:   fmt.Sprintf("t%d", i),
+			URL:  srv.URL,
+			Dest: filepath.Join(dir, fmt.Sprintf("%d.png", i)),
+		}
+	}
+	m.Add(tasks)
+	m.Start(context.Background())
+	m.Wait()
+
+	if got := peak.Load(); got != 1 {
+		t.Fatalf("peak concurrent downloads = %d, want 1 after SetConcurrency(1)", got)
+	}
+}
+
 func TestAtomicWrite(t *testing.T) {
 	content := []byte("image-bytes")
 	srv := serve(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
