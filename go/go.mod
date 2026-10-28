@@ -4,7 +4,10 @@ go 1.27.3
 
 tool github.com/egoist/mygo/cmd/mygo
 
-require github.com/egoist/mygo v0.7.1
+require (
+	github.com/egoist/mygo v0.7.1
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/ebitengine/purego v0.11.1 // indirect
