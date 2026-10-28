@@ -114,7 +114,7 @@ func waitBookmark(t *testing.T, a *App, want bool) {
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		if a.viewer != nil {
-			if got, _ := a.viewer.bookmarked(); got == want {
+			if got, _ := a.viewer.bookmarkState(); got == want {
 				return
 			}
 		}

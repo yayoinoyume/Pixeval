@@ -1,6 +1,9 @@
 package app
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/egoist/mygo/ui"
 )
 
@@ -50,7 +53,7 @@ func (a *App) settingsPage(c *ui.Context) {
 			})
 			ui.Field(c, "下载目录", func() {
 				ui.TextInput(c, &s.DownloadDir).Width(360)
-			}).Description("留空表示默认目录")
+			}).Description("留空表示默认目录，不存在时自动创建")
 			concurrency := float64(s.DownloadConcurrency)
 			ui.Field(c, "下载并发", func() {
 				ui.NumberInput(c, &concurrency, 1, 8, 1)
@@ -58,7 +61,7 @@ func (a *App) settingsPage(c *ui.Context) {
 			s.DownloadConcurrency = int(concurrency)
 			ui.Field(c, "显示 R18", func() {
 				ui.Switch(c, &s.ShowR18)
-			})
+			}).Description("R18 过滤将在 M2 生效")
 			width := s.CardWidth
 			ui.Field(c, "瀑布流列宽", func() {
 				ui.NumberInput(c, &width, 180, 360, 10)
@@ -77,7 +80,7 @@ func (a *App) settingsPage(c *ui.Context) {
 }
 
 // applySavedSettings picks up a save that finished off the main thread: it
-// applies the download directory and shows the toast.
+// applies the download directory and concurrency, and shows the toast.
 func (a *App) applySavedSettings(c *ui.Context) {
 	select {
 	case err := <-a.settingsSaved:
@@ -87,7 +90,13 @@ func (a *App) applySavedSettings(c *ui.Context) {
 		}
 		a.settingsErr = ""
 		a.downloadsDir = settingsDownloadDir(a.settings)
+		if a.downloads != nil {
+			a.downloads.SetConcurrency(a.settings.DownloadConcurrency)
+		}
 		c.Toast("已保存")
+		// The masonry keeps its last layout until the next frame; ask for it
+		// so a new column width shows at once.
+		c.Invalidate()
 	default:
 	}
 }
@@ -107,5 +116,13 @@ func (a *App) saveSettings() {
 		a.settingsSaved = make(chan error, 1)
 	}
 	s := *a.settings
-	go func() { a.settingsSaved <- Save(path, &s) }()
+	go func() {
+		if dir := s.DownloadDir; dir != "" {
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				a.settingsSaved <- fmt.Errorf("下载目录：%w", err)
+				return
+			}
+		}
+		a.settingsSaved <- Save(path, &s)
+	}()
 }
