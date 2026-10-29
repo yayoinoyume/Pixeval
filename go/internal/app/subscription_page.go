@@ -172,12 +172,12 @@ func (a *App) subscriptionButton(c *ui.Context, kind subscription.Kind, targetID
 
 // subsSnapshot is the new works, whether a check runs, and the result message
 // to toast once; the message is cleared here.
-func (a *App) subsSnapshot() ([]pixiv.Illustration, bool, string) {
+func (a *App) subsSnapshot() ([]subscription.Fetched, bool, string) {
 	a.subsMu.Lock()
 	defer a.subsMu.Unlock()
 	msg := a.subsMsg
 	a.subsMsg = ""
-	return append([]pixiv.Illustration(nil), a.newWorks...), a.subsChecking, msg
+	return append([]subscription.Fetched(nil), a.newWorks...), a.subsChecking, msg
 }
 
 // checkSubscriptions runs one check off the main thread and shows its result.
@@ -195,7 +195,7 @@ func (a *App) checkSubscriptions() {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
 		defer cancel()
-		works, err := a.subs.Check(ctx)
+		fetched, err := a.subs.CheckDetailed(ctx)
 		// A check advances LastChecked, so the next start must see it.
 		a.saveSubscriptions()
 		a.update(func() {
@@ -203,22 +203,22 @@ func (a *App) checkSubscriptions() {
 			// the message together.
 			a.subsMu.Lock()
 			a.subsChecking = false
-			a.newWorks = append(a.newWorks, works...)
+			a.newWorks = append(a.newWorks, fetched...)
 			if err != nil {
 				a.subsMsg = a.tf("subs.checkFailed", err.Error())
 			} else {
-				a.subsMsg = a.tf("subs.checkDone", len(works))
+				a.subsMsg = a.tf("subs.checkDone", len(fetched))
 			}
 			a.subsMu.Unlock()
 		})
 	}()
 }
 
-// downloadNewWorks queues every new work.
-func (a *App) downloadNewWorks(works []pixiv.Illustration) {
+// downloadNewWorks queues every new work under the subscription it came from.
+func (a *App) downloadNewWorks(fetched []subscription.Fetched) {
 	pages := 0
-	for _, w := range works {
-		n, ok := a.downloadWorkSource(w, download.SourceSubscription)
+	for _, f := range fetched {
+		n, ok := a.downloadWorkSource(f.Work, download.SourceSubscription, f.Subscription.TargetID, f.Subscription.TargetName)
 		if !ok {
 			a.notice = a.t("viewer.noDownloadDir")
 			a.update(func() {})
@@ -245,21 +245,21 @@ func (a *App) notify(title, body string) {
 // setting is on, queues their pages. It runs on the main thread, so the
 // download directory is read where a settings save writes it. One check is
 // one call, so it notifies once however many works it found.
-func (a *App) showNewWorks(works []pixiv.Illustration) {
+func (a *App) showNewWorks(fetched []subscription.Fetched) {
 	a.subsMu.Lock()
-	a.newWorks = append(a.newWorks, works...)
-	a.subsMsg = a.tf("subs.newFound", len(works))
+	a.newWorks = append(a.newWorks, fetched...)
+	a.subsMsg = a.tf("subs.newFound", len(fetched))
 	a.subsMu.Unlock()
-	if len(works) == 0 {
+	if len(fetched) == 0 {
 		return
 	}
-	a.notify(a.t("notify.newWorksTitle"), a.tf("notify.newWorksBody", len(works), works[0].Title))
+	a.notify(a.t("notify.newWorksTitle"), a.tf("notify.newWorksBody", len(fetched), fetched[0].Work.Title))
 	if a.settings == nil || !a.settings.AutoDownloadSubscriptions {
 		return
 	}
 	pages := 0
-	for _, w := range works {
-		n, ok := a.downloadWorkSource(w, download.SourceSubscription)
+	for _, f := range fetched {
+		n, ok := a.downloadWorkSource(f.Work, download.SourceSubscription, f.Subscription.TargetID, f.Subscription.TargetName)
 		if !ok {
 			a.notice = a.t("subs.autoNoDir")
 			return
@@ -270,10 +270,11 @@ func (a *App) showNewWorks(works []pixiv.Illustration) {
 	a.notify(a.t("notify.autoQueuedTitle"), a.tf("notify.autoQueuedBody", pages))
 }
 
-// onNewSubscriptions is the background check's callback: it hands the works to
-// the main thread, which shows them and may queue them.
-func (a *App) onNewSubscriptions(works []pixiv.Illustration) {
-	a.update(func() { a.showNewWorks(works) })
+// onNewSubscriptions is the background check's callback: it hands the new
+// works and their subscriptions to the main thread, which shows them and may
+// queue them.
+func (a *App) onNewSubscriptions(fetched []subscription.Fetched) {
+	a.update(func() { a.showNewWorks(fetched) })
 }
 
 // subscriptionsPage draws the followed targets and the works the last check
@@ -284,7 +285,7 @@ func (a *App) subscriptionsPage(c *ui.Context) {
 	if a.subsStore != nil {
 		subs = a.subsStore.List()
 	}
-	works, checking, msg := a.subsSnapshot()
+	fetched, checking, msg := a.subsSnapshot()
 	if msg != "" {
 		c.Toast(msg)
 	}
@@ -296,11 +297,11 @@ func (a *App) subscriptionsPage(c *ui.Context) {
 			if ui.Button(c, a.t("subs.check")).Disabled(checking).Clicked() {
 				a.checkSubscriptions()
 			}
-			if ui.Button(c, a.t("subs.downloadAll")).Disabled(len(works) == 0).Clicked() {
-				a.downloadNewWorks(works)
+			if ui.Button(c, a.t("subs.downloadAll")).Disabled(len(fetched) == 0).Clicked() {
+				a.downloadNewWorks(fetched)
 			}
 		})
-		if len(subs) == 0 && len(works) == 0 {
+		if len(subs) == 0 && len(fetched) == 0 {
 			emptyState(c, iconBell, a.t("subs.empty"), a.t("subs.emptyHint"), nil)
 			return
 		}
@@ -310,7 +311,7 @@ func (a *App) subscriptionsPage(c *ui.Context) {
 				for _, sub := range subs {
 					a.subscriptionRow(c, sub)
 				}
-				a.newWorksList(c, works)
+				a.newWorksList(c, fetched)
 			})
 		})
 	})
@@ -349,16 +350,16 @@ func (a *App) checkedLabel(sub subscription.Subscription) string {
 
 // newWorksList draws the works the last checks found; a click opens one in the
 // viewer.
-func (a *App) newWorksList(c *ui.Context, works []pixiv.Illustration) {
-	if len(works) == 0 {
+func (a *App) newWorksList(c *ui.Context, fetched []subscription.Fetched) {
+	if len(fetched) == 0 {
 		return
 	}
 	t := themeOf(c)
 	ui.Column(c).Gap(t.SpaceS).Children(func() {
-		ui.Text(c, a.tf("subs.newWorks", len(works))).FontSize(t.TextSmall).
+		ui.Text(c, a.tf("subs.newWorks", len(fetched))).FontSize(t.TextSmall).
 			TextColor(t.TextMuted).Padding(t.SpaceL, 0, t.SpaceXS, 0)
-		for i := range works {
-			work := works[i]
+		for i := range fetched {
+			work := fetched[i].Work
 			card := ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, t.SpaceL).
 				Background(t.Surface).Radius(t.RadiusM).Border(1, t.Border).
 				Focusable().Label(a.tf("a11y.card", work.Title, work.User.Name)).

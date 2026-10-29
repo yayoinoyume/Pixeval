@@ -37,21 +37,23 @@ const (
 // Task is one download. Bytes and Total stay zero until the body arrives,
 // since pixiv.Client.GetImage returns the whole image at once.
 type Task struct {
-	ID        string
-	IllustID  int64
-	Title     string
-	Artist    string
-	URL       string
-	Dest      string
-	Page      int
-	State     State
-	Bytes     int64
-	Total     int64
-	Err       string
-	Attempts  int
-	Overwrite bool   // write even when Dest already exists
-	Skipped   bool   // Dest existed and Overwrite was false
-	Source    string // empty for a user download, SourceSubscription for an update
+	ID         string
+	IllustID   int64
+	Title      string
+	Artist     string
+	URL        string
+	Dest       string
+	Page       int
+	State      State
+	Bytes      int64
+	Total      int64
+	Err        string
+	Attempts   int
+	Overwrite  bool   // write even when Dest already exists
+	Skipped    bool   // Dest existed and Overwrite was false
+	Source     string // empty for a user download, SourceSubscription for an update
+	SourceID   int64  // subscription target ID; 0 for a user download
+	SourceName string // subscription target name; empty when unknown
 }
 
 // Task sources. An empty source is a download the user queued themselves; a

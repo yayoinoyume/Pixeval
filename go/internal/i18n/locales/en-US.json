@@ -189,6 +189,8 @@
     "completedAt": "Completed %s",
     "ordinaryEmpty": "No ordinary downloads",
     "subscriptionEmpty": "No subscription downloads",
+    "sourceUnknown": "Subscription update",
+    "sourceLabel": "Source: %s",
     "count": "%d tasks",
     "clearDone": "Clear finished",
     "page": "Page %d",

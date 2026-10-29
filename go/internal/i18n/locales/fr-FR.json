@@ -189,6 +189,8 @@
     "completedAt": "Terminé le %s",
     "ordinaryEmpty": "Aucun téléchargement ordinaire",
     "subscriptionEmpty": "Aucun téléchargement d'abonnement",
+    "sourceUnknown": "Mise à jour d'abonnement",
+    "sourceLabel": "Source : %s",
     "count": "%d tâches",
     "clearDone": "Effacer les tâches terminées",
     "page": "Page %d",

@@ -85,6 +85,10 @@ func TestSubscriptionsPageCheckShowsNewWorks(t *testing.T) {
 		t.Fatalf("Click: %v", err)
 	}
 	waitNewWorks(t, a, 2)
+	fetched, _, _ := a.subsSnapshot()
+	if len(fetched) != 2 || fetched[0].Subscription.ID != "user-7" || fetched[0].Subscription.TargetName != "画师七" {
+		t.Errorf("fetched %+v, want both works attributed to user-7", fetched)
+	}
 	tt.Frame()
 	for _, title := range []string{"新作一", "新作二"} {
 		if !tt.HasText(title) {
@@ -168,6 +172,16 @@ func newWork(id int64, pages int) pixiv.Illustration {
 	return pixiv.Illustration{ID: id, Title: "新作", PageCount: pages, User: pixiv.User{Name: "画师"}}
 }
 
+// testSubscription is the followed user the download tests attribute works to.
+func testSubscription() subscription.Subscription {
+	return subscription.Subscription{ID: "user-7", Kind: subscription.KindUser, TargetID: 7, TargetName: "画师七"}
+}
+
+// fetchedWork is one work attributed to sub.
+func fetchedWork(id int64, pages int, sub subscription.Subscription) subscription.Fetched {
+	return subscription.Fetched{Work: newWork(id, pages), Subscription: sub}
+}
+
 // notifyCall is one desktop notification the app asked the system to show.
 type notifyCall struct{ title, body string }
 
@@ -187,8 +201,8 @@ func TestAutoDownloadQueuesNewWorks(t *testing.T) {
 	a, _ := newSubsTest(t, stubFetcher{})
 	a.downloadsDir = t.TempDir()
 	a.settings.AutoDownloadSubscriptions = true
-	a.subs.OnNew = a.onNewSubscriptions
-	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+	a.subs.OnNewFetched = a.onNewSubscriptions
+	a.subs.OnNewFetched([]subscription.Fetched{fetchedWork(1, 2, testSubscription())})
 
 	if tasks := a.downloads.Snapshot(); len(tasks) != 2 {
 		t.Fatalf("%d tasks queued, want 2", len(tasks))
@@ -196,6 +210,9 @@ func TestAutoDownloadQueuesNewWorks(t *testing.T) {
 	for _, task := range a.downloads.Snapshot() {
 		if task.Source != download.SourceSubscription {
 			t.Errorf("task %q source %q, want subscription", task.ID, task.Source)
+		}
+		if task.SourceID != 7 || task.SourceName != "画师七" {
+			t.Errorf("task %q source %d/%q, want 7/画师七", task.ID, task.SourceID, task.SourceName)
 		}
 	}
 	if want := a.tf("subs.autoQueued", 2); a.notice != want {
@@ -212,7 +229,7 @@ func TestDownloadNewWorksMarksSubscription(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a, _ := newSubsTest(t, stubFetcher{})
 	a.downloadsDir = t.TempDir()
-	a.downloadNewWorks([]pixiv.Illustration{newWork(1, 2)})
+	a.downloadNewWorks([]subscription.Fetched{fetchedWork(1, 2, testSubscription())})
 
 	tasks := a.downloads.Snapshot()
 	if len(tasks) != 2 {
@@ -221,6 +238,9 @@ func TestDownloadNewWorksMarksSubscription(t *testing.T) {
 	for _, task := range tasks {
 		if task.Source != download.SourceSubscription {
 			t.Errorf("task %q source %q, want subscription", task.ID, task.Source)
+		}
+		if task.SourceID != 7 || task.SourceName != "画师七" {
+			t.Errorf("task %q source %d/%q, want 7/画师七", task.ID, task.SourceID, task.SourceName)
 		}
 	}
 }
@@ -231,8 +251,8 @@ func TestAutoDownloadOffOnlyShowsNewWorks(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a, _ := newSubsTest(t, stubFetcher{})
 	a.downloadsDir = t.TempDir()
-	a.subs.OnNew = a.onNewSubscriptions
-	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+	a.subs.OnNewFetched = a.onNewSubscriptions
+	a.subs.OnNewFetched([]subscription.Fetched{fetchedWork(1, 2, testSubscription())})
 
 	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
 		t.Fatalf("%d tasks queued with auto download off, want 0", len(tasks))
@@ -249,8 +269,8 @@ func TestAutoDownloadWithoutDownloadDir(t *testing.T) {
 	a, _ := newSubsTest(t, stubFetcher{})
 	a.downloadsDir = ""
 	a.settings.AutoDownloadSubscriptions = true
-	a.subs.OnNew = a.onNewSubscriptions
-	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+	a.subs.OnNewFetched = a.onNewSubscriptions
+	a.subs.OnNewFetched([]subscription.Fetched{fetchedWork(1, 2, testSubscription())})
 
 	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
 		t.Fatalf("%d tasks queued without a directory, want 0", len(tasks))
@@ -269,8 +289,11 @@ func TestNewWorksNotification(t *testing.T) {
 	a.settings.AutoDownloadSubscriptions = true
 	var calls []notifyCall
 	a.notifyFn = stubNotify(&calls, nil)
-	a.subs.OnNew = a.onNewSubscriptions
-	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2), newWork(2, 1)})
+	a.subs.OnNewFetched = a.onNewSubscriptions
+	a.subs.OnNewFetched([]subscription.Fetched{
+		fetchedWork(1, 2, testSubscription()),
+		fetchedWork(2, 1, testSubscription()),
+	})
 
 	if len(calls) != 2 {
 		t.Fatalf("%d notifications, want 2: %+v", len(calls), calls)
@@ -293,8 +316,8 @@ func TestNewWorksNotificationOff(t *testing.T) {
 	a.settings.AutoDownloadSubscriptions = true
 	var calls []notifyCall
 	a.notifyFn = stubNotify(&calls, nil)
-	a.subs.OnNew = a.onNewSubscriptions
-	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+	a.subs.OnNewFetched = a.onNewSubscriptions
+	a.subs.OnNewFetched([]subscription.Fetched{fetchedWork(1, 2, testSubscription())})
 
 	if len(calls) != 0 {
 		t.Errorf("notifications with the switch off: %+v", calls)
@@ -316,8 +339,8 @@ func TestNotificationFailureKeepsQueuing(t *testing.T) {
 	a.settings.AutoDownloadSubscriptions = true
 	var calls []notifyCall
 	a.notifyFn = stubNotify(&calls, errors.New("no notification backend"))
-	a.subs.OnNew = a.onNewSubscriptions
-	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+	a.subs.OnNewFetched = a.onNewSubscriptions
+	a.subs.OnNewFetched([]subscription.Fetched{fetchedWork(1, 2, testSubscription())})
 
 	if len(calls) != 2 {
 		t.Errorf("%d notifications attempted, want 2", len(calls))

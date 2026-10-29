@@ -12,15 +12,17 @@ func TestManagerSaveLoadUnfinished(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "downloads.json")
 	m := newManager(1)
 	want := Task{
-		ID:        "1_0",
-		IllustID:  1,
-		Title:     "作品",
-		Artist:    "画师",
-		URL:       "https://example.invalid/1.jpg",
-		Dest:      filepath.Join(t.TempDir(), "1.jpg"),
-		Page:      2,
-		Overwrite: true,
-		Source:    SourceSubscription,
+		ID:         "1_0",
+		IllustID:   1,
+		Title:      "作品",
+		Artist:     "画师",
+		URL:        "https://example.invalid/1.jpg",
+		Dest:       filepath.Join(t.TempDir(), "1.jpg"),
+		Page:       2,
+		Overwrite:  true,
+		Source:     SourceSubscription,
+		SourceID:   42,
+		SourceName: "画师",
 	}
 	if got := m.Add([]Task{want}); got != 1 {
 		t.Fatalf("Add took %d tasks, want 1", got)
@@ -65,6 +67,29 @@ func TestLoadQueueWithoutSourceIsOrdinary(t *testing.T) {
 	}
 	if tasks[0].Source != SourceOrdinary {
 		t.Errorf("source %q for an old task, want the ordinary source", tasks[0].Source)
+	}
+	if tasks[0].SourceID != 0 || tasks[0].SourceName != "" {
+		t.Errorf("old task source %d/%q, want no subscription", tasks[0].SourceID, tasks[0].SourceName)
+	}
+}
+
+// TestLoadSubscriptionWithoutSourceName checks a subscription task saved
+// before names were stored still loads as a subscription with no name, so the
+// page can put it in the unknown group.
+func TestLoadSubscriptionWithoutSourceName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "downloads.json")
+	if err := os.WriteFile(path, []byte(`{"tasks":[{"id":"old","source":"subscription"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("loaded %d tasks, want 1: %+v", len(tasks), tasks)
+	}
+	if tasks[0].Source != SourceSubscription || tasks[0].SourceID != 0 || tasks[0].SourceName != "" {
+		t.Errorf("task source %q/%d/%q, want a nameless subscription", tasks[0].Source, tasks[0].SourceID, tasks[0].SourceName)
 	}
 }
 
