@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -533,5 +537,113 @@ func TestBrowseCardMetrics(t *testing.T) {
 	}
 	if contentPadding != 40 {
 		t.Errorf("content padding %v, want 40", contentPadding)
+	}
+}
+
+// rankingPixiv is a fake app API that records the ranking modes it is asked
+// for and answers with two works.
+type rankingPixiv struct {
+	mu          sync.Mutex
+	modes       []string
+	recommended int
+}
+
+func (p *rankingPixiv) handler() http.Handler {
+	const body = `{"illusts":[` +
+		`{"id":1,"title":"作品 1","user":{"id":9,"name":"作者"},"width":480,"height":720},` +
+		`{"id":2,"title":"作品 2","user":{"id":9,"name":"作者"},"width":480,"height":720}],` +
+		`"next_url":""}`
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		switch r.URL.Path {
+		case "/v1/illust/ranking":
+			p.modes = append(p.modes, r.URL.Query().Get("mode"))
+		case "/v1/illust/recommended":
+			p.recommended++
+		}
+		p.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, body)
+	})
+}
+
+func (p *rankingPixiv) rankingModes() []string {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.modes...)
+}
+
+func (p *rankingPixiv) recommendedCalls() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.recommended
+}
+
+// TestRankModeRequestsModeAndResetsFeed checks the ranking tab starts on the
+// day ranking, asks for the mode chosen, and starts the feed over on a switch
+// while the other home feeds keep their pages.
+func TestRankModeRequestsModeAndResetsFeed(t *testing.T) {
+	fake := &rankingPixiv{}
+	srv := httptest.NewServer(fake.handler())
+	t.Cleanup(srv.Close)
+	target, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse the test server URL: %v", err)
+	}
+
+	a := New()
+	a.client.HTTP().Transport = e2eTransport{target: target}
+	a.client.SetCooldown(0)
+	a.images = imagex.New(nil, "")
+	a.applySession(&pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}})
+	tt := ui.NewTester(a.View, 1000, 700)
+
+	waitBrowse(t, a.homeFeeds[0], "load the recommended feed",
+		func(v browseView) bool { return len(v.items) == 2 })
+	if err := tt.Click("排行"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.homeFeeds[homeTabRanking], "load the day ranking",
+		func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("日榜") {
+		t.Fatalf("the day mode is not shown: %q", tt.Texts())
+	}
+	if got := fake.rankingModes(); len(got) != 1 || got[0] != "day" {
+		t.Fatalf("ranking modes %v, want [day]", got)
+	}
+
+	a.setRankMode(pixiv.Week)
+	if v := a.homeFeeds[homeTabRanking].snapshot(); len(v.items) != 0 {
+		t.Fatalf("the week switch kept the day pages: items=%d", len(v.items))
+	}
+	tt.Frame()
+	waitBrowse(t, a.homeFeeds[homeTabRanking], "load the week ranking",
+		func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("周榜") {
+		t.Fatalf("the week mode is not shown: %q", tt.Texts())
+	}
+	if got := fake.rankingModes(); got[len(got)-1] != "week" {
+		t.Fatalf("ranking modes %v, want the last one week", got)
+	}
+
+	a.setRankMode(pixiv.DayMale)
+	tt.Frame()
+	waitBrowse(t, a.homeFeeds[homeTabRanking], "load the male day ranking",
+		func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("男性向日榜") {
+		t.Fatalf("the male day mode is not shown: %q", tt.Texts())
+	}
+	if got := fake.rankingModes(); got[len(got)-1] != "day_male" {
+		t.Fatalf("ranking modes %v, want the last one day_male", got)
+	}
+
+	if v := a.homeFeeds[0].snapshot(); len(v.items) != 2 {
+		t.Fatalf("the recommended feed lost its pages: items=%d", len(v.items))
+	}
+	if got := fake.recommendedCalls(); got != 1 {
+		t.Fatalf("recommended fetched %d times, want 1", got)
 	}
 }

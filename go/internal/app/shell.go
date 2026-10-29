@@ -323,8 +323,95 @@ func (a *App) homePage(c *ui.Context) {
 		return
 	}
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
+		if a.homeTab == homeTabRanking {
+			ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Children(func() {
+				mode := a.rankModeLabel(a.rankMode)
+				if ui.Select(c, &mode, a.rankModeChoices()).Width(200).Height(36).Label(a.t("ranking.mode")).Changed() {
+					a.setRankMode(a.rankModeValue(mode))
+				}
+			})
+		}
 		a.browsePage(c, a.homeFeeds[a.homeTab])
 	})
+}
+
+// The illustration search's orders and match targets, as the app API names
+// them.
+const (
+	searchSortDateDesc = "date_desc"
+	searchSortDateAsc  = "date_asc"
+	searchSortPopular  = "popular_desc"
+
+	searchTargetPartial      = "partial_match_for_tags"
+	searchTargetExact        = "exact_match_for_tags"
+	searchTargetTitleCaption = "title_and_caption"
+)
+
+// searchSortChoices are the order labels the search page shows.
+func (a *App) searchSortChoices() []string {
+	return []string{
+		a.t("search.sortDateDesc"),
+		a.t("search.sortDateAsc"),
+		a.t("search.sortPopular"),
+	}
+}
+
+// searchSortLabel is the order label the search page shows for a saved sort.
+func (a *App) searchSortLabel(sort string) string {
+	switch sort {
+	case searchSortDateAsc:
+		return a.t("search.sortDateAsc")
+	case searchSortPopular:
+		return a.t("search.sortPopular")
+	default:
+		return a.t("search.sortDateDesc")
+	}
+}
+
+// searchSortValue is the sort a label stands for.
+func (a *App) searchSortValue(label string) string {
+	switch label {
+	case a.t("search.sortDateAsc"):
+		return searchSortDateAsc
+	case a.t("search.sortPopular"):
+		return searchSortPopular
+	default:
+		return searchSortDateDesc
+	}
+}
+
+// searchTargetChoices are the match labels the search page shows.
+func (a *App) searchTargetChoices() []string {
+	return []string{
+		a.t("search.targetPartial"),
+		a.t("search.targetExact"),
+		a.t("search.targetTitleCaption"),
+	}
+}
+
+// searchTargetLabel is the match label the search page shows for a saved
+// target.
+func (a *App) searchTargetLabel(target string) string {
+	switch target {
+	case searchTargetExact:
+		return a.t("search.targetExact")
+	case searchTargetTitleCaption:
+		return a.t("search.targetTitleCaption")
+	default:
+		return a.t("search.targetPartial")
+	}
+}
+
+// searchTargetValue is the match target a label stands for.
+func (a *App) searchTargetValue(label string) string {
+	switch label {
+	case a.t("search.targetExact"):
+		return searchTargetExact
+	case a.t("search.targetTitleCaption"):
+		return searchTargetTitleCaption
+	default:
+		return searchTargetPartial
+	}
 }
 
 // searchPage draws the search box and its results.
@@ -351,6 +438,19 @@ func (a *App) searchPage(c *ui.Context) {
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
 			textTabs(c, t, &a.searchKind, a.t("search.illust"), a.t("search.novel"))
 		})
+		if a.searchKind != searchNovel {
+			ui.Row(c).Gap(t.SpaceS).Padding(0, contentPadding, 0, contentPadding).
+				AlignItems(ui.Center).Children(func() {
+				sort := a.searchSortLabel(a.searchSort)
+				if ui.Select(c, &sort, a.searchSortChoices()).Width(200).Height(36).Label(a.t("search.sort")).Changed() {
+					a.searchSort = a.searchSortValue(sort)
+				}
+				target := a.searchTargetLabel(a.searchTarget)
+				if ui.Select(c, &target, a.searchTargetChoices()).Width(260).Height(36).Label(a.t("search.target")).Changed() {
+					a.searchTarget = a.searchTargetValue(target)
+				}
+			})
+		}
 		if !a.searchArmed() {
 			emptyState(c, iconSearch, a.t("search.hint"), "", nil)
 			return
@@ -379,11 +479,16 @@ func (a *App) startSearch(st *browseState) {
 		return
 	}
 	st.restart()
+	// Read the options on the main thread; the load goroutine must not read
+	// the fields the search page edits.
+	sort, target := a.searchSort, a.searchTarget
 	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
 		if next := st.cursor(); next != "" {
 			return a.client.NextIllustrations(ctx, next)
 		}
-		return a.client.SearchIllustrations(ctx, pixiv.SearchOptions{Word: word})
+		return a.client.SearchIllustrations(ctx, pixiv.SearchOptions{
+			Word: word, Sort: sort, Target: target,
+		})
 	})
 	st.masonry = widgets.MasonryState{}
 	a.startNovelSearch(word)

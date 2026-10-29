@@ -115,8 +115,10 @@ func (a *App) armHome(tab int) {
 }
 
 // homeFetch maps a home tab to its first page. Later pages come from the
-// feed's cursor, which each feed reads under mu.
+// feed's cursor, which each feed reads under mu. The ranking mode is read here,
+// on the main thread, and carried into the load goroutine.
 func (a *App) homeFetch(st *browseState, tab int) func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+	mode := a.rankMode
 	return func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
 		if next := st.cursor(); next != "" {
 			return a.client.NextIllustrations(ctx, next)
@@ -125,11 +127,67 @@ func (a *App) homeFetch(st *browseState, tab int) func(context.Context) (*pixiv.
 		case homeTabFollowing:
 			return a.client.Following(ctx)
 		case homeTabRanking:
-			return a.client.Ranking(ctx, pixiv.Day, "")
+			return a.client.Ranking(ctx, mode, "")
 		default: // tab 0, recommended
 			return a.client.Recommended(ctx)
 		}
 	}
+}
+
+// rankModes are the ranking modes the home tab offers, in the order it shows
+// them.
+var rankModes = []pixiv.RankMode{
+	pixiv.Day, pixiv.Week, pixiv.Month, pixiv.DayMale,
+	pixiv.DayFemale, pixiv.WeekOriginal, pixiv.WeekRookie,
+}
+
+// rankModeChoices are the ranking labels the home tab shows.
+func (a *App) rankModeChoices() []string {
+	labels := make([]string, len(rankModes))
+	for i, mode := range rankModes {
+		labels[i] = a.rankModeLabel(mode)
+	}
+	return labels
+}
+
+// rankModeLabel is the label the home tab shows for a ranking mode.
+func (a *App) rankModeLabel(mode pixiv.RankMode) string {
+	switch mode {
+	case pixiv.Week:
+		return a.t("ranking.week")
+	case pixiv.Month:
+		return a.t("ranking.month")
+	case pixiv.DayMale:
+		return a.t("ranking.dayMale")
+	case pixiv.DayFemale:
+		return a.t("ranking.dayFemale")
+	case pixiv.WeekOriginal:
+		return a.t("ranking.weekOriginal")
+	case pixiv.WeekRookie:
+		return a.t("ranking.weekRookie")
+	default:
+		return a.t("ranking.day")
+	}
+}
+
+// rankModeValue is the ranking mode a label stands for.
+func (a *App) rankModeValue(label string) pixiv.RankMode {
+	for _, mode := range rankModes {
+		if a.rankModeLabel(mode) == label {
+			return mode
+		}
+	}
+	return pixiv.Day
+}
+
+// setRankMode makes mode the ranking feed's mode and starts the feed over, so
+// the pages it shows are the new mode's. The other home feeds keep theirs.
+func (a *App) setRankMode(mode pixiv.RankMode) {
+	a.rankMode = mode
+	st := a.homeFeeds[homeTabRanking]
+	st.restart()
+	st.setFetch(a.homeFetch(st, homeTabRanking))
+	st.masonry = widgets.MasonryState{}
 }
 
 // cursor is the next page's URL, empty for the first.
