@@ -431,7 +431,7 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 	t := themeOf(c)
 	ui.Column(c).FillWidth().Background(t.Surface).Radius(t.RadiusL).
 		Border(1, t.Border).Clip().Children(func() {
-		ui.Text(c, title).FontSize(t.TextSmall).TextColor(t.TextMuted).
+		ui.Text(c, title).FontSize(t.TextSmall).FontWeight(600).TextColor(t.Text).
 			Padding(t.SpaceL, settingsPad, t.SpaceS, settingsPad)
 		first := true
 		row := func(label, hint string, control func()) {
