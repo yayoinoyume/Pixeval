@@ -579,3 +579,112 @@ func TestDownloadLoadedWithoutDir(t *testing.T) {
 		t.Errorf("%d tasks queued without a directory, want 0", len(tasks))
 	}
 }
+
+// TestDownloadUgoiraQueuesZip checks an animation is queued as its original
+// zip, not as the still image the feed carries.
+func TestDownloadUgoiraQueuesZip(t *testing.T) {
+	tr := &ugoiraTransport{frames: 2, zipData: ugoiraZip(t, 2)}
+	a := newViewerApp(tr)
+	a.downloadsDir = t.TempDir()
+	a.settings = Default()
+	w := ugoiraWork()
+
+	queued, ok, err := a.downloadUgoiraWork(w, download.SourceOrdinary)
+	if err != nil || !ok || queued != 1 {
+		t.Fatalf("queued %d ok %v err %v, want 1 true nil", queued, ok, err)
+	}
+	tasks := a.downloads.Snapshot()
+	if len(tasks) != 1 {
+		t.Fatalf("%d tasks queued, want 1", len(tasks))
+	}
+	task := tasks[0]
+	if task.URL != ugoiraZipURL {
+		t.Errorf("url %q, want %q", task.URL, ugoiraZipURL)
+	}
+	if task.Source != download.SourceOrdinary {
+		t.Errorf("source %q, want %q", task.Source, download.SourceOrdinary)
+	}
+	if task.Page != 0 {
+		t.Errorf("page %d, want 0", task.Page)
+	}
+	want := filepath.Join(a.downloadsDir, "[unknown] 77.zip")
+	if task.Dest != want {
+		t.Errorf("dest %q, want %q", task.Dest, want)
+	}
+	// Queuing the animation must not download anything yet.
+	if calls := tr.zipCount(); calls != 0 {
+		t.Errorf("zip fetched %d times while queuing, want 0", calls)
+	}
+}
+
+// TestDownloadUgoiraMetadataFailure checks a failed metadata fetch queues
+// nothing and reports the error.
+func TestDownloadUgoiraMetadataFailure(t *testing.T) {
+	tr := &ugoiraTransport{frames: 2}
+	tr.setMetaFail(true)
+	a := newViewerApp(tr)
+	a.downloadsDir = t.TempDir()
+	a.settings = Default()
+
+	queued, ok, err := a.downloadUgoiraWork(ugoiraWork(), download.SourceOrdinary)
+	if err == nil {
+		t.Fatal("metadata failure reported no error")
+	}
+	if !ok {
+		t.Error("saving reported off")
+	}
+	if queued != 0 {
+		t.Errorf("queued %d tasks on failure, want 0", queued)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Errorf("%d tasks queued on failure, want 0", len(tasks))
+	}
+}
+
+// TestDownloadWorkSkipsUgoira checks the synchronous queue path never asks an
+// animation for its metadata, and queues nothing for it.
+func TestDownloadWorkSkipsUgoira(t *testing.T) {
+	tr := &ugoiraTransport{frames: 2}
+	a := newViewerApp(tr)
+	a.downloadsDir = t.TempDir()
+	a.settings = Default()
+
+	for _, source := range []string{download.SourceOrdinary, download.SourceSubscription} {
+		queued, ok := a.downloadWorkSource(ugoiraWork(), source)
+		if !ok {
+			t.Fatalf("%s: saving reported off", source)
+		}
+		if queued != 0 {
+			t.Errorf("%s: queued %d, want 0", source, queued)
+		}
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Errorf("%d tasks queued, want 0", len(tasks))
+	}
+	if calls := tr.metaCount(); calls != 0 {
+		t.Errorf("metadata fetched %d times, want 0", calls)
+	}
+}
+
+// TestDownloadLoadedSkipsUgoira checks a batch skips animations without a
+// metadata request, says so, and still queues the works beside them.
+func TestDownloadLoadedSkipsUgoira(t *testing.T) {
+	tr := &ugoiraTransport{frames: 2}
+	a := newViewerApp(tr)
+	a.downloadsDir = t.TempDir()
+	a.settings = Default()
+
+	if queued := a.downloadLoaded([]pixiv.Illustration{ugoiraWork()}); queued != 0 {
+		t.Errorf("queued %d, want 0", queued)
+	}
+	if want := a.t("download.ugoiraUnsupported"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+
+	if queued, want := a.downloadLoaded([]pixiv.Illustration{ugoiraWork(), viewerWork()}), pageCount(viewerWork()); queued != want {
+		t.Errorf("queued %d, want %d", queued, want)
+	}
+	if calls := tr.metaCount(); calls != 0 {
+		t.Errorf("metadata fetched %d times, want 0", calls)
+	}
+}

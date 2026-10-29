@@ -165,7 +165,11 @@
     "remove": "移除",
     "allLoaded": "下载已加载（%d）",
     "none": "没有新的页面可加入队列",
-    "allQueued": "已把 %d 页加入下载队列"
+    "allQueued": "已把 %d 页加入下载队列",
+    "ugoiraQueued": "动图已加入下载队列",
+    "ugoiraUnsupported": "动图批量下载暂不支持",
+    "novelSaved": "小说已保存",
+    "novelFailed": "小说保存失败：%s"
   },
   "settings": {
     "theme": "主题",

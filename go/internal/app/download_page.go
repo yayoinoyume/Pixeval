@@ -1,6 +1,8 @@
 package app
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -44,10 +46,14 @@ func (a *App) downloadWork(w pixiv.Illustration) (queued int, ok bool) {
 
 // downloadWorkSource queues w's pages tagged with the source they came from,
 // so the download page can group subscription updates apart from the user's
-// own downloads.
+// own downloads. An animation is skipped: its zip needs a metadata request,
+// which this synchronous path must not make on the calling thread.
 func (a *App) downloadWorkSource(w pixiv.Illustration, source string) (queued int, ok bool) {
 	if a.downloads == nil || a.downloadsDir == "" {
 		return 0, false
+	}
+	if isUgoira(w) {
+		return 0, true
 	}
 	tmpl := downloadTemplate(a.downloadMacro())
 	n := pageCount(w)
@@ -68,6 +74,59 @@ func (a *App) downloadWorkSource(w pixiv.Illustration, source string) (queued in
 	return a.downloads.Add(tasks), true
 }
 
+// downloadUgoiraWork queues the animation's zip as one task, fetching its URL
+// from the metadata first. A failed fetch queues nothing and reports why; ok is
+// false when saving is off.
+func (a *App) downloadUgoiraWork(w pixiv.Illustration, source string) (queued int, ok bool, err error) {
+	if a.downloads == nil || a.downloadsDir == "" {
+		return 0, false, nil
+	}
+	if a.client == nil {
+		return 0, true, errors.New("pixiv client unavailable")
+	}
+	metaCtx, cancel := context.WithTimeout(context.Background(), browseTimeout)
+	defer cancel()
+	meta, err := a.client.UgoiraMetadata(metaCtx, w.ID)
+	if err != nil {
+		return 0, true, err
+	}
+	if meta.ZipURL == "" {
+		return 0, true, errors.New("ugoira metadata has no zip url")
+	}
+	ctx := downloadContext(w, 0, "zip")
+	ctx.IsPicGif, ctx.IsPicSet, ctx.IsPicOne = true, false, true
+	task := download.Task{
+		ID:       fmt.Sprintf("%d_ugoira", w.ID),
+		IllustID: w.ID,
+		Title:    w.Title,
+		Artist:   w.User.Name,
+		URL:      meta.ZipURL,
+		Dest:     downloadDest(a.downloadsDir, downloadTemplate(a.downloadMacro()), ctx),
+		Source:   source,
+	}
+	return a.downloads.Add([]download.Task{task}), true, nil
+}
+
+// queueUgoiraDownload fetches the animation's zip off the main thread and
+// leaves the outcome as the next frame's notice.
+func (a *App) queueUgoiraDownload(w pixiv.Illustration) {
+	go func() {
+		queued, ok, err := a.downloadUgoiraWork(w, download.SourceOrdinary)
+		a.update(func() {
+			switch {
+			case !ok:
+				a.notice = a.t("viewer.noDownloadDir")
+			case err != nil:
+				a.notice = a.tf("common.loadFailed", err.Error())
+			case queued == 0:
+				a.notice = a.t("viewer.alreadyQueued")
+			default:
+				a.notice = a.t("download.ugoiraQueued")
+			}
+		})
+	}()
+}
+
 // downloadLoadedButton draws the button that queues the works a list has
 // already loaded; a list with no works shows none. works is the list the
 // button acts on.
@@ -81,12 +140,17 @@ func (a *App) downloadLoadedButton(c *ui.Context, works []pixiv.Illustration) {
 }
 
 // downloadLoaded queues the loaded works, and leaves a notice saying how many
-// pages the queue took: it skips a page it already holds, so a second click
-// queues nothing. Without a download directory saving is off, and the notice
-// says so instead. The notice is handed to the next frame, so a click that
-// asks for no frame of its own still shows it.
+// pages the queue took: it skips a page it already holds, and an animation,
+// whose zip the viewer queues instead. Without a download directory saving is
+// off, and the notice says so instead. The notice is handed to the next frame,
+// so a click that asks for no frame of its own still shows it.
 func (a *App) downloadLoaded(works []pixiv.Illustration) (queued int) {
+	skipped := 0
 	for _, w := range works {
+		if isUgoira(w) {
+			skipped++
+			continue
+		}
 		n, ok := a.downloadWork(w)
 		if !ok {
 			a.notice = a.t("viewer.noDownloadDir")
@@ -95,9 +159,14 @@ func (a *App) downloadLoaded(works []pixiv.Illustration) (queued int) {
 		}
 		queued += n
 	}
-	if queued == 0 {
+	switch {
+	case queued == 0 && skipped > 0:
+		a.notice = a.t("download.ugoiraUnsupported")
+	case queued == 0:
 		a.notice = a.t("download.none")
-	} else {
+	case skipped > 0:
+		a.notice = a.tf("download.allQueued", queued) + " " + a.t("download.ugoiraUnsupported")
+	default:
 		a.notice = a.tf("download.allQueued", queued)
 	}
 	a.update(func() {})

@@ -1020,14 +1020,18 @@ func (a *App) viewerActions(c *ui.Context, t tokens, v *viewerState, failed bool
 			a.toggleWatchLater(v.work)
 		}
 		if b := a.viewerAction(c, t, iconDownload, a.t("viewer.download"), false); b.Clicked() {
-			queued, ok := a.downloadWork(v.work)
-			switch {
-			case !ok:
-				c.Toast(a.t("viewer.noDownloadDir"))
-			case queued == 0:
-				c.Toast(a.t("viewer.alreadyQueued"))
-			default:
-				c.Toast(a.tf("viewer.queued", queued))
+			if isUgoira(v.work) {
+				a.queueUgoiraDownload(v.work)
+			} else {
+				queued, ok := a.downloadWork(v.work)
+				switch {
+				case !ok:
+					c.Toast(a.t("viewer.noDownloadDir"))
+				case queued == 0:
+					c.Toast(a.t("viewer.alreadyQueued"))
+				default:
+					c.Toast(a.tf("viewer.queued", queued))
+				}
 			}
 		}
 		if b := a.viewerAction(c, t, iconComment, a.t("comments.title"), a.commentsOpen); b.Clicked() {

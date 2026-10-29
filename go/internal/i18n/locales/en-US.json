@@ -165,7 +165,11 @@
     "remove": "Remove",
     "allLoaded": "Download loaded (%d)",
     "none": "Nothing new to queue",
-    "allQueued": "%d pages queued"
+    "allQueued": "%d pages queued",
+    "ugoiraQueued": "Animation queued",
+    "ugoiraUnsupported": "Batch download of animations is not supported yet",
+    "novelSaved": "Novel saved",
+    "novelFailed": "Could not save the novel: %s"
   },
   "settings": {
     "theme": "Theme",

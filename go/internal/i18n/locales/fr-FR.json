@@ -165,7 +165,11 @@
     "remove": "Retirer",
     "allLoaded": "Télécharger les œuvres chargées (%d)",
     "none": "Rien de nouveau à mettre en file",
-    "allQueued": "%d pages ajoutées à la file"
+    "allQueued": "%d pages ajoutées à la file",
+    "ugoiraQueued": "Animation ajoutée à la file",
+    "ugoiraUnsupported": "Le téléchargement par lot des animations n'est pas encore pris en charge",
+    "novelSaved": "Roman enregistré",
+    "novelFailed": "Échec de l'enregistrement du roman : %s"
   },
   "settings": {
     "theme": "Thème",
