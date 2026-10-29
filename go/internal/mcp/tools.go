@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
+	"github.com/yayoinoyume/pixeval-go/internal/filter"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
@@ -21,6 +22,8 @@ const (
 	// defaultListLimit is the default of the newer read tools, which list more
 	// than one page of a feed.
 	defaultListLimit = 20
+	// maxBatch caps the ids a batch read tool loads in one call.
+	maxBatch = 100
 )
 
 // property is one field of a tool's input schema.
@@ -79,6 +82,19 @@ type HistoryWork struct {
 	OpenedAt time.Time
 }
 
+// DownloadTask is one task in the local download queue.
+type DownloadTask struct {
+	ID       string
+	IllustID int64
+	Title    string
+	Artist   string
+	Page     int
+	State    string
+	Bytes    int64
+	Total    int64
+	Err      string
+}
+
 var limitProperty = property{
 	Type:        "integer",
 	Description: "How many works to return, 1 to 50.",
@@ -134,6 +150,11 @@ var seriesKindProperty = property{
 var optionalUserIDProperty = property{
 	Type:        "integer",
 	Description: "The user's Pixiv id; omit for the signed-in account.",
+}
+
+var idsProperty = property{
+	Type:        "array",
+	Description: "Pixiv ids to load; at most 100 are used.",
 }
 
 // toolDefs are the tools this server exposes, in the order a client shows them.
@@ -494,6 +515,46 @@ var toolDefs = []tool{
 				"limit": listLimitProperty,
 			},
 			Required: []string{"id"},
+		},
+	},
+	{
+		Name:        "works",
+		Description: "Read several works by id, illustrations or manga.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"ids":   idsProperty,
+				"limit": listLimitProperty,
+			},
+			Required: []string{"ids"},
+		},
+	},
+	{
+		Name:        "users",
+		Description: "Read several users' profiles by id.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"ids":   idsProperty,
+				"limit": listLimitProperty,
+			},
+			Required: []string{"ids"},
+		},
+	},
+	{
+		Name:        "download_tasks",
+		Description: "List the tasks in the local download queue, with their state and progress.",
+		InputSchema: schema{Type: "object", Properties: map[string]property{}},
+	},
+	{
+		Name:        "analyze_work_filter",
+		Description: "Parse a work filter expression and report whether it is valid.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"text": {Type: "string", Description: "The work filter expression to analyze."},
+			},
+			Required: []string{"text"},
 		},
 	},
 }
@@ -1012,9 +1073,85 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 			return failure(err), nil
 		}
 		return commentsResult(limitItems(comments, clampListLimit(args.Limit))), nil
+	case "works":
+		var args struct {
+			IDs   []int64 `json:"ids"`
+			Limit int     `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		ids := batchIDs(args.IDs)
+		if len(ids) == 0 {
+			return callResult{}, errors.New("ids is required")
+		}
+		works, err := b.Works(ctx, ids)
+		if err != nil {
+			return failure(err), nil
+		}
+		return worksResult(limitItems(works, clampListLimit(args.Limit))), nil
+	case "users":
+		var args struct {
+			IDs   []int64 `json:"ids"`
+			Limit int     `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		ids := batchIDs(args.IDs)
+		if len(ids) == 0 {
+			return callResult{}, errors.New("ids is required")
+		}
+		users, err := b.Users(ctx, ids)
+		if err != nil {
+			return failure(err), nil
+		}
+		return userDetailsResult(limitItems(users, clampListLimit(args.Limit))), nil
+	case "download_tasks":
+		var args struct{}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		tasks, err := b.DownloadTasks(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return downloadTasksResult(tasks), nil
+	case "analyze_work_filter":
+		var args struct {
+			Text string `json:"text"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if strings.TrimSpace(args.Text) == "" {
+			return callResult{}, errors.New("text is required")
+		}
+		if _, err := filter.Parse(args.Text); err != nil {
+			return failure(err), nil
+		}
+		return textResult("work filter is valid"), nil
 	default:
 		return callResult{}, fmt.Errorf("unknown tool: %q", name)
 	}
+}
+
+// batchIDs keeps the positive ids, drops duplicates and caps the list at
+// maxBatch, so one call loads no more than the schema promises.
+func batchIDs(ids []int64) []int64 {
+	out := make([]int64, 0, len(ids))
+	seen := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+		if len(out) == maxBatch {
+			break
+		}
+	}
+	return out
 }
 
 // workKind is the kind an illustration feed asks for: illust when unset.
@@ -1158,6 +1295,14 @@ func tagsResult(tags []pixiv.TrendingTag) callResult {
 
 func historyResult(entries []HistoryWork) callResult {
 	return listResult(entries, "no history recorded", historyText)
+}
+
+func userDetailsResult(users []pixiv.UserDetail) callResult {
+	return listResult(users, "no users found", userDetailText)
+}
+
+func downloadTasksResult(tasks []DownloadTask) callResult {
+	return listResult(tasks, "no download tasks", downloadTaskText)
 }
 
 // capabilitiesText describes the server and the tools it serves.
@@ -1310,6 +1455,25 @@ func historyText(h *HistoryWork) string {
 		fmt.Fprintf(&b, "opened %s\n", h.OpenedAt.Format(time.RFC3339))
 	}
 	fmt.Fprintf(&b, "https://www.pixiv.net/artworks/%d", h.ID)
+	return b.String()
+}
+
+// downloadTaskText is one download task, with its state and progress.
+func downloadTaskText(t *DownloadTask) string {
+	if t == nil {
+		return "no download task found"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s #%d %s — %s\n", t.State, t.IllustID, t.Title, t.Artist)
+	fmt.Fprintf(&b, "page %d", t.Page+1)
+	if t.Total > 0 {
+		fmt.Fprintf(&b, ", %d/%d bytes", t.Bytes, t.Total)
+	}
+	b.WriteString("\n")
+	if t.Err != "" {
+		fmt.Fprintf(&b, "error: %s\n", t.Err)
+	}
+	fmt.Fprintf(&b, "https://www.pixiv.net/artworks/%d", t.IllustID)
 	return b.String()
 }
 
