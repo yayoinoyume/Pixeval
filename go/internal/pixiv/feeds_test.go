@@ -82,7 +82,7 @@ func TestRankingRequestsModeAndDate(t *testing.T) {
 	}
 }
 
-func TestRankingDefaultsToYesterdayInJapan(t *testing.T) {
+func TestRankingDefaultsToLatestListingDate(t *testing.T) {
 	var got recordedRequest
 	c := newWriteClient(t, recordInto(&got, feedBody))
 
@@ -93,18 +93,30 @@ func TestRankingDefaultsToYesterdayInJapan(t *testing.T) {
 	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(date) {
 		t.Fatalf("date = %q, want YYYY-MM-DD", date)
 	}
-	if want := jstDate(time.Now().AddDate(0, 0, -1)); date != want {
-		t.Errorf("date = %q, want yesterday in Japan %q", date, want)
+	if want := defaultRankingDate(time.Now()); date != want {
+		t.Errorf("date = %q, want the default ranking date %q", date, want)
 	}
 }
 
-// TestDefaultRankingDateUsesJSTYesterday pins the date around a JST midnight,
-// where a UTC-based yesterday would pick the wrong day.
-func TestDefaultRankingDateUsesJSTYesterday(t *testing.T) {
-	// 2026-10-29 00:30 JST is still 2026-10-28 in UTC.
-	now := time.Date(2026, 10, 28, 15, 30, 0, 0, time.UTC)
-	if got, want := defaultRankingDate(now), "2026-10-28"; got != want {
-		t.Errorf("defaultRankingDate(%v) = %q, want %q", now, got, want)
+// TestDefaultRankingDateUsesUTCMinusThreeCutoff pins the Mako cutoff: the
+// date is "today" in UTC-3 minus one day, not yesterday in Japan.
+func TestDefaultRankingDateUsesUTCMinusThreeCutoff(t *testing.T) {
+	cases := []struct {
+		name string
+		now  time.Time
+		want string
+	}{
+		// 2026-10-29 00:30 JST, just after the JST midnight.
+		{"JST midnight", time.Date(2026, 10, 28, 15, 30, 0, 0, time.UTC), "2026-10-27"},
+		// 2026-10-29 02:00 JST: still the previous UTC-3 day.
+		{"JST 02:00", time.Date(2026, 10, 28, 17, 0, 0, 0, time.UTC), "2026-10-27"},
+		// 2026-10-29 12:00 JST: the UTC-3 day rolls over at noon JST.
+		{"JST noon", time.Date(2026, 10, 29, 3, 0, 0, 0, time.UTC), "2026-10-28"},
+	}
+	for _, tc := range cases {
+		if got := defaultRankingDate(tc.now); got != tc.want {
+			t.Errorf("defaultRankingDate(%v) [%s] = %q, want %q", tc.now, tc.name, got, tc.want)
+		}
 	}
 }
 
