@@ -10,7 +10,7 @@ import (
 func (c *Client) UserDetail(ctx context.Context, userID int64) (*UserDetail, error) {
 	q := url.Values{}
 	q.Set("user_id", strconv.FormatInt(userID, 10))
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	var r UserDetail
 	if err := c.get(ctx, c.pageURL("/v1/user/detail", q), &r); err != nil {
 		return nil, err
@@ -27,7 +27,7 @@ func (c *Client) UserIllusts(ctx context.Context, userID int64, kind string) (*P
 	q := url.Values{}
 	q.Set("user_id", strconv.FormatInt(userID, 10))
 	q.Set("type", kind)
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.illustPage(ctx, c.pageURL("/v1/user/illusts", q))
 }
 
@@ -44,7 +44,7 @@ func (c *Client) UserFollowing(ctx context.Context, userID int64) (*Page[UserPre
 	q := url.Values{}
 	q.Set("user_id", strconv.FormatInt(userID, 10))
 	q.Set("restrict", "public")
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.userPreviewPage(ctx, c.pageURL("/v1/user/following", q))
 }
 
@@ -52,7 +52,7 @@ func (c *Client) UserFollowing(ctx context.Context, userID int64) (*Page[UserPre
 func (c *Client) UserFollowers(ctx context.Context, userID int64) (*Page[UserPreview], error) {
 	q := url.Values{}
 	q.Set("user_id", strconv.FormatInt(userID, 10))
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.userPreviewPage(ctx, c.pageURL("/v1/user/follower", q))
 }
 
