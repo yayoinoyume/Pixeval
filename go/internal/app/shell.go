@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -773,6 +774,70 @@ func (a *App) searchHistoryChip(c *ui.Context, t tokens, word string) {
 	})
 }
 
+// loadTrendingTags starts the one load of the search page's trending tags,
+// the first time its box draws. The tags are a shortcut, not a result: a
+// failure leaves the row out and says nothing.
+func (a *App) loadTrendingTags() {
+	if a.trendingLoaded || a.trendingFn == nil {
+		return
+	}
+	a.trendingLoaded = true
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
+		defer cancel()
+		tags, err := a.trendingFn(ctx)
+		if err != nil {
+			log.Printf("search: trending tags: %v", err)
+			return
+		}
+		a.searchSideMu.Lock()
+		a.searchTags = tags
+		a.searchSideMu.Unlock()
+		a.update(func() {})
+	}()
+}
+
+// trendingTagsBar draws the tags Pixiv lists as trending under the search box.
+// A chip searches its tag.
+func (a *App) trendingTagsBar(c *ui.Context, t tokens) {
+	a.searchSideMu.Lock()
+	tags := a.searchTags
+	a.searchSideMu.Unlock()
+	if len(tags) == 0 {
+		return
+	}
+	ui.Row(c).Wrap().Gap(t.SpaceS).Padding(t.SpaceXS, contentPadding, 0, contentPadding).
+		AlignItems(ui.Center).Children(func() {
+		ui.Text(c, a.t("search.trending")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+		for _, tag := range tags {
+			b := ui.ButtonBase(c).Radius(t.RadiusS).Padding(t.SpaceXS, t.SpaceS).Label(tag.Tag)
+			if b.Hovered() {
+				b = b.Background(t.SurfaceAlt)
+			}
+			if b.Clicked() {
+				a.search.query = tag.Tag
+				a.startSearch(a.search)
+			}
+			b.Children(func() {
+				ui.Text(c, tag.Tag).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text)
+			})
+		}
+	})
+}
+
+// linkErrorBar draws why the last pasted Pixiv link did not open.
+func (a *App) linkErrorBar(c *ui.Context, t tokens) {
+	a.searchSideMu.Lock()
+	msg := a.searchLinkErr
+	a.searchSideMu.Unlock()
+	if msg == "" {
+		return
+	}
+	ui.Row(c).Padding(t.SpaceXS, contentPadding, 0, contentPadding).Children(func() {
+		ui.Text(c, msg).FontSize(t.TextSmall).TextColor(t.Danger)
+	})
+}
+
 // searchPage draws the search box and its results.
 func (a *App) searchPage(c *ui.Context) {
 	if a.session == nil {
@@ -791,10 +856,15 @@ func (a *App) searchPage(c *ui.Context) {
 					st.focusQuery = false
 					box = box.Focus()
 				}
-				if ui.PrimaryButton(c, a.t("search.action")).Clicked() {
+				submitted := box.Submitted()
+				clicked := ui.PrimaryButton(c, a.t("search.action")).Clicked()
+				if submitted || clicked {
 					a.startSearch(st)
 				}
 			})
+			a.loadTrendingTags()
+			a.linkErrorBar(c, t)
+			a.trendingTagsBar(c, t)
 			a.searchHistoryBar(c, t)
 		}
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
@@ -1021,11 +1091,105 @@ func (a *App) searchArmed() bool {
 	return a.search.isArmed()
 }
 
+// pixivLinkKind is the page a pasted Pixiv link opens.
+type pixivLinkKind int
+
+const (
+	linkWork pixivLinkKind = iota + 1
+	linkNovel
+	linkUser
+)
+
+// pixivLink is the page a pasted Pixiv link names.
+type pixivLink struct {
+	kind pixivLinkKind
+	id   int64
+}
+
+// parsePixivLink reads the work, novel or user a whole Pixiv URL names. Only
+// an explicit URL counts: a typed number stays a search word.
+func parsePixivLink(raw string) (pixivLink, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return pixivLink{}, false
+	}
+	if s := strings.ToLower(u.Scheme); s != "http" && s != "https" {
+		return pixivLink{}, false
+	}
+	if host := strings.TrimPrefix(strings.ToLower(u.Host), "www."); host != "pixiv.net" {
+		return pixivLink{}, false
+	}
+	parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+	if len(parts) < 2 {
+		return pixivLink{}, false
+	}
+	// A link may carry a locale, as pixiv.net/en/artworks/123 does.
+	kind, idText := parts[len(parts)-2], parts[len(parts)-1]
+	id, err := strconv.ParseInt(idText, 10, 64)
+	if err != nil || id <= 0 {
+		return pixivLink{}, false
+	}
+	switch kind {
+	case "artworks", "i":
+		return pixivLink{kind: linkWork, id: id}, true
+	case "n":
+		return pixivLink{kind: linkNovel, id: id}, true
+	case "users":
+		return pixivLink{kind: linkUser, id: id}, true
+	}
+	return pixivLink{}, false
+}
+
+// openPixivLink shows the page a pasted Pixiv link names. A work's viewer
+// needs the work's detail, which loads off the main thread; the other pages
+// load themselves.
+func (a *App) openPixivLink(link pixivLink) {
+	switch link.kind {
+	case linkNovel:
+		a.openNovel(link.id, "")
+	case linkUser:
+		a.openUser(link.id)
+	case linkWork:
+		a.openLinkedWork(link.id)
+	}
+}
+
+// openLinkedWork fetches the work a pasted link names off the main thread and
+// opens it. A failure stays on the search page, under its box.
+func (a *App) openLinkedWork(id int64) {
+	fetch := a.illustrationFn
+	if fetch == nil {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
+		defer cancel()
+		w, err := fetch(ctx, id)
+		a.update(func() {
+			if err != nil {
+				log.Printf("search: open work %d: %v", id, err)
+				a.searchSideMu.Lock()
+				a.searchLinkErr = a.tf("search.openLinkFailed", err.Error())
+				a.searchSideMu.Unlock()
+				return
+			}
+			a.openViewer(w, 0)
+		})
+	}()
+}
+
 // startSearch replaces the results with a search for the box's word. Both
 // tabs get it: the novel list loads when its tab first draws it.
 func (a *App) startSearch(st *browseState) {
 	word := strings.TrimSpace(st.query)
 	if word == "" {
+		return
+	}
+	a.searchSideMu.Lock()
+	a.searchLinkErr = ""
+	a.searchSideMu.Unlock()
+	if link, ok := parsePixivLink(word); ok {
+		a.openPixivLink(link)
 		return
 	}
 	// Read the options on the main thread; the load goroutine must not read

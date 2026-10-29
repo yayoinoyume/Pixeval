@@ -88,7 +88,10 @@
     "sauceSearch": "查找来源",
     "sauceNoKey": "先在设置中填写 SauceNAO API Key",
     "sauceEmpty": "没有找到匹配的来源",
-    "sauceFailed": "查找失败：%s"
+    "sauceFailed": "查找失败：%s",
+    "trending": "趋势标签",
+    "trendingFailed": "趋势标签加载失败：%s",
+    "openLinkFailed": "打开链接失败：%s"
   },
   "spotlight": {
     "empty": "暂无特辑",

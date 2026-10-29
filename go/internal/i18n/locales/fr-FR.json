@@ -88,7 +88,10 @@
     "sauceSearch": "Trouver la source",
     "sauceNoKey": "Ajoutez d’abord une clé API SauceNAO dans les réglages",
     "sauceEmpty": "Aucune source correspondante",
-    "sauceFailed": "Échec de la recherche : %s"
+    "sauceFailed": "Échec de la recherche : %s",
+    "trending": "Tendances",
+    "trendingFailed": "Impossible de charger les tendances : %s",
+    "openLinkFailed": "Impossible d’ouvrir le lien : %s"
   },
   "spotlight": {
     "empty": "Aucun article à la une",

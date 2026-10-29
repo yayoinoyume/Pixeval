@@ -42,6 +42,25 @@ func (c *Client) RelatedIllustrations(ctx context.Context, illustID int64) (*Pag
 	return c.illustPage(ctx, c.pageURL("/v1/illust/related", q))
 }
 
+// TrendingTag is a tag Pixiv lists as trending, with its translation.
+type TrendingTag struct {
+	Tag            string `json:"tag"`
+	TranslatedName string `json:"translated_name"`
+}
+
+// TrendingTags returns the illustration tags Pixiv lists as trending now.
+func (c *Client) TrendingTags(ctx context.Context) ([]TrendingTag, error) {
+	q := url.Values{}
+	c.setFilter(q)
+	var r struct {
+		TrendTags []TrendingTag `json:"trend_tags"`
+	}
+	if err := c.get(ctx, c.pageURL("/v1/trending-tags/illust", q), &r); err != nil {
+		return nil, err
+	}
+	return r.TrendTags, nil
+}
+
 // SearchOptions are the filters of an illustration search.
 type SearchOptions struct {
 	Word      string
