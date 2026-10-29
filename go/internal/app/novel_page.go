@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"strings"
 	"sync"
@@ -43,6 +44,14 @@ type novelViewState struct {
 	// saveTimer writes a typography change after a short pause, so holding a
 	// button writes one file with the value it ends on.
 	saveTimer *time.Timer
+	// restore is the reading place to return to once the body is laid out.
+	// lastFraction is where the page was last saved, so a frame that moved
+	// nothing writes nothing, and restorePainted marks the first layout pass.
+	restore        float64
+	lastFraction   float64
+	restorePainted bool
+	// progressTimer writes the reading place after a pause in the scrolling.
+	progressTimer *time.Timer
 }
 
 // novelPageView is what the novel page draws.
@@ -78,6 +87,10 @@ func (a *App) openNovel(novelID int64, title string) {
 	if novelID <= 0 {
 		return
 	}
+	// A novel opened over another keeps the first one's place at once, without
+	// waiting for its pause to pass.
+	a.flushNovelProgress(a.novelView)
+	place := novelRestoreFraction(a.novelPlace(novelID))
 	v := &novelViewState{
 		novelID:      novelID,
 		title:        title,
@@ -85,9 +98,20 @@ func (a *App) openNovel(novelID int64, title string) {
 		bookmarked:   a.novelBookmarked(novelID),
 		imageURLs:    map[novel.Image]string{},
 		imageLoading: map[novel.Image]bool{},
+		restore:      place,
+		lastFraction: place,
 	}
 	a.backRoute, a.route, a.novelView = a.route, routeNovel, v
 	go a.loadNovel(v)
+}
+
+// novelPlace is how far into the novel the reader was, or 0 when the place is
+// not known.
+func (a *App) novelPlace(novelID int64) float64 {
+	if a.novelProgress == nil {
+		return 0
+	}
+	return a.novelProgress.Get(novelID)
 }
 
 // novelBookmarked reports the bookmark state the novel was listed with. The
@@ -221,6 +245,7 @@ func (a *App) novelPage(c *ui.Context) {
 	}
 	t := themeOf(c)
 	s := v.snapshot()
+	a.trackNovelProgress(v)
 	title := v.title
 	if title == "" && s.doc != nil {
 		title = s.doc.Title
@@ -384,6 +409,93 @@ func (a *App) saveNovelTypography() {
 	a.saveSettings()
 }
 
+// novelProgressDelay is how long after the last scroll the reading place is
+// written, so a scrolling gesture writes one file, not one per frame.
+var novelProgressDelay = 500 * time.Millisecond
+
+// novelProgressEpsilon is how much the place must move before it counts as a
+// new one; smaller moves are jitter from a layout change.
+const novelProgressEpsilon = 0.002
+
+// trackNovelProgress remembers where the reader scrolled to, and writes it
+// after a pause.
+func (a *App) trackNovelProgress(v *novelViewState) {
+	if a.novelProgress == nil || v.restore > 0 || v.scroll.MaxY <= 0 {
+		return
+	}
+	fraction := float64(v.scroll.Y / v.scroll.MaxY)
+	if math.Abs(fraction-v.lastFraction) < novelProgressEpsilon {
+		return
+	}
+	v.lastFraction = fraction
+	a.novelProgress.Set(v.novelID, fraction)
+	a.scheduleNovelProgressSave(v)
+}
+
+// scheduleNovelProgressSave writes the place after a pause, on the main
+// thread. The place itself is already remembered, so a page left before the
+// pause ends still keeps it.
+func (a *App) scheduleNovelProgressSave(v *novelViewState) {
+	if v.progressTimer != nil {
+		v.progressTimer.Stop()
+	}
+	v.progressTimer = time.AfterFunc(novelProgressDelay, func() {
+		a.update(func() { a.saveNovelProgress() })
+	})
+}
+
+// flushNovelProgress saves the page's place at once, for a novel opened over
+// it.
+func (a *App) flushNovelProgress(v *novelViewState) {
+	if v == nil || v.progressTimer == nil {
+		return
+	}
+	v.progressTimer.Stop()
+	v.progressTimer = nil
+	a.saveNovelProgress()
+}
+
+// saveNovelProgress writes the places off the main thread, so the view never
+// blocks on the file.
+func (a *App) saveNovelProgress() {
+	if a.novelProgress == nil {
+		return
+	}
+	path, err := novelProgressPath()
+	if err != nil {
+		log.Printf("novel progress: %v", err)
+		return
+	}
+	p := a.novelProgress
+	go func() {
+		if err := p.Save(path); err != nil {
+			log.Printf("novel progress: %v", err)
+		}
+	}()
+}
+
+// restoreNovelScroll scrolls to the saved place once the body has a range.
+// The first frame lays the body out and asks for another, so the place is
+// applied with the real height; a body shorter than the page has no range and
+// keeps no place.
+func (a *App) restoreNovelScroll(c *ui.Context, v *novelViewState) {
+	if v.restore <= 0 {
+		return
+	}
+	if v.scroll.MaxY <= 0 {
+		if v.restorePainted {
+			v.restore, v.lastFraction = 0, 0
+			return
+		}
+		v.restorePainted = true
+		c.Invalidate()
+		return
+	}
+	v.scroll.Y = float32(v.restore) * v.scroll.MaxY
+	v.lastFraction = v.restore
+	v.restore = 0
+}
+
 // novelBody draws the chapters and paragraphs, with the body images after
 // them.
 func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
@@ -393,6 +505,7 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
 	}
 	t := themeOf(c)
 	st := a.novelStyle()
+	a.restoreNovelScroll(c, v)
 	ui.Scroll(c).Grow(1).TrackScroll(&v.scroll).Children(func() {
 		ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
 			ui.Column(c).MaxWidth(st.width).Grow(1).Padding(t.Space2XL).Gap(t.SpaceL).Children(func() {
