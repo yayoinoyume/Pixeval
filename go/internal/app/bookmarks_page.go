@@ -154,10 +154,15 @@ func (a *App) unbookmark(st *browseState, id int64) {
 		defer cancel()
 		err := a.bookmarkFn(ctx, id, false)
 		a.update(func() {
-			if err != nil {
-				a.restartBookmarks()
-				a.notice = a.tf("bookmarks.unbookmarkFailed", err.Error())
+			// A logout dropped this feed; there is nothing to load back.
+			if err == nil || a.bookmarks != st {
+				return
 			}
+			a.restartBookmarks()
+			// Load at once: a frame may not draw this page again, and the
+			// list would stay empty.
+			a.loadMore(a.bookmarks)
+			a.notice = a.tf("bookmarks.unbookmarkFailed", err.Error())
 		})
 	}()
 }

@@ -193,8 +193,6 @@ func TestBookmarksUnbookmarkFailureReloads(t *testing.T) {
 		t.Fatalf("ChooseMenuItem: %v", err)
 	}
 	close(release)
-	waitBrowse(t, a.bookmarks, "drop the loaded works", func(v browseView) bool { return len(v.items) == 0 })
-	tt.Frame()
 	waitBrowse(t, a.bookmarks, "reload the tab", func(v browseView) bool { return len(v.items) == 2 })
 	mu.Lock()
 	n := fetches
