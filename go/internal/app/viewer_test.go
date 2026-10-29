@@ -1286,3 +1286,127 @@ func TestViewerSaveImageFailed(t *testing.T) {
 		t.Errorf("a failed save left %d files (err %v), want none", len(entries), err)
 	}
 }
+
+// TestParseBookmarkTags checks the menu's comma-separated input becomes tags,
+// with blanks dropped and Pixiv's ten-tag limit kept.
+func TestParseBookmarkTags(t *testing.T) {
+	cases := []struct {
+		in   string
+		want []string
+	}{
+		{"", nil},
+		{"  ", nil},
+		{"猫", []string{"猫"}},
+		{" 猫 , 風景 ,, ", []string{"猫", "風景"}},
+		{"1,2,3,4,5,6,7,8,9,10,11", []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}},
+	}
+	for _, tc := range cases {
+		if got, want := strings.Join(parseBookmarkTags(tc.in), "|"), strings.Join(tc.want, "|"); got != want {
+			t.Errorf("parseBookmarkTags(%q) = %q, want %q", tc.in, got, want)
+		}
+	}
+}
+
+// TestViewerBookmarkMenuSubmitsPrivateWithTags checks the viewer's menu sends
+// the chosen visibility and typed tags, then flips the work's state.
+func TestViewerBookmarkMenuSubmitsPrivateWithTags(t *testing.T) {
+	type bookmarkCall struct {
+		id      int64
+		private bool
+		tags    []string
+	}
+	a := newViewerApp(newImageTransport(nil))
+	calls := make(chan bookmarkCall, 1)
+	a.bookmarkWithTagsFn = func(_ context.Context, id int64, private bool, tags []string) error {
+		calls <- bookmarkCall{id, private, tags}
+		return nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	tt := ui.NewTester(a.View, 1280, 820)
+	tt.Frame()
+
+	if err := tt.Click(a.t("viewer.bookmark")); err != nil {
+		t.Fatalf("open the bookmark menu: %v", err)
+	}
+	tt.Frame()
+	if err := tt.Click(a.t("bookmark.private")); err != nil {
+		t.Fatalf("choose private: %v", err)
+	}
+	tt.Frame()
+	if err := tt.Click(a.t("bookmark.tags")); err != nil {
+		t.Fatalf("focus the tags input: %v", err)
+	}
+	tt.Frame()
+	tt.Type("猫, 風景")
+	tt.Frame()
+	if err := tt.Click(a.t("bookmark.save")); err != nil {
+		t.Fatalf("save the bookmark: %v", err)
+	}
+
+	var got bookmarkCall
+	select {
+	case got = <-calls:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the bookmark menu did not submit")
+	}
+	if got.id != w.ID || !got.private || strings.Join(got.tags, "|") != "猫|風景" {
+		t.Errorf("submitted %+v, want work %d, private, tags 猫|風景", got, w.ID)
+	}
+	waitViewerBookmark(t, a.viewer, "land", func(bookmarked, bookmarking bool) bool {
+		return bookmarked && !bookmarking
+	})
+	if a.viewer.bookmarkOpen {
+		t.Error("the menu stayed open after the bookmark landed")
+	}
+}
+
+// TestViewerBookmarkFailureDoesNotFlip checks a failed menu submit leaves the
+// work unbookmarked, closes the menu, and says why.
+func TestViewerBookmarkFailureDoesNotFlip(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.bookmarkWithTagsFn = func(context.Context, int64, bool, []string) error {
+		return errors.New("拒绝")
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	v := a.viewer
+	v.bookmarkOpen = true
+	a.submitBookmark(v, false, nil)
+	if v.bookmarkOpen {
+		t.Error("the menu stayed open after submit")
+	}
+	waitViewerBookmark(t, v, "fail", func(bookmarked, bookmarking bool) bool {
+		return !bookmarked && !bookmarking
+	})
+	if want := a.tf("bookmark.saveFailed", "拒绝"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
+// TestViewerBookmarkRemoveKeepsExistingPath checks removing a bookmark still
+// goes through the old toggle and clears the work's state.
+func TestViewerBookmarkRemoveKeepsExistingPath(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	got := make(chan bool, 1)
+	a.bookmarkFn = func(_ context.Context, _ int64, on bool) error {
+		got <- on
+		return nil
+	}
+	w := viewerWork()
+	w.IsBookmarked = true
+	a.openViewer(&w, 0)
+	v := a.viewer
+	a.toggleBookmark(v)
+	select {
+	case on := <-got:
+		if on {
+			t.Error("toggleBookmark sent an add, want a remove")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("toggleBookmark did not send a request")
+	}
+	waitViewerBookmark(t, v, "remove", func(bookmarked, bookmarking bool) bool {
+		return !bookmarked && !bookmarking
+	})
+}

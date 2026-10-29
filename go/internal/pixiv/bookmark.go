@@ -6,11 +6,23 @@ import (
 	"strconv"
 )
 
-// AddBookmark bookmarks a work. A private bookmark is visible only to the user.
+// AddBookmark bookmarks a work without tags. A private bookmark is visible
+// only to the user.
 func (c *Client) AddBookmark(ctx context.Context, illustID int64, private bool) error {
+	return c.AddBookmarkWithTags(ctx, illustID, private, nil)
+}
+
+// AddBookmarkWithTags bookmarks a work with the given visibility and tags.
+// An empty tag is dropped.
+func (c *Client) AddBookmarkWithTags(ctx context.Context, illustID int64, private bool, tags []string) error {
 	form := url.Values{}
 	form.Set("illust_id", strconv.FormatInt(illustID, 10))
 	form.Set("restrict", restrictParam(private))
+	for _, tag := range tags {
+		if tag != "" {
+			form.Add("tags[]", tag)
+		}
+	}
 	return c.post(ctx, "/v2/illust/bookmark/add", form, nil)
 }
 

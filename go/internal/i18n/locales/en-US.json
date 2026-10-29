@@ -305,6 +305,14 @@
     "unbookmark": "Remove bookmark",
     "unbookmarkFailed": "Could not remove the bookmark: %s"
   },
+  "bookmark": {
+    "public": "Public",
+    "private": "Private",
+    "tags": "Tags",
+    "tagsHint": "Comma-separated, up to 10",
+    "save": "Save",
+    "saveFailed": "Could not save the bookmark: %s"
+  },
   "login": {
     "title": "Sign in to Pixiv",
     "prompt": "Sign in to Pixiv to start browsing",

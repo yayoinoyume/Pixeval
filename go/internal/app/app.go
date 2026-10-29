@@ -180,6 +180,10 @@ type App struct {
 	// bookmarkFn sets or clears a work's bookmark off the main thread; tests
 	// replace it to avoid the network.
 	bookmarkFn func(ctx context.Context, id int64, on bool) error
+	// bookmarkWithTagsFn adds a work's bookmark with its visibility and tags
+	// off the main thread. Start wires it when the window runs; tests replace
+	// it to avoid the network.
+	bookmarkWithTagsFn func(ctx context.Context, id int64, private bool, tags []string) error
 	// bookmarksTab is the bookmarks page's tab, public or private, and
 	// bookmarks is its feed. Switching tabs restarts the feed, so works of
 	// the other tab never show in it.
@@ -538,6 +542,9 @@ func (a *App) Start() {
 	// The search page's trending tags are a shortcut, not a result: they load
 	// once its box first draws. Wired here so a headless draw asks for nothing.
 	a.trendingFn = a.client.TrendingTags
+	a.bookmarkWithTagsFn = func(ctx context.Context, id int64, private bool, tags []string) error {
+		return a.client.AddBookmarkWithTags(ctx, id, private, tags)
+	}
 	// The shell draws native UI and needs no webview; the login window does,
 	// so ask once before it can open.
 	a.webviewOK = mygo.WebViewAvailable()
