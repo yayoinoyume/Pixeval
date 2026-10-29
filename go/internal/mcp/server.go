@@ -63,6 +63,11 @@ type Backend interface {
 	SeriesWatchlist(ctx context.Context, kind string) ([]pixiv.SeriesSummary, error)
 	TrendingTags(ctx context.Context) ([]pixiv.TrendingTag, error)
 	SettingsSummary(ctx context.Context) (string, error)
+	DownloadMacro(ctx context.Context) (string, error)
+	History(ctx context.Context) ([]HistoryWork, error)
+	NovelContent(ctx context.Context, id int64) (string, error)
+	RecommendedUsers(ctx context.Context) ([]pixiv.UserPreview, error)
+	Comments(ctx context.Context, illustID int64) ([]pixiv.Comment, error)
 }
 
 // Server answers MCP requests for one Backend. It keeps no session state, so a
