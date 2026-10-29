@@ -30,7 +30,9 @@ func (f *fakeUpdater) Check(context.Context) (*mygo.Update, error) {
 
 func (f *fakeUpdater) Install(context.Context, *mygo.Update) error { return nil }
 
-// newUpdatesApp is a settings page whose update check is f's.
+// newUpdatesApp is a settings page whose update check is f's. The tester is as
+// tall as the app's baseline window, since the settings page scrolls past a
+// shorter one and its update row would be out of reach.
 func newUpdatesApp(t *testing.T, f *fakeUpdater) (*App, *ui.Tester) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -38,7 +40,7 @@ func newUpdatesApp(t *testing.T, f *fakeUpdater) (*App, *ui.Tester) {
 	a.updater = f
 	a.updateSt.off = !f.enabled
 	a.route = routeSettings
-	return a, ui.NewTester(a.View, 1000, 700)
+	return a, ui.NewTester(a.View, 1000, 820)
 }
 
 // waitUpdate waits for the check to land as want says.
