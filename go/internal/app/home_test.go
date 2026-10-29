@@ -65,8 +65,8 @@ func TestHomeDefaultCards(t *testing.T) {
 	if mode := a.homeCards[2].RankMode; mode != pixiv.Day {
 		t.Errorf("ranking card mode %q, want %q", mode, pixiv.Day)
 	}
-	if got := a.homeCardTitle(a.homeCards[2]); got != "排行榜 · 日榜" {
-		t.Errorf("ranking title %q, want 排行榜 · 日榜", got)
+	if got := a.homeCardTitle(a.homeCards[2]); got != "排行榜（日榜）" {
+		t.Errorf("ranking title %q, want 排行榜（日榜）", got)
 	}
 }
 
@@ -105,7 +105,7 @@ func TestHomeCardsLoadOnePage(t *testing.T) {
 			t.Errorf("card %d fetched %d times, want 1", i, n)
 		}
 	}
-	if !tt.HasText("排行榜 · 日榜") {
+	if !tt.HasText("排行榜（日榜）") {
 		t.Fatalf("the ranking card title is missing: %q", tt.Texts())
 	}
 }
@@ -121,7 +121,7 @@ func TestHomeViewAllOpensFullFeed(t *testing.T) {
 	tt.Frame()
 
 	card := a.homeCards[0]
-	label := a.t("home.viewAll") + " · " + a.homeCardTitle(card)
+	label := homeViewAllLabel(a, card)
 	if err := tt.Click(label); err != nil {
 		t.Fatalf("click %q: %v", label, err)
 	}
@@ -148,6 +148,32 @@ func TestHomeViewAllOpensFullFeed(t *testing.T) {
 	}
 	if a.feed != nil {
 		t.Error("the full feed survived going back home")
+	}
+}
+
+// TestHomeRankingFeedKeepsPeriod checks the full feed a ranking card opens
+// names the period in its header, as the card's title does.
+func TestHomeRankingFeedKeepsPeriod(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, 1024, 720)
+	tt.Frame()
+	// The ranking card is the third, below the fold until the page scrolls.
+	tt.Scroll(512, 400, 0, 600)
+	tt.Frame()
+	card := a.homeCards[2]
+	if err := tt.Click(homeViewAllLabel(a, card)); err != nil {
+		t.Fatalf("click View all: %v", err)
+	}
+	if a.route != routeFeed {
+		t.Fatalf("route %q after View all, want %q", a.route, routeFeed)
+	}
+	tt.Frame()
+	want := a.tf("home.rankingTitle", a.t("home.source.ranking"), a.t("ranking.day"))
+	if !tt.HasText(want) {
+		t.Errorf("the feed header does not name %q: %q", want, tt.Texts())
 	}
 }
 
@@ -333,7 +359,7 @@ func TestHomeFitsNarrowWindow(t *testing.T) {
 	for _, label := range []string{
 		a.homeCardTitle(a.homeCards[0]),
 		a.homeCardTitle(a.homeCards[1]),
-		a.t("home.viewAll") + " · " + a.homeCardTitle(a.homeCards[0]),
+		homeViewAllLabel(a, a.homeCards[0]),
 	} {
 		r, ok := tt.Find(label)
 		if !ok || r.W == 0 {
@@ -371,7 +397,7 @@ func TestHomeFitsNarrowWindow(t *testing.T) {
 	tt.Frame()
 	for _, label := range []string{
 		a.homeCardTitle(a.homeCards[2]),
-		a.t("home.viewAll") + " · " + a.homeCardTitle(a.homeCards[2]),
+		homeViewAllLabel(a, a.homeCards[2]),
 	} {
 		r, ok := tt.Find(label)
 		if !ok || r.W == 0 {
@@ -404,6 +430,12 @@ func requireHomeSources(t *testing.T, a *App, want ...homeCardSource) {
 			t.Fatalf("cards %q, want %q", got, want)
 		}
 	}
+}
+
+// homeViewAllLabel is the label a card's View all carries: the action and the
+// card it opens.
+func homeViewAllLabel(a *App, card homeCard) string {
+	return a.tf("home.actionFor", a.t("home.viewAll"), a.homeCardTitle(card))
 }
 
 // openHomeEditor shows the home page and turns card editing on.
@@ -549,16 +581,12 @@ func TestHomeEditRemovesCardsAndKeepsOne(t *testing.T) {
 	}
 }
 
-// pressAddCard opens the add-card menu from the end of the edit page.
+// pressAddCard opens the add-card menu from the top of the edit page.
 func pressAddCard(t *testing.T, a *App, tt *ui.Tester) {
 	t.Helper()
-	tt.Scroll(512, 400, 0, 4000)
-	tt.Frame()
-	r, ok := tt.Find(a.t("home.addCard"))
-	if !ok {
-		t.Fatalf("the add-card menu is missing: %q", tt.Texts())
+	if err := tt.Click(a.t("home.addCard")); err != nil {
+		t.Fatalf("click %q: %v", a.t("home.addCard"), err)
 	}
-	tt.Press(r.X+r.W/2, r.Y+r.H/2)
 }
 
 // TestHomeEditAddsCardAndResets checks the add-card menu offers the six
@@ -598,8 +626,6 @@ func TestHomeEditAddsCardAndResets(t *testing.T) {
 		t.Fatalf("saved cards %q after the addition", got)
 	}
 
-	tt.Scroll(512, 400, 0, 4000)
-	tt.Frame()
 	if err := tt.Click(a.t("home.resetCards")); err != nil {
 		t.Fatalf("click Reset: %v", err)
 	}
@@ -643,8 +669,8 @@ func TestHomeEditAddsRankingCardOnDay(t *testing.T) {
 	}
 }
 
-// TestHomeEditControlsFitNarrowWindow checks the edit controls stay inside
-// the 1024x720 window, both on the cards and at the page's end.
+// TestHomeEditControlsFitNarrowWindow checks the edit bar and the cards'
+// controls stay inside the 1024x720 window.
 func TestHomeEditControlsFitNarrowWindow(t *testing.T) {
 	const width = 1024
 	a := newHomeApp(t)
@@ -663,21 +689,132 @@ func TestHomeEditControlsFitNarrowWindow(t *testing.T) {
 			t.Errorf("%q at %v overflows the %d wide window", label, r, width)
 		}
 	}
+	for _, label := range []string{a.t("home.addCard"), a.t("home.resetCards")} {
+		check(label)
+	}
 	for i := 0; i < 2; i++ {
 		for _, key := range []string{"home.moveUp", "home.moveDown", "home.removeCard"} {
 			check(a.homeCardActionLabel(key, a.homeCards[i]))
 		}
 	}
-	// The third card is below the fold until the page scrolls; the edit row
+	// The third card is below the fold until the page scrolls; its controls
 	// must fit just the same once it is in reach.
 	tt.Scroll(width/2, 400, 0, 400)
 	tt.Frame()
 	for _, key := range []string{"home.moveUp", "home.moveDown", "home.removeCard"} {
 		check(a.homeCardActionLabel(key, a.homeCards[2]))
 	}
-	tt.Scroll(width/2, 400, 0, 400)
+	check(a.tf("home.actionFor", a.t("ranking.mode"), a.homeCardTitle(a.homeCards[2])))
+}
+
+// TestHomeEditSaysItSavesAsItGoes checks the edit page opens with the bar that
+// names the state and the way the edits are kept.
+func TestHomeEditSaysItSavesAsItGoes(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, 1024, 720)
 	tt.Frame()
-	for _, label := range []string{a.t("home.addCard"), a.t("home.resetCards")} {
-		check(label)
+	if tt.HasText(a.t("home.editing")) {
+		t.Fatalf("the page says it is editing before it is: %q", tt.Texts())
+	}
+	openHomeEditor(t, a, tt)
+	for _, label := range []string{a.t("home.editing"), a.t("home.editingHint")} {
+		if !tt.HasText(label) {
+			t.Fatalf("%q is missing from the edit page: %q", label, tt.Texts())
+		}
+	}
+	if !tt.HasText(a.t("home.editDone")) {
+		t.Fatalf("the header has no way out of editing: %q", tt.Texts())
+	}
+}
+
+// TestHomeEditChangesRankingPeriod checks the ranking card's edit menu offers
+// the seven periods, changes the card's feed and saves the new period.
+func TestHomeEditChangesRankingPeriod(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, 1024, 720)
+	openHomeEditor(t, a, tt)
+	path, err := homeLayoutPath()
+	if err != nil {
+		t.Fatalf("homeLayoutPath: %v", err)
+	}
+	card := a.homeCards[2]
+	if card.Source != homeSourceRanking {
+		t.Fatalf("the third card is %q, not the ranking", card.Source)
+	}
+	// The ranking card is the third, below the fold until the page scrolls.
+	tt.Scroll(512, 400, 0, 600)
+	tt.Frame()
+	if err := tt.Click(a.rankModeLabel(pixiv.Day)); err != nil {
+		t.Fatalf("click the ranking period: %v", err)
+	}
+	menu := tt.Menu()
+	for _, mode := range homeRankModes {
+		if label := a.rankModeLabel(mode); !slices.Contains(menu, label) {
+			t.Fatalf("the period menu has no %q: %q", label, menu)
+		}
+	}
+	if err := tt.ChooseMenuItem(a.rankModeLabel(pixiv.Week)); err != nil {
+		t.Fatalf("choose Weekly: %v", err)
+	}
+	tt.Frame()
+	if mode := a.homeCards[2].RankMode; mode != pixiv.Week {
+		t.Fatalf("ranking card mode %q, want %q", mode, pixiv.Week)
+	}
+	if v := a.homeCards[2].feed.snapshot(); v.started || len(v.items) != 0 {
+		t.Errorf("the card kept the day ranking's works: items=%d started=%v", len(v.items), v.started)
+	}
+	loaded, err := loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if len(loaded) != 3 || loaded[2].RankMode != pixiv.Week {
+		t.Fatalf("saved ranking card %+v", loaded)
+	}
+	if want := a.tf("home.rankingTitle", a.t("home.source.ranking"), a.t("ranking.week")); !tt.HasText(want) {
+		t.Fatalf("the card does not show %q: %q", want, tt.Texts())
+	}
+}
+
+// TestHomeSectionTitlesFitNarrowWindow checks the three default sections show
+// their titles inside 1024x720, with no cover past the window's edge.
+func TestHomeSectionTitlesFitNarrowWindow(t *testing.T) {
+	const width, height = 1024, 720
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 6))
+	}
+	tt := ui.NewTester(a.View, width, height)
+	for i := range a.homeCards {
+		waitBrowse(t, a.homeCards[i].feed, "load the card", func(v browseView) bool { return len(v.items) == 6 })
+	}
+	tt.Frame()
+	for i := range a.homeCards {
+		label := a.homeCardTitle(a.homeCards[i])
+		r, ok := tt.Find(label)
+		if !ok || r.W == 0 {
+			t.Fatalf("%q is not laid out: %q", label, tt.Texts())
+		}
+		if r.X < 0 || r.X+r.W > width {
+			t.Errorf("%q at %v overflows the %d wide window", label, r, width)
+		}
+		if r.Y < 0 || r.Y+r.H > height {
+			t.Errorf("%q at %v is below the %d high window", label, r, height)
+		}
+	}
+	for i := 0; i < 6; i++ {
+		label := a.tf("a11y.card", fakeWorks(i, 1)[0].Title, "作者")
+		r, ok := tt.Find(label)
+		if !ok || r.W == 0 {
+			continue // the row shows only the covers that fit
+		}
+		if r.X < 0 || r.X+r.W > width {
+			t.Errorf("cover %q at %v overflows the %d wide window", label, r, width)
+		}
 	}
 }

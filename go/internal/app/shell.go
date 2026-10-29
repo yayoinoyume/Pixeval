@@ -57,7 +57,7 @@ func (a *App) routeLabel(r route) string {
 	switch r {
 	case routeFeed:
 		if a.feed != nil {
-			return a.homeSourceLabel(a.feed.card.Source)
+			return a.homeCardTitle(a.feed.card)
 		}
 		return a.t("nav.home")
 	case routeRelated:
