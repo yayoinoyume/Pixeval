@@ -7,8 +7,8 @@ import (
 )
 
 const seriesWatchlistBody = `{"series":[{"id":42,"title":"系列四十二",` +
-	`"url":"https://www.pixiv.net/user/9/series/42",` +
-	`"user":{"id":9,"name":"someone"},"cover_url":"https://i/cover.jpg",` +
+	`"url":"https://i.pximg.net/series.jpg",` +
+	`"user":{"id":9,"name":"someone"},` +
 	`"published_content_count":7,` +
 	`"last_published_content_datetime":"2026-10-01T00:00:00Z"}],` +
 	`"next_url":"https://app-api.pixiv.net/v1/watchlist/manga?offset=30"}`
@@ -48,7 +48,7 @@ func TestSeriesWatchlistRequestsEndpoint(t *testing.T) {
 			}
 			s := page.Items[0]
 			if s.ID != 42 || s.Title != "系列四十二" || s.User.Name != "someone" ||
-				s.CoverURL != "https://i/cover.jpg" || s.PublishedContentCount != 7 ||
+				s.CoverURL != "https://i.pximg.net/series.jpg" || s.PublishedContentCount != 7 ||
 				s.LastPublishedContent.IsZero() {
 				t.Errorf("series = %+v", s)
 			}

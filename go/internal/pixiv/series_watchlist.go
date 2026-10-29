@@ -18,8 +18,7 @@ const (
 type SeriesSummary struct {
 	ID                    int64     `json:"id"`
 	Title                 string    `json:"title"`
-	URL                   string    `json:"url"`
-	CoverURL              string    `json:"cover_url"`
+	CoverURL              string    `json:"url"`
 	User                  User      `json:"user"`
 	PublishedContentCount int       `json:"published_content_count"`
 	LastPublishedContent  time.Time `json:"last_published_content_datetime"`
