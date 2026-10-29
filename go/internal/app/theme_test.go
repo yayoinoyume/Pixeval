@@ -198,7 +198,6 @@ func TestDesignScale(t *testing.T) {
 		{"panel", tok.RadiusM, 8},
 		{"large panel", tok.RadiusL, 8},
 		{"extra large", tok.RadiusXL, 8},
-		{"extra extra large", tok.Radius2XL, 8},
 		{"avatar", tok.RadiusFull, 999},
 	}
 	for _, r := range radii {

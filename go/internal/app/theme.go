@@ -91,7 +91,6 @@ type tokens struct {
 	RadiusM    float32
 	RadiusL    float32
 	RadiusXL   float32
-	Radius2XL  float32
 	RadiusFull float32
 
 	TextMicro   float32
@@ -115,7 +114,7 @@ func designTokens(dark bool) tokens {
 		// (4), eight for a panel that truly needs an edge. RadiusM is that same
 		// eight, kept for the panels written against the older scale. Nothing
 		// else is rounded; avatars alone are circles.
-		RadiusXS: 2, RadiusS: 4, RadiusM: 8, RadiusL: 8, RadiusXL: 8, Radius2XL: 8, RadiusFull: 999,
+		RadiusXS: 2, RadiusS: 4, RadiusM: 8, RadiusL: 8, RadiusXL: 8, RadiusFull: 999,
 		TextMicro: 10, TextDetail: 36, TextDisplay: 30, TextTitle: 22, TextBody: 15, TextSmall: 13, TextTiny: 11,
 	}
 	if dark {

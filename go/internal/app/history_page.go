@@ -93,7 +93,7 @@ func (a *App) historyCard(c *ui.Context, e HistoryEntry, width float32) {
 	})
 	card.Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, e.Title).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text).MaxLines(1)
+			ui.Text(c, e.Title).FontSize(t.TextBody).FontWeight(600).TextColor(t.Text).MaxLines(1)
 			ui.Text(c, e.Artist).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 		})
 	})

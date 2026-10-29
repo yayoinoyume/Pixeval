@@ -9,8 +9,9 @@ import (
 // captionTag matches one of the tags Pixiv's captions carry, with its
 // attributes. Anything else between angle brackets is the author's own text:
 // "<B より C>" in a caption is a sentence, not a tag, and dropping it would
-// delete words the work's author wrote.
-var captionTag = regexp.MustCompile(`(?is)^</?(?:a|b|br|div|em|i|img|p|span|strong)(?:\s+[a-z-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*\s*/?>`)
+// delete words the work's author wrote. The longer names come first, so a
+// shorter one that starts the same way cannot shadow them.
+var captionTag = regexp.MustCompile(`(?is)^</?(?:blockquote|center|iframe|strong|span|del|div|ins|img|br|em|a|b|i|p|u)(?:\s+[a-z-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?)*\s*/?>`)
 
 // plainCaption turns the HTML fragment Pixiv calls a caption into the plain
 // text the rail shows. Pixiv allows <br>, <p>, links and entities; the
