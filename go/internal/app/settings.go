@@ -22,6 +22,13 @@ const (
 	themeDark   = "dark"
 )
 
+// The subscription check interval the settings page offers, in minutes.
+const (
+	subscriptionIntervalDefault = 15
+	subscriptionIntervalMin     = 5
+	subscriptionIntervalMax     = 1440
+)
+
 // Settings are the user's preferences, kept in settings.json under the user's
 // config directory.
 type Settings struct {
@@ -31,6 +38,10 @@ type Settings struct {
 	DownloadConcurrency int     `json:"downloadConcurrency"`
 	ShowR18             bool    `json:"showR18"`
 	CardWidth           float64 `json:"cardWidth"`
+	// AutoDownloadSubscriptions queues the works a background check finds.
+	AutoDownloadSubscriptions bool `json:"autoDownloadSubscriptions"`
+	// SubscriptionIntervalMinutes is how often the check runs.
+	SubscriptionIntervalMinutes int `json:"subscriptionIntervalMinutes"`
 }
 
 // Default is the settings of a first run.
@@ -46,6 +57,9 @@ func Default() *Settings {
 		DownloadConcurrency: downloadConcurrency,
 		ShowR18:             false,
 		CardWidth:           cardWidth,
+
+		AutoDownloadSubscriptions:   false,
+		SubscriptionIntervalMinutes: subscriptionIntervalDefault,
 	}
 }
 
@@ -156,6 +170,10 @@ func (s *Settings) normalize() {
 	}
 	if s.CardWidth < 180 || s.CardWidth > 360 {
 		s.CardWidth = cardWidth
+	}
+	if s.SubscriptionIntervalMinutes < subscriptionIntervalMin ||
+		s.SubscriptionIntervalMinutes > subscriptionIntervalMax {
+		s.SubscriptionIntervalMinutes = subscriptionIntervalDefault
 	}
 }
 

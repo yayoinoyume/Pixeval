@@ -141,6 +141,7 @@
     "updateInstallFailed": "Cannot install the update: %s",
     "groupAppearance": "Appearance",
     "groupDownloads": "Downloads",
+    "groupSubscriptions": "Subscriptions",
     "groupShortcuts": "Shortcuts",
     "decrease": "Decrease",
     "increase": "Increase",
@@ -195,7 +196,13 @@
     "queued": "Queued %d pages for download",
     "add": "Subscribe",
     "added": "Subscribed",
-    "addFailed": "The subscription list is full"
+    "addFailed": "The subscription list is full",
+    "autoDownload": "Download new works automatically",
+    "autoDownloadHint": "Queue new works as soon as a background check finds them",
+    "interval": "Check interval (minutes)",
+    "intervalHint": "5 to 1440 minutes, 15 by default",
+    "autoQueued": "Queued %d pages automatically",
+    "autoNoDir": "No download directory, so new works were not queued"
   },
   "novel": {
     "loadFailed": "Cannot load the novel: %s",

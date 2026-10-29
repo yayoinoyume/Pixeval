@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -24,6 +25,9 @@ func TestSettingsRoundTrip(t *testing.T) {
 		DownloadConcurrency: 5,
 		ShowR18:             true,
 		CardWidth:           300,
+
+		AutoDownloadSubscriptions:   true,
+		SubscriptionIntervalMinutes: 30,
 	}
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -61,6 +65,12 @@ func TestDefaultSettings(t *testing.T) {
 	if s.CardWidth != 240 {
 		t.Errorf("card width %v, want 240", s.CardWidth)
 	}
+	if s.AutoDownloadSubscriptions {
+		t.Error("auto download on by default")
+	}
+	if s.SubscriptionIntervalMinutes != subscriptionIntervalDefault {
+		t.Errorf("interval %d, want %d", s.SubscriptionIntervalMinutes, subscriptionIntervalDefault)
+	}
 	if !strings.HasSuffix(s.DownloadDir, filepath.Join("Pictures", "Pixeval Go")) {
 		t.Errorf("download dir %q", s.DownloadDir)
 	}
@@ -93,6 +103,43 @@ func TestLoadFillsMissingFields(t *testing.T) {
 	}
 	if s.DownloadConcurrency != 3 || s.CardWidth != 240 {
 		t.Errorf("missing fields not defaulted: %+v", *s)
+	}
+	if s.AutoDownloadSubscriptions {
+		t.Error("missing auto download not defaulted to off")
+	}
+	if s.SubscriptionIntervalMinutes != subscriptionIntervalDefault {
+		t.Errorf("missing interval %d, want %d", s.SubscriptionIntervalMinutes, subscriptionIntervalDefault)
+	}
+}
+
+// TestLoadNormalizesSubscriptionInterval checks a hand edited interval outside
+// the settings page's range falls back to the default.
+func TestLoadNormalizesSubscriptionInterval(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"zero", 0, subscriptionIntervalDefault},
+		{"below", subscriptionIntervalMin - 1, subscriptionIntervalDefault},
+		{"above", subscriptionIntervalMax + 1, subscriptionIntervalDefault},
+		{"lowest", subscriptionIntervalMin, subscriptionIntervalMin},
+		{"highest", subscriptionIntervalMax, subscriptionIntervalMax},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "settings.json")
+			data := []byte(`{"subscriptionIntervalMinutes":` + strconv.Itoa(tt.in) + `}`)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if s.SubscriptionIntervalMinutes != tt.want {
+				t.Errorf("interval %d, want %d", s.SubscriptionIntervalMinutes, tt.want)
+			}
+		})
 	}
 }
 
@@ -141,7 +188,7 @@ func TestSettingsPageShowsFields(t *testing.T) {
 	a := New()
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "显示 R18", "瀑布流列宽"} {
+	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "显示 R18", "瀑布流列宽", "自动下载新作品", "检查间隔（分钟）"} {
 		if !tt.HasText(label) {
 			t.Errorf("label %q missing: %q", label, tt.Texts())
 		}

@@ -141,6 +141,7 @@
     "updateInstallFailed": "安装更新失败：%s",
     "groupAppearance": "外观",
     "groupDownloads": "下载",
+    "groupSubscriptions": "订阅",
     "groupShortcuts": "快捷键",
     "decrease": "减少",
     "increase": "增加",
@@ -195,7 +196,13 @@
     "queued": "已把 %d 页加入下载队列",
     "add": "追更",
     "added": "已订阅",
-    "addFailed": "订阅列表已满，删掉一些再试"
+    "addFailed": "订阅列表已满，删掉一些再试",
+    "autoDownload": "自动下载新作品",
+    "autoDownloadHint": "后台检查发现新作后自动加入下载队列",
+    "interval": "检查间隔（分钟）",
+    "intervalHint": "5 到 1440 分钟，默认 15",
+    "autoQueued": "已自动把 %d 页加入下载队列",
+    "autoNoDir": "没有下载目录，无法自动下载新作品"
   },
   "novel": {
     "loadFailed": "加载小说失败：%s",

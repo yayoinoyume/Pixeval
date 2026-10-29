@@ -139,6 +139,89 @@ func TestSubscriptionToggle(t *testing.T) {
 	}
 }
 
+// TestSubscriptionIntervalFromSettings checks the check loop uses the saved
+// minutes, and an unusable value falls back to the default.
+func TestSubscriptionIntervalFromSettings(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	if got := a.subscriptionInterval(); got != 15*time.Minute {
+		t.Errorf("default interval %v, want 15m", got)
+	}
+	a.settings.SubscriptionIntervalMinutes = 30
+	if got := a.subscriptionInterval(); got != 30*time.Minute {
+		t.Errorf("saved interval %v, want 30m", got)
+	}
+	a.settings.SubscriptionIntervalMinutes = 0
+	if got := a.subscriptionInterval(); got != 15*time.Minute {
+		t.Errorf("zero interval %v, want 15m", got)
+	}
+	a.settings.SubscriptionIntervalMinutes = subscriptionIntervalMax + 1
+	if got := a.subscriptionInterval(); got != 15*time.Minute {
+		t.Errorf("oversized interval %v, want 15m", got)
+	}
+}
+
+// newWork is one work with pages pages for the auto download tests.
+func newWork(id int64, pages int) pixiv.Illustration {
+	return pixiv.Illustration{ID: id, Title: "新作", PageCount: pages, User: pixiv.User{Name: "画师"}}
+}
+
+// TestAutoDownloadQueuesNewWorks checks a background check queues the pages
+// when the setting is on.
+func TestAutoDownloadQueuesNewWorks(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a, _ := newSubsTest(t, stubFetcher{})
+	a.downloadsDir = t.TempDir()
+	a.settings.AutoDownloadSubscriptions = true
+	a.subs.OnNew = a.onNewSubscriptions
+	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+
+	if tasks := a.downloads.Snapshot(); len(tasks) != 2 {
+		t.Fatalf("%d tasks queued, want 2", len(tasks))
+	}
+	if want := a.tf("subs.autoQueued", 2); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	if works, _, _ := a.subsSnapshot(); len(works) != 1 {
+		t.Errorf("%d new works shown, want 1", len(works))
+	}
+}
+
+// TestAutoDownloadOffOnlyShowsNewWorks checks a background check only lists
+// the works when the setting is off.
+func TestAutoDownloadOffOnlyShowsNewWorks(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a, _ := newSubsTest(t, stubFetcher{})
+	a.downloadsDir = t.TempDir()
+	a.subs.OnNew = a.onNewSubscriptions
+	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Fatalf("%d tasks queued with auto download off, want 0", len(tasks))
+	}
+	if works, _, _ := a.subsSnapshot(); len(works) != 1 {
+		t.Errorf("%d new works shown, want 1", len(works))
+	}
+}
+
+// TestAutoDownloadWithoutDownloadDir checks a missing download directory says
+// so instead of queueing nothing silently.
+func TestAutoDownloadWithoutDownloadDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a, _ := newSubsTest(t, stubFetcher{})
+	a.downloadsDir = ""
+	a.settings.AutoDownloadSubscriptions = true
+	a.subs.OnNew = a.onNewSubscriptions
+	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Fatalf("%d tasks queued without a directory, want 0", len(tasks))
+	}
+	if want := a.t("subs.autoNoDir"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
 // TestSubscriptionsPath checks the list is saved next to the settings, in the
 // user's config directory.
 func TestSubscriptionsPath(t *testing.T) {
