@@ -112,9 +112,9 @@ func TestShellRailGroupsReachDestinations(t *testing.T) {
 		{"作品", "特辑", routeSpotlight},
 		{"作品", "追更", routeSubs},
 		{"用户", "推荐作者", routeRecommendedUsers},
-		{"库", "历史", routeHistory},
-		{"库", "下载", routeDownloads},
-		{"库", "稍后再看", routeWatchLater},
+		{"资料库", "历史", routeHistory},
+		{"资料库", "下载", routeDownloads},
+		{"资料库", "稍后再看", routeWatchLater},
 	} {
 		if err := tt.Click(c.group); err != nil {
 			t.Fatalf("open %s: %v", c.group, err)
@@ -156,6 +156,53 @@ func TestShellRailGroupTipNamesThePage(t *testing.T) {
 	if tt.HasText("nav.") {
 		t.Errorf("the Works description still shows a message key: %q", tt.Texts())
 	}
+}
+
+// TestShellRailGroupOpens checks an open group looks open: its button takes the
+// hover surface and its caret points down, the menu shows beside the rail, and
+// Escape closes it again.
+func TestShellRailGroupOpens(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.settings.Theme = themeLight
+	tt := ui.NewTester(a.View, 1024, 720)
+	tt.Frame()
+	r, ok := tt.Find("作品")
+	if !ok {
+		t.Fatalf("the Works group is missing: %q", tt.Texts())
+	}
+	x, y := r.X+6, r.Y+r.H/2
+	if got := navPixel(tt, x, y); got != lightTokens.Bg {
+		t.Errorf("the closed Works button background is %v, want %v", got, lightTokens.Bg)
+	}
+	if err := tt.Click("作品"); err != nil {
+		t.Fatalf("open Works: %v", err)
+	}
+	tt.Frame()
+	if navMenuState.open != "works" {
+		t.Errorf("open group %q, want works", navMenuState.open)
+	}
+	if !tt.HasText("新作") {
+		t.Errorf("the Works menu is missing: %q", tt.Texts())
+	}
+	if got := navPixel(tt, x, y); got != lightTokens.SurfaceAlt {
+		t.Errorf("the open Works button background is %v, want %v", got, lightTokens.SurfaceAlt)
+	}
+	tt.Key(0, ui.KeyEscape)
+	tt.Frame()
+	if navMenuState.open != "" {
+		t.Errorf("the Works menu stayed open after Escape: %q", navMenuState.open)
+	}
+	if tt.HasText("新作") {
+		t.Errorf("the Works menu still shows after Escape: %q", tt.Texts())
+	}
+}
+
+// navPixel is the color a tester drew at a point.
+func navPixel(tt *ui.Tester, x, y float32) ui.Color {
+	img := tt.Image()
+	r, g, b, _ := img.At(int(x), int(y)).RGBA()
+	return ui.RGB(uint8(r>>8), uint8(g>>8), uint8(b>>8))
 }
 
 // TestShellRailDoesNotScroll checks the rail does not scroll: its
@@ -202,9 +249,9 @@ func navGo(t *testing.T, tt *ui.Tester, label string) {
 		"特辑":      "作品",
 		"追更":      "作品",
 		"推荐作者":    "用户",
-		"历史":      "库",
-		"下载":      "库",
-		"稍后再看":    "库",
+		"历史":      "资料库",
+		"下载":      "资料库",
+		"稍后再看":    "资料库",
 	}[label]
 	if group != "" {
 		if err := tt.Click(group); err != nil {
@@ -281,7 +328,7 @@ func TestShellRail(t *testing.T) {
 	a := New()
 	tt := ui.NewTester(a.View, 1024, 720)
 	tt.Frame()
-	for _, label := range []string{"首页", "搜索", "收藏", "作品", "用户", "库", "设置"} {
+	for _, label := range []string{"首页", "搜索", "收藏", "作品", "用户", "资料库", "设置"} {
 		r, ok := tt.Find(label)
 		if !ok {
 			t.Fatalf("%s missing: %q", label, tt.Texts())
