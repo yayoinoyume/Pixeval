@@ -785,6 +785,129 @@ func (a *App) Status() string {
 	return fmt.Sprintf("downloads: %d task(s) in %s", len(a.downloads.Snapshot()), a.downloadsDir)
 }
 
+// SearchUsers returns the users matching word; the MCP user search tool.
+func (a *App) SearchUsers(ctx context.Context, word string) ([]pixiv.UserPreview, error) {
+	page, err := a.client.SearchUsers(ctx, word)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// UserDetail returns one user's profile; the MCP user detail tool.
+func (a *App) UserDetail(ctx context.Context, id int64) (*pixiv.UserDetail, error) {
+	return a.client.UserDetail(ctx, id)
+}
+
+// UserIllusts returns a user's works of kind; the MCP user works tool.
+func (a *App) UserIllusts(ctx context.Context, id int64, kind string) ([]pixiv.Illustration, error) {
+	page, err := a.client.UserIllusts(ctx, id, kind)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// UserBookmarks returns the signed-in user's bookmarks; the MCP bookmarks
+// tool. A zero userID means the signed-in account.
+func (a *App) UserBookmarks(ctx context.Context, userID int64, private bool) ([]pixiv.Illustration, error) {
+	if userID <= 0 {
+		if tok := a.client.Token(); tok != nil {
+			userID = int64(tok.User.ID)
+		}
+	}
+	if userID <= 0 {
+		return nil, errors.New("not signed in")
+	}
+	page, err := a.client.BookmarkedIllustrations(ctx, userID, private, 0)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// SearchNovels returns the novels matching word; the MCP novel search tool.
+func (a *App) SearchNovels(ctx context.Context, word string) ([]pixiv.Novel, error) {
+	page, err := a.client.SearchNovels(ctx, pixiv.SearchOptions{Word: word})
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// WatchLater returns the works saved for later; the MCP watch later tool.
+func (a *App) WatchLater(_ context.Context) ([]mcp.SavedWork, error) {
+	if a.watchLater == nil {
+		return nil, nil
+	}
+	entries := a.watchLater.Snapshot()
+	out := make([]mcp.SavedWork, len(entries))
+	for i, e := range entries {
+		out[i] = mcp.SavedWork{ID: e.ID, Title: e.Title, Artist: e.Artist, SavedAt: e.At}
+	}
+	return out, nil
+}
+
+// DownloadHistory returns the completed downloads; the MCP download history
+// tool.
+func (a *App) DownloadHistory(_ context.Context) ([]mcp.DownloadedWork, error) {
+	if a.downloadHistory == nil {
+		return nil, nil
+	}
+	entries := a.downloadHistory.Snapshot()
+	out := make([]mcp.DownloadedWork, len(entries))
+	for i, e := range entries {
+		out[i] = mcp.DownloadedWork{
+			IllustID:    e.IllustID,
+			Title:       e.Title,
+			Artist:      e.Artist,
+			Dest:        e.Dest,
+			Page:        e.Page,
+			CompletedAt: e.CompletedAt,
+		}
+	}
+	return out, nil
+}
+
+// Subscriptions returns the followed users, tags and series; the MCP
+// subscriptions tool.
+func (a *App) Subscriptions(_ context.Context) ([]mcp.SubscriptionInfo, error) {
+	if a.subsStore == nil {
+		return nil, nil
+	}
+	subs := a.subsStore.List()
+	out := make([]mcp.SubscriptionInfo, len(subs))
+	for i, s := range subs {
+		out[i] = mcp.SubscriptionInfo{
+			Kind:        string(s.Kind),
+			TargetID:    s.TargetID,
+			TargetName:  s.TargetName,
+			LastChecked: s.LastChecked,
+		}
+	}
+	return out, nil
+}
+
+// RelatedIllusts returns the works Pixiv relates to id; the MCP related
+// works tool.
+func (a *App) RelatedIllusts(ctx context.Context, id int64) ([]pixiv.Illustration, error) {
+	page, err := a.client.RelatedIllustrations(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// Spotlight returns the Pixivision articles Pixiv features; the MCP spotlight
+// tool.
+func (a *App) Spotlight(ctx context.Context) ([]pixiv.SpotlightArticle, error) {
+	page, err := a.client.SpotlightArticles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
 // update runs fn on the main thread, or at once before the window exists.
 func (a *App) update(fn func()) {
 	if a.win == nil {
