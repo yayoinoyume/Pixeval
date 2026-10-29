@@ -663,8 +663,8 @@ func TestMyPixivPageLoadsFollowedUsersWorks(t *testing.T) {
 		t.Fatalf("the feed is not shown: %q", tt.Texts())
 	}
 	paths, query := fake.requests()
-	if len(paths) != 1 || paths[0] != "/v1/illust/mypixiv" {
-		t.Fatalf("requests %v, want /v1/illust/mypixiv", paths)
+	if len(paths) != 1 || paths[0] != "/v2/illust/mypixiv" {
+		t.Fatalf("requests %v, want /v2/illust/mypixiv", paths)
 	}
 	if q := query[0]; q.Get("filter") != "for_android" || q.Get("offset") != "" {
 		t.Errorf("query = %v, want the first page's R18 filter", q)
@@ -824,7 +824,7 @@ func TestMyPixivKindTabsAskTheirContentType(t *testing.T) {
 	waitBrowse(t, a.myPixivFeed, "load the manga",
 		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 500 })
 	paths, q := fake.requests()
-	if len(paths) != 2 || paths[0] != "/v1/illust/mypixiv" || paths[1] != "/v1/illust/mypixiv" {
+	if len(paths) != 2 || paths[0] != "/v2/illust/mypixiv" || paths[1] != "/v2/illust/mypixiv" {
 		t.Fatalf("paths = %v, want the MyPixiv feed twice", paths)
 	}
 	if got := q[1]; got.Get("content_type") != "manga" || got.Get("offset") != "" {

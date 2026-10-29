@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -32,7 +31,7 @@ func fakeSpotlight(first, n int) []pixiv.SpotlightArticle {
 	articles := make([]pixiv.SpotlightArticle, n)
 	for i := range articles {
 		articles[i] = pixiv.SpotlightArticle{
-			ID:          strconv.Itoa(first + i),
+			ID:          int64(first + i),
 			Title:       fmt.Sprintf("特辑 %d", first+i),
 			Thumbnail:   fmt.Sprintf("https://example.com/%d.jpg", first+i),
 			ArticleURL:  fmt.Sprintf("https://www.pixivision.net/a/%d", first+i),

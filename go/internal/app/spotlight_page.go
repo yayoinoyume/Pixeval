@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strconv"
 	"sync"
 
 	"github.com/egoist/mygo"
@@ -121,7 +122,7 @@ func spotlightTiles(items []pixiv.SpotlightArticle, width, textHeight float64) [
 	tiles := make([]widgets.MasonryItem, len(items))
 	for i := range items {
 		tiles[i] = widgets.MasonryItem{
-			Key:    items[i].ID,
+			Key:    strconv.FormatInt(items[i].ID, 10),
 			Aspect: cardAspect(spotlightCoverAspect, width, textHeight),
 		}
 	}

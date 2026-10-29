@@ -76,7 +76,7 @@ func (a *App) historyCard(c *ui.Context, e HistoryEntry, width float32) {
 		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openHistory(e)
 	})
-	cover.Grow(0).Height(width * 3 / 2)
+	cover.Height(width * 3 / 2)
 	cover.Children(func() {
 		if e.Cover == "" {
 			return // an entry saved without a cover has no image to draw

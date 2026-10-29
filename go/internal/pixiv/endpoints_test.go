@@ -54,7 +54,7 @@ func TestMyPixivIllustrationsRequestsMyPixivFeed(t *testing.T) {
 			if got.method != http.MethodGet {
 				t.Errorf("method = %q, want GET", got.method)
 			}
-			if got.path != "/v1/illust/mypixiv" {
+			if got.path != "/v2/illust/mypixiv" {
 				t.Errorf("path = %q", got.path)
 			}
 			if q := got.query; q.Get("filter") != "for_android" || q.Get("content_type") != string(kind) || len(q) != 2 {
@@ -70,6 +70,20 @@ func TestMyPixivIllustrationsRequestsMyPixivFeed(t *testing.T) {
 				t.Error("next_url is empty")
 			}
 		})
+	}
+}
+
+// TestMyPixivIllustrationsUsesV2Feed pins the feed to v2: the v1 path
+// answers 404.
+func TestMyPixivIllustrationsUsesV2Feed(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, feedBody))
+
+	if _, err := c.MyPixivIllustrations(context.Background(), Illust); err != nil {
+		t.Fatalf("MyPixivIllustrations: %v", err)
+	}
+	if got.path != "/v2/illust/mypixiv" {
+		t.Fatalf("path = %q, want the v2 feed", got.path)
 	}
 }
 
@@ -89,10 +103,10 @@ func TestFeedEndpointsPageWithNextURL(t *testing.T) {
 		{"new manga", "/v1/illust/new", Manga, func(c *Client) (*Page[Illustration], error) {
 			return c.NewIllustrations(context.Background(), Manga)
 		}},
-		{"mypixiv illust", "/v1/illust/mypixiv", Illust, func(c *Client) (*Page[Illustration], error) {
+		{"mypixiv illust", "/v2/illust/mypixiv", Illust, func(c *Client) (*Page[Illustration], error) {
 			return c.MyPixivIllustrations(context.Background(), Illust)
 		}},
-		{"mypixiv manga", "/v1/illust/mypixiv", Manga, func(c *Client) (*Page[Illustration], error) {
+		{"mypixiv manga", "/v2/illust/mypixiv", Manga, func(c *Client) (*Page[Illustration], error) {
 			return c.MyPixivIllustrations(context.Background(), Manga)
 		}},
 	}

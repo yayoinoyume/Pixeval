@@ -40,7 +40,7 @@ func (c *Client) MyPixivIllustrations(ctx context.Context, kind WorkKind) (*Page
 	q := url.Values{}
 	q.Set("content_type", string(kind))
 	c.setFilter(q)
-	return c.illustPage(ctx, c.pageURL("/v1/illust/mypixiv", q))
+	return c.illustPage(ctx, c.pageURL("/v2/illust/mypixiv", q))
 }
 
 // RelatedIllustrations is the feed of works Pixiv lists beside illustID.
