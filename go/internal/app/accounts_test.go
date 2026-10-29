@@ -205,7 +205,7 @@ func TestSwitchAccountUpdatesSession(t *testing.T) {
 	oldBookmarks := a.bookmarks
 	a.route, a.userView = routeUser, &userViewState{}
 
-	if err := a.activateToken(context.Background(), second); err != nil {
+	if err := a.activateToken(context.Background(), second, a.switchSeq.Add(1)); err != nil {
 		t.Fatalf("activateToken: %v", err)
 	}
 	if a.session == nil || int64(a.session.User.ID) != 32 {
@@ -255,7 +255,7 @@ func TestSwitchAccountKeepsCurrentOnRefreshFailure(t *testing.T) {
 		return nil, errors.New("refresh failed")
 	}
 
-	if err := a.activateToken(context.Background(), expired); err == nil {
+	if err := a.activateToken(context.Background(), expired, a.switchSeq.Add(1)); err == nil {
 		t.Fatal("activateToken with a failed refresh returned no error")
 	}
 	if a.session == nil || int64(a.session.User.ID) != 41 {
@@ -295,5 +295,152 @@ func TestAccountMenuListsSavedAccounts(t *testing.T) {
 		if !slices.Contains(menu, want) {
 			t.Errorf("menu %q lacks %q", menu, want)
 		}
+	}
+}
+
+// TestSwitchAccountSerializesToLatest checks two switches whose refreshes
+// finish out of order end on the account asked for last: the earlier switch
+// writes nothing and shows the newer one's session.
+func TestSwitchAccountSerializesToLatest(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	current, first, second := tokenFor(61, "六十一"), tokenFor(62, "六十二"), tokenFor(63, "六十三")
+	for _, tok := range []*pixiv.Token{current, first, second} {
+		// Force a refresh, which the test releases in its own order.
+		tok.ExpiresAt = time.Now().Add(-time.Hour)
+	}
+	a.accounts.Upsert(current, time.Now())
+	a.applySession(current)
+	path, err := tokenPath()
+	if err != nil {
+		t.Fatalf("tokenPath: %v", err)
+	}
+	if err := pixiv.SaveToken(path, current); err != nil {
+		t.Fatalf("SaveToken: %v", err)
+	}
+	a.accounts.Upsert(first, time.Now())
+	a.accounts.Upsert(second, time.Now())
+	a.accounts.Upsert(current, time.Now())
+
+	firstStarted, firstRelease := make(chan struct{}), make(chan struct{})
+	secondStarted, secondRelease := make(chan struct{}), make(chan struct{})
+	a.refreshTokenFn = func(_ context.Context, refresh string) (*pixiv.Token, error) {
+		switch refresh {
+		case "refresh-62":
+			close(firstStarted)
+			<-firstRelease
+			return tokenFor(62, "六十二"), nil
+		case "refresh-63":
+			close(secondStarted)
+			<-secondRelease
+			// The superseded switch must not have written its token first.
+			got, err := pixiv.LoadToken(path)
+			if err != nil {
+				t.Errorf("LoadToken: %v", err)
+			} else if int64(got.User.ID) != 61 {
+				t.Errorf("token.json user %d, want 61: the superseded switch wrote it", got.User.ID)
+			}
+			return tokenFor(63, "六十三"), nil
+		}
+		return nil, fmt.Errorf("unexpected refresh %q", refresh)
+	}
+
+	a.switchAccount(62)
+	waitSignal(t, firstStarted, "the first switch did not start")
+	a.switchAccount(63)
+	// The first refresh finishes first, but it is no longer the latest.
+	close(firstRelease)
+	waitSignal(t, secondStarted, "the second switch did not start")
+	close(secondRelease)
+	// The switch order's mutex is free only once the last switch committed.
+	a.switchMu.Lock()
+	a.switchMu.Unlock()
+
+	if a.session == nil || int64(a.session.User.ID) != 63 {
+		t.Fatalf("session %+v, want user 63", a.session)
+	}
+	if tok := a.client.Token(); tok == nil || int64(tok.User.ID) != 63 {
+		t.Errorf("client token %+v, want user 63", tok)
+	}
+	if a.accounts.ActiveID() != 63 {
+		t.Errorf("active %d, want 63", a.accounts.ActiveID())
+	}
+	tok, err := pixiv.LoadToken(path)
+	if err != nil {
+		t.Fatalf("LoadToken: %v", err)
+	}
+	if int64(tok.User.ID) != 63 {
+		t.Errorf("token.json user %d, want 63", tok.User.ID)
+	}
+}
+
+// TestSwitchFailureNoticeOnlyNewest checks a superseded switch that fails stays
+// quiet, and only the newest request says the switch failed.
+func TestSwitchFailureNoticeOnlyNewest(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	current, failing, latest := tokenFor(71, "七十一"), tokenFor(72, "七十二"), tokenFor(73, "七十三")
+	failing.ExpiresAt, latest.ExpiresAt = time.Now().Add(-time.Hour), time.Now().Add(-time.Hour)
+	a.accounts.Upsert(current, time.Now())
+	a.applySession(current)
+	path, err := tokenPath()
+	if err != nil {
+		t.Fatalf("tokenPath: %v", err)
+	}
+	if err := pixiv.SaveToken(path, current); err != nil {
+		t.Fatalf("SaveToken: %v", err)
+	}
+	a.accounts.Upsert(failing, time.Now())
+	a.accounts.Upsert(latest, time.Now())
+	a.accounts.Upsert(current, time.Now())
+
+	failStarted, failRelease := make(chan struct{}), make(chan struct{})
+	latestStarted, latestRelease := make(chan struct{}), make(chan struct{})
+	a.refreshTokenFn = func(_ context.Context, refresh string) (*pixiv.Token, error) {
+		switch refresh {
+		case "refresh-72":
+			close(failStarted)
+			<-failRelease
+			return nil, errors.New("refresh failed")
+		case "refresh-73":
+			close(latestStarted)
+			<-latestRelease
+			// The superseded failure must not have left a notice.
+			if a.notice != "" {
+				t.Errorf("notice %q set by a superseded switch", a.notice)
+			}
+			return tokenFor(73, "七十三"), nil
+		}
+		return nil, fmt.Errorf("unexpected refresh %q", refresh)
+	}
+
+	a.switchAccount(72)
+	waitSignal(t, failStarted, "the failing switch did not start")
+	a.switchAccount(73)
+	close(failRelease)
+	waitSignal(t, latestStarted, "the latest switch did not start")
+	close(latestRelease)
+	a.switchMu.Lock()
+	a.switchMu.Unlock()
+
+	if a.notice != "" {
+		t.Errorf("notice %q, want none", a.notice)
+	}
+	if a.session == nil || int64(a.session.User.ID) != 73 {
+		t.Fatalf("session %+v, want user 73", a.session)
+	}
+	if a.accounts.ActiveID() != 73 {
+		t.Errorf("active %d, want 73", a.accounts.ActiveID())
+	}
+}
+
+// waitSignal waits for a switch step, or fails after a bound so a stuck switch
+// cannot hang the test.
+func waitSignal(t *testing.T, ch chan struct{}, what string) {
+	t.Helper()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal(what)
 	}
 }

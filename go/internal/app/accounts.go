@@ -200,34 +200,54 @@ func (a *App) rememberAccount(t *pixiv.Token) error {
 	return a.accounts.Save(path)
 }
 
+// errSwitchSuperseded reports a switch whose refresh finished after a newer
+// switch was asked for: it must not overwrite the newer one.
+var errSwitchSuperseded = errors.New("accounts: switch superseded")
+
 // switchAccount makes the saved account userID the one in use. An expired
 // token is refreshed off the main thread; a failed switch keeps the account in
-// use and says so.
+// use and says so. Switches run one at a time, in the order they were asked
+// for, and one whose refresh finishes late drops itself.
 func (a *App) switchAccount(userID int64) {
 	acc, ok := a.accounts.Get(userID)
 	if !ok || a.accounts.ActiveID() == userID {
 		return
 	}
 	tok := acc.Token
+	seq := a.switchSeq.Add(1)
 	go func() {
+		a.switchMu.Lock()
+		defer a.switchMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if err := a.activateToken(ctx, &tok); err != nil {
+		err := a.activateToken(ctx, &tok, seq)
+		switch {
+		case errors.Is(err, errSwitchSuperseded):
+			// A newer switch is waiting: it owns the session now.
+			return
+		case err != nil:
 			log.Printf("accounts: switch: %v", err)
-			a.update(func() { a.notice = a.t("account.switchFailed") })
+			// Only the newest request may say the switch failed.
+			if a.switchSeq.Load() == seq {
+				a.update(func() { a.notice = a.t("account.switchFailed") })
+			}
 		}
 	}()
 }
 
 // activateToken makes tok the session: it renews an expired token, saves it
-// as token.json, records its account and shows its pages.
-func (a *App) activateToken(ctx context.Context, tok *pixiv.Token) error {
+// as token.json, records its account and shows its pages. seq is its place in
+// the switch order; a newer request leaves the session alone.
+func (a *App) activateToken(ctx context.Context, tok *pixiv.Token, seq uint64) error {
 	if tok.Expired() {
 		fresh, err := a.refreshTokenFn(ctx, tok.RefreshToken)
 		if err != nil {
 			return err
 		}
 		tok = fresh
+	}
+	if a.switchSeq.Load() != seq {
+		return errSwitchSuperseded
 	}
 	path, err := tokenPath()
 	if err != nil {

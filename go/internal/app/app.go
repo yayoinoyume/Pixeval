@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -54,6 +55,11 @@ type App struct {
 	// avoid the network.
 	accounts       *Accounts
 	refreshTokenFn func(ctx context.Context, refresh string) (*pixiv.Token, error)
+	// switchMu makes account switches run one at a time, and switchSeq is the
+	// newest request, so one whose refresh finished late drops itself instead
+	// of overwriting the newer account.
+	switchMu  sync.Mutex
+	switchSeq atomic.Uint64
 	// webviewOK reports whether the system webview is there; without it the
 	// login window takes a pasted refresh token instead of Pixiv's page.
 	webviewOK bool
