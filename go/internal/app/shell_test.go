@@ -301,6 +301,115 @@ func TestSearchOptionsReachSearch(t *testing.T) {
 	}
 }
 
+// illustSearchQueries returns the illustration searches the app asked for.
+func illustSearchQueries(t *testing.T, a *App) []url.Values {
+	t.Helper()
+	tr, ok := a.client.HTTP().Transport.(*pageTransport)
+	if !ok {
+		t.Fatal("the transport is not the page transport")
+	}
+	var queries []url.Values
+	for _, u := range tr.requestedURLs() {
+		if !strings.HasPrefix(u, "/v1/search/illust?") {
+			continue
+		}
+		parsed, err := url.Parse(u)
+		if err != nil {
+			t.Fatalf("parse %q: %v", u, err)
+		}
+		queries = append(queries, parsed.Query())
+	}
+	return queries
+}
+
+// TestSearchAdvancedFiltersReachSearch checks the dates and sizes reach the
+// search, with a blank or 0 size sent as no limit.
+func TestSearchAdvancedFiltersReachSearch(t *testing.T) {
+	a := newSearchApp(pageBodies())
+	a.searchStartDate = "2020-01-02"
+	a.searchEndDate = "2021-03-04"
+	a.searchMinWidth = "600"
+	a.searchMaxWidth = "0"
+	a.searchMinHeight = ""
+	a.searchMaxHeight = "4000"
+	a.startSearch(a.search)
+	waitBrowse(t, a.search, "load the filtered search",
+		func(v browseView) bool { return v.started })
+
+	queries := illustSearchQueries(t, a)
+	if len(queries) != 1 {
+		t.Fatalf("illustration searches %v, want one", queries)
+	}
+	q := queries[0]
+	want := map[string]string{
+		"start_date": "2020-01-02",
+		"end_date":   "2021-03-04",
+		"width_min":  "600",
+		"height_max": "4000",
+	}
+	for key, value := range want {
+		if got := q.Get(key); got != value {
+			t.Errorf("%s %q, want %q", key, got, value)
+		}
+	}
+	for _, key := range []string{"width_max", "height_min"} {
+		if q.Has(key) {
+			t.Errorf("%s sent as %q, want no limit", key, q.Get(key))
+		}
+	}
+}
+
+// TestSearchAdvancedFiltersRejectBadInput checks a bad date or size stops the
+// search with its message, without asking the API or recording the word.
+func TestSearchAdvancedFiltersRejectBadInput(t *testing.T) {
+	cases := []struct {
+		name string
+		set  func(*App)
+		key  string
+	}{
+		{"bad date", func(a *App) { a.searchStartDate = "2020-13-01" }, "search.invalidDate"},
+		{"bad size", func(a *App) { a.searchMinWidth = "abc" }, "search.invalidSize"},
+		{"negative size", func(a *App) { a.searchMaxHeight = "-5" }, "search.invalidSize"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newSearchApp(pageBodies())
+			a.searchHistory = &SearchHistory{}
+			tc.set(a)
+			a.startSearch(a.search)
+			if got, want := a.searchErr, a.t(tc.key); got != want {
+				t.Errorf("searchErr %q, want %q", got, want)
+			}
+			if got := illustSearchQueries(t, a); len(got) != 0 {
+				t.Errorf("illustration searches %v, want none", got)
+			}
+			if got := a.searchHistory.Snapshot(); len(got) != 0 {
+				t.Errorf("words %v, want none", got)
+			}
+		})
+	}
+}
+
+// TestSearchFiltersHiddenOutsideIllust checks the date and size fields stay
+// on the illustration tab.
+func TestSearchFiltersHiddenOutsideIllust(t *testing.T) {
+	a := newSearchApp(pageBodies())
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if !tt.HasText("起始日期") {
+		t.Fatalf("the date filter is missing: %q", tt.Texts())
+	}
+	for _, tab := range []string{"小说", "用户"} {
+		if err := tt.Click(tab); err != nil {
+			t.Fatalf("Click %s tab: %v", tab, err)
+		}
+		tt.Frame()
+		if tt.HasText("起始日期") {
+			t.Errorf("the date filter is shown on the %s tab: %q", tab, tt.Texts())
+		}
+	}
+}
+
 // newSearchApp is a signed-in app on the search page whose API answers from
 // bodies, without images or a network.
 func newSearchApp(bodies map[string]string) *App {

@@ -70,7 +70,18 @@
     "target": "Match",
     "targetPartial": "Partial tag match",
     "targetExact": "Exact tag match",
-    "targetTitleCaption": "Title and caption"
+    "targetTitleCaption": "Title and caption",
+    "history": "Recent searches",
+    "clearHistory": "Clear history",
+    "deleteHistory": "Delete “%s”",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "minWidth": "Min width",
+    "maxWidth": "Max width",
+    "minHeight": "Min height",
+    "maxHeight": "Max height",
+    "invalidDate": "Use a date like YYYY-MM-DD",
+    "invalidSize": "Sizes must be 0 or a positive whole number"
   },
   "spotlight": {
     "empty": "No spotlight articles",

@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -535,6 +537,140 @@ func (a *App) searchTargetValue(label string) string {
 // ones.
 const searchUser = searchNovel + 1
 
+// searchDateLayout is the date format the advanced filter accepts.
+const searchDateLayout = "2006-01-02"
+
+// searchOptions builds the illustration search's filters from the page. A
+// blank date or size is no limit; a bad one is an error and the search is not
+// sent.
+func (a *App) searchOptions(word string) (pixiv.SearchOptions, error) {
+	opts := pixiv.SearchOptions{Word: word, Sort: a.searchSort, Target: a.searchTarget}
+	start, err := a.searchDate(a.searchStartDate)
+	if err != nil {
+		return opts, err
+	}
+	end, err := a.searchDate(a.searchEndDate)
+	if err != nil {
+		return opts, err
+	}
+	opts.StartDate, opts.EndDate = start, end
+	if opts.MinWidth, err = a.searchSize(a.searchMinWidth); err != nil {
+		return opts, err
+	}
+	if opts.MaxWidth, err = a.searchSize(a.searchMaxWidth); err != nil {
+		return opts, err
+	}
+	if opts.MinHeight, err = a.searchSize(a.searchMinHeight); err != nil {
+		return opts, err
+	}
+	if opts.MaxHeight, err = a.searchSize(a.searchMaxHeight); err != nil {
+		return opts, err
+	}
+	return opts, nil
+}
+
+// searchDate reads one typed date, blank for no limit.
+func (a *App) searchDate(text string) (string, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", nil
+	}
+	if _, err := time.Parse(searchDateLayout, text); err != nil {
+		return "", errors.New(a.t("search.invalidDate"))
+	}
+	return text, nil
+}
+
+// searchSize reads one typed size, blank or 0 for no limit.
+func (a *App) searchSize(text string) (int, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(text)
+	if err != nil || n < 0 {
+		return 0, errors.New(a.t("search.invalidSize"))
+	}
+	return n, nil
+}
+
+// searchFilterFields draws the illustration search's date and size filters.
+// A date is YYYY-MM-DD and a size is a whole number.
+func (a *App) searchFilterFields(c *ui.Context, t tokens) {
+	fields := []struct {
+		label       string
+		value       *string
+		width       float32
+		placeholder string
+	}{
+		{a.t("search.startDate"), &a.searchStartDate, 140, "YYYY-MM-DD"},
+		{a.t("search.endDate"), &a.searchEndDate, 140, "YYYY-MM-DD"},
+		{a.t("search.minWidth"), &a.searchMinWidth, 84, ""},
+		{a.t("search.maxWidth"), &a.searchMaxWidth, 84, ""},
+		{a.t("search.minHeight"), &a.searchMinHeight, 84, ""},
+		{a.t("search.maxHeight"), &a.searchMaxHeight, 84, ""},
+	}
+	ui.Row(c).Wrap().Gap(t.SpaceS).Padding(0, contentPadding, 0, contentPadding).
+		AlignItems(ui.End).Children(func() {
+		for _, f := range fields {
+			ui.Column(c).Gap(2).Children(func() {
+				ui.Text(c, f.label).FontSize(t.TextMicro).TextColor(t.TextMuted)
+				ui.TextInput(c, f.value).Width(f.width).Height(32).
+					Placeholder(f.placeholder).Label(f.label)
+			})
+		}
+	})
+	if a.searchErr != "" {
+		ui.Row(c).Padding(t.SpaceXS, contentPadding, 0, contentPadding).Children(func() {
+			ui.Text(c, a.searchErr).FontSize(t.TextSmall).TextColor(t.Danger)
+		})
+	}
+}
+
+// searchHistoryBar draws the words searched before under the box. A chip
+// searches its word again; each has its own delete button, and one clears the
+// lot.
+func (a *App) searchHistoryBar(c *ui.Context, t tokens) {
+	if a.searchHistory == nil {
+		return
+	}
+	words := a.searchHistory.Snapshot()
+	if len(words) == 0 {
+		return
+	}
+	ui.Row(c).Wrap().Gap(t.SpaceS).Padding(t.SpaceXS, contentPadding, 0, contentPadding).
+		AlignItems(ui.Center).Children(func() {
+		ui.Text(c, a.t("search.history")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+		for _, word := range words {
+			a.searchHistoryChip(c, t, word)
+		}
+		if ui.Button(c, a.t("search.clearHistory")).FontSize(t.TextTiny).Clicked() {
+			a.clearSearchHistory()
+		}
+	})
+}
+
+// searchHistoryChip is one searched word and its delete button.
+func (a *App) searchHistoryChip(c *ui.Context, t tokens, word string) {
+	ui.Row(c).Gap(0).AlignItems(ui.Center).Children(func() {
+		b := ui.ButtonBase(c).Radius(t.RadiusS).Padding(t.SpaceXS, t.SpaceS).Label(word)
+		if b.Hovered() {
+			b = b.Background(t.SurfaceAlt)
+		}
+		if b.Clicked() {
+			a.search.query = word
+			a.startSearch(a.search)
+		}
+		b.Children(func() {
+			ui.Text(c, word).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text)
+		})
+		label := a.tf("search.deleteHistory", word)
+		if iconButton(c, iconClose, label, 22, t.TextMuted, t.SurfaceAlt).Clicked() {
+			a.removeSearchWord(word)
+		}
+	})
+}
+
 // searchPage draws the search box and its results.
 func (a *App) searchPage(c *ui.Context) {
 	if a.session == nil {
@@ -556,6 +692,7 @@ func (a *App) searchPage(c *ui.Context) {
 				a.startSearch(st)
 			}
 		})
+		a.searchHistoryBar(c, t)
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
 			textTabs(c, t, &a.searchKind, a.t("search.illust"), a.t("search.novel"),
 				a.t("search.user"))
@@ -572,6 +709,7 @@ func (a *App) searchPage(c *ui.Context) {
 					a.searchTarget = a.searchTargetValue(target)
 				}
 			})
+			a.searchFilterFields(c, t)
 		}
 		if !a.searchArmed() {
 			emptyState(c, iconSearch, a.t("search.hint"), "", nil)
@@ -607,17 +745,26 @@ func (a *App) startSearch(st *browseState) {
 	if word == "" {
 		return
 	}
-	st.restart()
 	// Read the options on the main thread; the load goroutine must not read
-	// the fields the search page edits.
-	sort, target := a.searchSort, a.searchTarget
+	// the fields the search page edits. Another tab's search ignores the
+	// illustration filters, which it does not show.
+	opts := pixiv.SearchOptions{Word: word, Sort: a.searchSort, Target: a.searchTarget}
+	if a.searchKind == searchIllust {
+		var err error
+		opts, err = a.searchOptions(word)
+		if err != nil {
+			a.searchErr = err.Error()
+			return
+		}
+	}
+	a.searchErr = ""
+	a.recordSearch(word)
+	st.restart()
 	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
 		if next := st.cursor(); next != "" {
 			return a.client.NextIllustrations(ctx, next)
 		}
-		return a.client.SearchIllustrations(ctx, pixiv.SearchOptions{
-			Word: word, Sort: sort, Target: target,
-		})
+		return a.client.SearchIllustrations(ctx, opts)
 	})
 	st.masonry = widgets.MasonryState{}
 	a.startNovelSearch(word)

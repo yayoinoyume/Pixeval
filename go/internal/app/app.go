@@ -107,9 +107,20 @@ type App struct {
 	// spotlight is the Pixivision article list the spotlight page shows.
 	spotlight *spotlightState
 	// searchSort and searchTarget are the illustration search's order and
-	// match, chosen on the search page.
-	searchSort   string
-	searchTarget string
+	// match, chosen on the search page. The date and size fields are the
+	// illustration search's advanced filters, as typed, and searchErr says
+	// why the typed ones cannot be used.
+	searchSort      string
+	searchTarget    string
+	searchStartDate string
+	searchEndDate   string
+	searchMinWidth  string
+	searchMaxWidth  string
+	searchMinHeight string
+	searchMaxHeight string
+	searchErr       string
+	// searchHistory is the words the user searched for, newest first.
+	searchHistory *SearchHistory
 	// settings are the user's preferences, loaded at start and saved from the
 	// settings page. shortcutsOpen shows the shortcut hint in its About card.
 	settings      *Settings
@@ -319,6 +330,7 @@ func New() *App {
 		spotlight:        &spotlightState{},
 		searchSort:       searchSortDateDesc,
 		searchTarget:     searchTargetPartial,
+		searchHistory:    loadSearchHistory(),
 		updater:          mygoUpdater{},
 	}
 	// The check probes the install directory, so the settings page asks once.

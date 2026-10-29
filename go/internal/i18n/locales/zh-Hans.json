@@ -70,7 +70,18 @@
     "target": "匹配方式",
     "targetPartial": "标签部分匹配",
     "targetExact": "标签完全匹配",
-    "targetTitleCaption": "标题与简介"
+    "targetTitleCaption": "标题与简介",
+    "history": "搜索历史",
+    "clearHistory": "清空历史",
+    "deleteHistory": "删除“%s”",
+    "startDate": "起始日期",
+    "endDate": "结束日期",
+    "minWidth": "最小宽度",
+    "maxWidth": "最大宽度",
+    "minHeight": "最小高度",
+    "maxHeight": "最大高度",
+    "invalidDate": "日期格式应为 YYYY-MM-DD",
+    "invalidSize": "尺寸必须是 0 或正整数"
   },
   "spotlight": {
     "empty": "暂无特辑",
