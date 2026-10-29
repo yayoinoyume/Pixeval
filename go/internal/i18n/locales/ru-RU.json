@@ -290,7 +290,12 @@
     "pages": "%d pages",
     "bookmark": "Добавить в закладки",
     "bookmarked": "В закладках",
-    "bookmarkFailed": "Ошибка добавления в закладки: %s"
+    "bookmarkFailed": "Ошибка добавления в закладки: %s",
+    "fontSize": "Размер текста",
+    "lineHeight": "Межстрочный интервал",
+    "width": "Ширина",
+    "decrease": "Уменьшить",
+    "increase": "Увеличить"
   },
   "filter": {
     "placeholder": "Фильтр работ, например bookmarks>100",

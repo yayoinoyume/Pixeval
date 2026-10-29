@@ -290,7 +290,12 @@
     "pages": "%d 页",
     "bookmark": "收藏",
     "bookmarked": "已收藏",
-    "bookmarkFailed": "收藏失败：%s"
+    "bookmarkFailed": "收藏失败：%s",
+    "fontSize": "字号",
+    "lineHeight": "行距",
+    "width": "宽度",
+    "decrease": "减小",
+    "increase": "增大"
   },
   "filter": {
     "placeholder": "过滤表达式，如 bookmarks>100",

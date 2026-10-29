@@ -30,6 +30,10 @@ func TestSettingsRoundTrip(t *testing.T) {
 
 		AutoDownloadSubscriptions:   true,
 		SubscriptionIntervalMinutes: 30,
+
+		NovelFontSize:   novelFontSizeMax,
+		NovelLineHeight: 1.6,
+		NovelWidth:      900,
 	}
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -79,6 +83,9 @@ func TestDefaultSettings(t *testing.T) {
 	if !strings.HasSuffix(s.DownloadDir, filepath.Join("Pictures", "Pixeval Go")) {
 		t.Errorf("download dir %q", s.DownloadDir)
 	}
+	if s.NovelFontSize != novelFontSizeDefault || s.NovelLineHeight != novelLineHeightDefault || s.NovelWidth != novelWidthDefault {
+		t.Errorf("novel typography %d/%v/%v, want the defaults", s.NovelFontSize, s.NovelLineHeight, s.NovelWidth)
+	}
 }
 
 func TestLoadBadJSON(t *testing.T) {
@@ -118,6 +125,69 @@ func TestLoadFillsMissingFields(t *testing.T) {
 	if s.DownloadMacro != download.DefaultMacro {
 		t.Errorf("macro %q, want the default one", s.DownloadMacro)
 	}
+	if s.NovelFontSize != novelFontSizeDefault || s.NovelLineHeight != novelLineHeightDefault || s.NovelWidth != novelWidthDefault {
+		t.Errorf("missing novel typography not defaulted: %+v", *s)
+	}
+}
+
+// TestLoadNormalizesNovelTypography checks a hand edited reading preference
+// outside its range falls back to the default, while the range's ends stay.
+func TestLoadNormalizesNovelTypography(t *testing.T) {
+	load := func(t *testing.T, data string) *Settings {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "settings.json")
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		return s
+	}
+	t.Run("font size", func(t *testing.T) {
+		for _, tt := range []struct{ in, want int }{
+			{novelFontSizeMin - 1, novelFontSizeDefault},
+			{novelFontSizeMax + 1, novelFontSizeDefault},
+			{0, novelFontSizeDefault},
+			{novelFontSizeMin, novelFontSizeMin},
+			{novelFontSizeMax, novelFontSizeMax},
+		} {
+			s := load(t, `{"novelFontSize":`+strconv.Itoa(tt.in)+`}`)
+			if s.NovelFontSize != tt.want {
+				t.Errorf("font size %d, want %d", s.NovelFontSize, tt.want)
+			}
+		}
+	})
+	format := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+	t.Run("line height", func(t *testing.T) {
+		for _, tt := range []struct{ in, want float64 }{
+			{novelLineHeightMin - 0.1, novelLineHeightDefault},
+			{novelLineHeightMax + 0.1, novelLineHeightDefault},
+			{0, novelLineHeightDefault},
+			{novelLineHeightMin, novelLineHeightMin},
+			{novelLineHeightMax, novelLineHeightMax},
+		} {
+			s := load(t, `{"novelLineHeight":`+format(tt.in)+`}`)
+			if s.NovelLineHeight != tt.want {
+				t.Errorf("line height %v, want %v", s.NovelLineHeight, tt.want)
+			}
+		}
+	})
+	t.Run("width", func(t *testing.T) {
+		for _, tt := range []struct{ in, want float64 }{
+			{novelWidthMin - novelWidthStep, novelWidthDefault},
+			{novelWidthMax + novelWidthStep, novelWidthDefault},
+			{0, novelWidthDefault},
+			{novelWidthMin, novelWidthMin},
+			{novelWidthMax, novelWidthMax},
+		} {
+			s := load(t, `{"novelWidth":`+format(tt.in)+`}`)
+			if s.NovelWidth != tt.want {
+				t.Errorf("width %v, want %v", s.NovelWidth, tt.want)
+			}
+		}
+	})
 }
 
 // TestLoadNormalizesSubscriptionInterval checks a hand edited interval outside

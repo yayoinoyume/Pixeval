@@ -290,7 +290,12 @@
     "pages": "%d pages",
     "bookmark": "Ajouter aux favoris",
     "bookmarked": "Ajouté aux favoris",
-    "bookmarkFailed": "Échec de l'ajout aux favoris : %s"
+    "bookmarkFailed": "Échec de l'ajout aux favoris : %s",
+    "fontSize": "Taille du texte",
+    "lineHeight": "Interligne",
+    "width": "Largeur",
+    "decrease": "Réduire",
+    "increase": "Augmenter"
   },
   "filter": {
     "placeholder": "Filtrer les œuvres, p. ex. bookmarks>100",

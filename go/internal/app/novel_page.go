@@ -2,18 +2,20 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"math"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/novel"
 )
 
-// The reading column, the widest a body image may draw and the height of the
-// block that stands in for an image still loading.
+// The widest a body image may draw and the height of the block that stands in
+// for an image still loading.
 const (
-	novelTextWidth  = 760
 	novelImageWidth = 680
 	novelImageBlock = 120
 )
@@ -38,6 +40,9 @@ type novelViewState struct {
 	// looked up once.
 	imageURLs    map[novel.Image]string
 	imageLoading map[novel.Image]bool
+	// saveTimer writes a typography change after a short pause, so holding a
+	// button writes one file with the value it ends on.
+	saveTimer *time.Timer
 }
 
 // novelPageView is what the novel page draws.
@@ -242,6 +247,7 @@ func (a *App) novelPage(c *ui.Context) {
 				}
 			}
 		})
+		a.novelTypographyRow(c, v)
 		switch {
 		case s.loading:
 			ui.Column(c).Grow(1).Center().Children(func() { ui.Spinner(c) })
@@ -255,6 +261,129 @@ func (a *App) novelPage(c *ui.Context) {
 	})
 }
 
+// novelTypographyRow draws the reading page's typography controls: the text
+// size, the line spacing and the reading column's width, each changed by a
+// pair of text buttons and saved after a short pause.
+func (a *App) novelTypographyRow(c *ui.Context, v *novelViewState) {
+	st := a.novelStyle()
+	t := themeOf(c)
+	ui.Row(c).Gap(t.SpaceL).Padding(0, contentPadding, t.SpaceM, contentPadding).
+		AlignItems(ui.Center).Children(func() {
+		a.novelTypographyControl(c, a.t("novel.fontSize"), fmt.Sprintf("%g", st.fontSize), func(dir int) {
+			a.adjustNovelFontSize(v, dir)
+		})
+		a.novelTypographyControl(c, a.t("novel.lineHeight"), fmt.Sprintf("%g", st.lineHeight), func(dir int) {
+			a.adjustNovelLineHeight(v, dir)
+		})
+		a.novelTypographyControl(c, a.t("novel.width"), fmt.Sprintf("%g", st.width), func(dir int) {
+			a.adjustNovelWidth(v, dir)
+		})
+	})
+}
+
+// novelTypographyControl draws one typography setting: its name, the value it
+// has and the buttons moving it down and up.
+func (a *App) novelTypographyControl(c *ui.Context, label, value string, adjust func(dir int)) {
+	t := themeOf(c)
+	ui.Row(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, label).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		ui.Text(c, value).FontSize(t.TextSmall).TextColor(t.Text)
+		if ui.Button(c, "−").Label(a.t("novel.decrease") + " " + label).Clicked() {
+			adjust(-1)
+		}
+		if ui.Button(c, "＋").Label(a.t("novel.increase") + " " + label).Clicked() {
+			adjust(1)
+		}
+	})
+}
+
+// novelStyle is the typography the reading page draws its body with, from the
+// settings.
+type novelStyle struct {
+	fontSize   float32
+	lineHeight float32
+	width      float32
+}
+
+func (a *App) novelStyle() novelStyle {
+	st := novelStyle{novelFontSizeDefault, novelLineHeightDefault, novelWidthDefault}
+	if a.settings != nil {
+		st.fontSize = float32(a.settings.NovelFontSize)
+		st.lineHeight = float32(a.settings.NovelLineHeight)
+		st.width = float32(a.settings.NovelWidth)
+	}
+	return st
+}
+
+// adjustNovelFontSize moves the body text size by dir, stopping at the range's
+// ends, and saves it.
+func (a *App) adjustNovelFontSize(v *novelViewState, dir int) {
+	if a.settings == nil {
+		return
+	}
+	size := min(max(a.settings.NovelFontSize+dir*novelFontSizeStep, novelFontSizeMin), novelFontSizeMax)
+	if size == a.settings.NovelFontSize {
+		return
+	}
+	a.settings.NovelFontSize = size
+	a.scheduleNovelSave(v)
+}
+
+// adjustNovelLineHeight moves the line spacing by dir, one step at a time and
+// stopping at the range's ends, and saves it.
+func (a *App) adjustNovelLineHeight(v *novelViewState, dir int) {
+	if a.settings == nil {
+		return
+	}
+	height := a.settings.NovelLineHeight + float64(dir)*novelLineHeightStep
+	// A step is a tenth, so round it back to one to keep 1.7000000000000002
+	// out of the settings file.
+	height = math.Round(height*10) / 10
+	height = min(max(height, novelLineHeightMin), novelLineHeightMax)
+	if height == a.settings.NovelLineHeight {
+		return
+	}
+	a.settings.NovelLineHeight = height
+	a.scheduleNovelSave(v)
+}
+
+// adjustNovelWidth moves the reading column's width by dir, stopping at the
+// range's ends, and saves it.
+func (a *App) adjustNovelWidth(v *novelViewState, dir int) {
+	if a.settings == nil {
+		return
+	}
+	width := a.settings.NovelWidth + float64(dir)*novelWidthStep
+	width = min(max(width, novelWidthMin), novelWidthMax)
+	if width == a.settings.NovelWidth {
+		return
+	}
+	a.settings.NovelWidth = width
+	a.scheduleNovelSave(v)
+}
+
+// novelSaveDelay is how long after the last typography press the settings are
+// written, so holding a button writes one file with the value it ends on.
+const novelSaveDelay = 200 * time.Millisecond
+
+// scheduleNovelSave writes the settings after a short pause, on the main
+// thread. It saves them as they are then, not as they were when a control
+// moved, so a preference changed in the pause is not overwritten.
+func (a *App) scheduleNovelSave(v *novelViewState) {
+	if v.saveTimer != nil {
+		v.saveTimer.Stop()
+	}
+	v.saveTimer = time.AfterFunc(novelSaveDelay, func() {
+		a.update(func() { a.saveNovelTypography() })
+	})
+}
+
+// saveNovelTypography writes the settings a typography control changed, the
+// way the settings page does: on the main thread, off the file.
+func (a *App) saveNovelTypography() {
+	a.saveSettings()
+}
+
 // novelBody draws the chapters and paragraphs, with the body images after
 // them.
 func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
@@ -263,19 +392,20 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
 		return
 	}
 	t := themeOf(c)
+	st := a.novelStyle()
 	ui.Scroll(c).Grow(1).TrackScroll(&v.scroll).Children(func() {
 		ui.Row(c).FillWidth().Justify(ui.Center).Children(func() {
-			ui.Column(c).MaxWidth(novelTextWidth).Grow(1).Padding(t.Space2XL).Gap(t.SpaceL).Children(func() {
+			ui.Column(c).MaxWidth(st.width).Grow(1).Padding(t.Space2XL).Gap(t.SpaceL).Children(func() {
 				for _, ch := range doc.Chapters {
 					if ch.Title != "" {
 						ui.Text(c, ch.Title).FontSize(t.TextTitle).Bold().TextColor(t.Text)
 					}
 					for _, p := range ch.Paragraphs {
-						novelParagraph(c, p)
+						novelParagraph(c, p, st)
 					}
 				}
 				for _, img := range doc.Images {
-					a.novelImage(c, img, s.imageURLs[img])
+					a.novelImage(c, img, s.imageURLs[img], st)
 				}
 			})
 		})
@@ -284,19 +414,26 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
 
 // novelImage draws one body image in place of its marker: the picture once it
 // loads, a block while it loads, and a note for an uploaded image, which the
-// app cannot fetch yet.
-func (a *App) novelImage(c *ui.Context, img novel.Image, url string) {
+// app cannot fetch yet. An image never draws wider than the reading column.
+func (a *App) novelImage(c *ui.Context, img novel.Image, url string, st novelStyle) {
 	t := themeOf(c)
+	maxWidth := novelImageMaxWidth(st.width)
 	if img.UploadedID > 0 {
 		ui.Text(c, a.t("novel.imageUnsupported")).FontSize(t.TextSmall).TextColor(t.TextMuted)
 		return
 	}
 	if bmp := a.novelImageBitmap(url); bmp != nil {
-		ui.Image(c, bmp).MaxWidth(novelImageWidth).Radius(t.RadiusXS).Label(a.t("a11y.novelImage"))
+		ui.Image(c, bmp).MaxWidth(maxWidth).Radius(t.RadiusXS).Label(a.t("a11y.novelImage"))
 		return
 	}
-	ui.Box(c).FillWidth().MaxWidth(novelImageWidth).Height(novelImageBlock).
+	ui.Box(c).FillWidth().MaxWidth(maxWidth).Height(novelImageBlock).
 		Radius(t.RadiusXS).Background(t.SurfaceAlt).Label(a.t("a11y.novelImage"))
+}
+
+// novelImageMaxWidth is the widest a body image may draw: the image's own
+// limit, or the reading column when it is narrower.
+func novelImageMaxWidth(readingWidth float32) float32 {
+	return min(float32(novelImageWidth), readingWidth)
 }
 
 // novelImageBitmap returns the image's bitmap, starting its load the first time
@@ -310,12 +447,12 @@ func (a *App) novelImageBitmap(url string) *ui.Bitmap {
 
 // novelParagraph draws one paragraph, bold when it is a heading, with its ruby
 // readings written after the written form.
-func novelParagraph(c *ui.Context, p novel.Paragraph) {
+func novelParagraph(c *ui.Context, p novel.Paragraph, st novelStyle) {
 	text := novelParagraphText(p)
 	if text == "" {
 		return
 	}
-	t := ui.Text(c, text).LineHeight(1.8)
+	t := ui.Text(c, text).FontSize(st.fontSize).LineHeight(st.lineHeight)
 	if p.Heading {
 		t = t.Bold()
 	}
