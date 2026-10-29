@@ -241,7 +241,16 @@
     "cacheSize": "Cache size",
     "cacheClear": "Clear cache",
     "cacheCleared": "Cache cleared",
-    "groupAbout": "About"
+    "groupAbout": "About",
+    "groupData": "Data",
+    "clearBrowseHistory": "Clear browse history",
+    "clearDownloadHistory": "Clear download history",
+    "clearSearchHistory": "Clear search history",
+    "clearNovelProgress": "Clear reading progress",
+    "resetSettings": "Reset settings",
+    "resetHint": "Resets the settings only: accounts, downloads and history files are kept",
+    "historyCleared": "Cleared",
+    "resetDone": "Settings reset to default"
   },
   "history": {
     "empty": "No history yet",

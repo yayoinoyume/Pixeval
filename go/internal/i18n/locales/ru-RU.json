@@ -241,7 +241,16 @@
     "cacheSize": "Размер кэша",
     "cacheClear": "Очистить кэш",
     "cacheCleared": "Кэш очищен",
-    "groupAbout": "О программе"
+    "groupAbout": "О программе",
+    "groupData": "Данные",
+    "clearBrowseHistory": "Очистить историю просмотров",
+    "clearDownloadHistory": "Очистить историю загрузок",
+    "clearSearchHistory": "Очистить историю поиска",
+    "clearNovelProgress": "Очистить прогресс чтения",
+    "resetSettings": "Сбросить настройки",
+    "resetHint": "Сбрасываются только настройки: аккаунты, загрузки и файлы истории остаются",
+    "historyCleared": "Очищено",
+    "resetDone": "Настройки сброшены"
   },
   "history": {
     "empty": "История просмотров пуста",

@@ -241,7 +241,16 @@
     "cacheSize": "当前缓存大小",
     "cacheClear": "清理缓存",
     "cacheCleared": "缓存已清理",
-    "groupAbout": "关于"
+    "groupAbout": "关于",
+    "groupData": "数据",
+    "clearBrowseHistory": "清空浏览历史",
+    "clearDownloadHistory": "清空下载历史",
+    "clearSearchHistory": "清空搜索历史",
+    "clearNovelProgress": "清空小说阅读进度",
+    "resetSettings": "恢复默认设置",
+    "resetHint": "只重置设置，不删账号、下载与历史文件",
+    "historyCleared": "已清空",
+    "resetDone": "已恢复默认设置"
   },
   "history": {
     "empty": "还没有浏览记录",

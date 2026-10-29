@@ -275,6 +275,39 @@ func (a *App) settingsPage(c *ui.Context) {
 							})
 						}
 					})
+
+					a.settingsGroup(c, a.t("settings.groupData"), func(row settingsRow) {
+						row("", "", func() {
+							if ui.Button(c, a.t("settings.clearBrowseHistory")).Clicked() {
+								a.clearHistory()
+								c.Toast(a.t("settings.historyCleared"))
+							}
+						})
+						row("", "", func() {
+							if ui.Button(c, a.t("settings.clearDownloadHistory")).Clicked() {
+								// It leaves its own notice, which the next frame toasts.
+								a.clearDownloadHistory()
+							}
+						})
+						row("", "", func() {
+							if ui.Button(c, a.t("settings.clearSearchHistory")).Clicked() {
+								a.clearSearchHistory()
+								c.Toast(a.t("settings.historyCleared"))
+							}
+						})
+						row("", "", func() {
+							if ui.Button(c, a.t("settings.clearNovelProgress")).Clicked() {
+								a.clearNovelProgress()
+								c.Toast(a.t("settings.historyCleared"))
+							}
+						})
+						ui.Box(c).Height(1).FillWidth().Background(t.Border)
+						row(a.t("settings.resetHint"), "", func() {
+							if ui.Button(c, a.t("settings.resetSettings")).Clicked() {
+								a.resetSettings()
+							}
+						})
+					})
 				})
 			})
 		})
@@ -561,6 +594,7 @@ func (a *App) applySavedSettings(c *ui.Context) {
 	select {
 	case err := <-a.settingsSaved:
 		if err != nil {
+			a.settingsResetPending = false
 			a.settingsErr = a.tf("settings.saveFailed", err.Error())
 			return
 		}
@@ -580,12 +614,31 @@ func (a *App) applySavedSettings(c *ui.Context) {
 			return
 		}
 		a.restartSubscriptions()
-		c.Toast(a.t("settings.saved"))
+		msg := a.t("settings.saved")
+		if a.settingsResetPending {
+			a.settingsResetPending = false
+			msg = a.t("settings.resetDone")
+		}
+		c.Toast(msg)
 		// The masonry keeps its last layout until the next frame; ask for it
 		// so a new column width shows at once.
 		c.Invalidate()
 	default:
 	}
+}
+
+// resetSettings puts every preference back to its default and saves it. The
+// accounts, the download queue and the record files are other stores, so a
+// reset leaves them alone.
+func (a *App) resetSettings() {
+	if a.settings == nil {
+		return
+	}
+	*a.settings = *Default()
+	// A reset language applies at once, like the language select.
+	a.loadLanguage()
+	a.settingsResetPending = true
+	a.saveSettings()
 }
 
 // saveSettings writes the settings off the main thread, so the view never
