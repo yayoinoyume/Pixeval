@@ -351,6 +351,9 @@
     "followersLoadFailed": "Impossible de charger les abonnés : %s",
     "relatedUsers": "Utilisateurs similaires",
     "noRelatedUsers": "Aucun utilisateur similaire",
+    "myPixiv": "Utilisateurs MyPixiv",
+    "noMyPixiv": "Aucun utilisateur MyPixiv",
+    "myPixivLoadFailed": "Impossible de charger les utilisateurs MyPixiv : %s",
     "noRecommendedUsers": "Aucun auteur recommandé pour le moment"
   },
   "recommendedUsers": {

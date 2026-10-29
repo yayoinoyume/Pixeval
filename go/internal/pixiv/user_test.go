@@ -566,3 +566,37 @@ func TestRelatedUsersPagingPassesNextURL(t *testing.T) {
 		t.Errorf("empty lists decoded as %+v / %+v", first.Items, second.Items)
 	}
 }
+
+const userMyPixivBody = `{"user_previews":[{"user":{"id":9,"name":"好P友九",` +
+	`"account":"mypixiv9"},"illusts":[{"id":7,"title":"work"}]}],` +
+	`"next_url":"https://app-api.pixiv.net/v1/user/mypixiv?user_id=42&offset=30"}`
+
+func TestUserMyPixivRequestsUserAndFilter(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, userMyPixivBody))
+
+	page, err := c.UserMyPixiv(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("UserMyPixiv: %v", err)
+	}
+	if got.method != http.MethodGet {
+		t.Errorf("method = %q, want GET", got.method)
+	}
+	if got.path != "/v1/user/mypixiv" {
+		t.Errorf("path = %q", got.path)
+	}
+	if q := got.query; q.Get("user_id") != "42" || q.Get("filter") != "for_android" {
+		t.Errorf("query = %v", q)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items = %+v, want one user", page.Items)
+	}
+	p := page.Items[0]
+	if p.User.ID != 9 || p.User.Name != "好P友九" || p.User.Account != "mypixiv9" ||
+		len(p.Illusts) != 1 || p.Illusts[0].ID != 7 {
+		t.Errorf("preview = %+v", p)
+	}
+	if page.NextURL == "" {
+		t.Error("next_url is empty")
+	}
+}

@@ -448,6 +448,9 @@ func (a *App) userPage(c *ui.Context) {
 						if ui.Button(c, a.t("user.relatedUsers")).Clicked() {
 							a.openRelatedUsers(s.user.ID)
 						}
+						if ui.Button(c, a.t("user.myPixiv")).Clicked() {
+							a.openMyPixivUsers(s.user.ID)
+						}
 						if !a.isBlocked(s.user.ID) {
 							if ui.Button(c, a.t("block.user")).Clicked() {
 								a.blockUser(s.user)
