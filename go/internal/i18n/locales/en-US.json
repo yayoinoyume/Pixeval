@@ -383,7 +383,11 @@
     "myPixiv": "MyPixiv users",
     "noMyPixiv": "No MyPixiv users yet",
     "myPixivLoadFailed": "Cannot load MyPixiv users: %s",
-    "noRecommendedUsers": "No recommended users yet"
+    "noRecommendedUsers": "No recommended users yet",
+    "myPixivEmptyHint": "Follow authors and their new works will appear here",
+    "myPixivEmptyAction": "Search works",
+    "recommendedEmptyHint": "Pixiv suggests authors from the people you follow and the works you bookmark. Search for or bookmark a few works first.",
+    "recommendedEmptyAction": "Search authors"
   },
   "recommendedUsers": {
     "title": "Recommended users"

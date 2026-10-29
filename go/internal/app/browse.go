@@ -60,9 +60,12 @@ type browseState struct {
 	failed map[string]bool
 
 	// emptyKey and errorKey name the feed's empty and failure messages; empty
-	// means the browse feed's own.
-	emptyKey string
-	errorKey string
+	// means the browse feed's own. emptyHint and emptyAction are what an empty
+	// state adds under its title; a zero hint and nil action add nothing.
+	emptyKey    string
+	errorKey    string
+	emptyHint   string
+	emptyAction func()
 
 	// query is the search box's text, edited on the main thread. armed is
 	// set when a page may load: once the window runs for the home feed, on
@@ -442,6 +445,14 @@ func (a *App) myPixivPage(c *ui.Context) {
 			a.restartWorkFeed(a.myPixivFeed, a.myPixivKind, a.client.MyPixivIllustrations)
 		}
 	})
+	a.myPixivFeed.emptyHint = a.t("user.myPixivEmptyHint")
+	a.myPixivFeed.emptyAction = func() {
+		b := ui.PrimaryButton(c, a.t("nav.search")).
+			Label(a.t("user.myPixivEmptyAction")).Radius(t.RadiusS)
+		if b.Clicked() {
+			a.goRoute(routeSearch)
+		}
+	}
 	a.armWorkFeed(a.myPixivFeed, a.myPixivKind, a.client.MyPixivIllustrations)
 	a.browsePage(c, a.myPixivFeed)
 }
@@ -530,7 +541,7 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 		if emptyKey == "" {
 			emptyKey = "common.noWorks"
 		}
-		emptyState(c, iconImage, a.t(emptyKey), "", nil)
+		emptyState(c, iconImage, a.t(emptyKey), st.emptyHint, st.emptyAction)
 	}
 	// A filtered feed is not paged on past its first page: a strict expression
 	// would fetch page after page looking for a match that is not in them.
