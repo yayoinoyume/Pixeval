@@ -318,3 +318,84 @@ func TestWatchLaterPageOpensWork(t *testing.T) {
 		t.Errorf("opened work %d, want %d", got, want.ID)
 	}
 }
+
+// TestWatchLaterCardPutsCoverAboveText checks a saved card draws its cover at
+// the card's width and 3:2 shape, with the title under it, as the history
+// page's cards do.
+func TestWatchLaterCardPutsCoverAboveText(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := newViewerApp(newImageTransport(nil))
+	a.watchLater = &WatchLater{}
+	a.watchLater.Add(WatchLaterEntry{ID: 1, Title: "作品一", Artist: "画师一",
+		Cover: "https://example.invalid/1.jpg", At: time.Now()})
+	a.route = routeWatchLater
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	deadline := time.Now().Add(2 * time.Second)
+	var cover ui.Rect
+	for {
+		tt.Frame()
+		if r, ok := tt.Find(a.tf("a11y.cover", "作品一")); ok {
+			cover = r
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("cover missing: %q", tt.Texts())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	card, ok := tt.Find(a.tf("a11y.card", "作品一", "画师一"))
+	if !ok {
+		t.Fatalf("card missing: %q", tt.Texts())
+	}
+	title, ok := tt.Find("作品一")
+	if !ok {
+		t.Fatalf("title missing: %q", tt.Texts())
+	}
+	if cover.W != card.W {
+		t.Errorf("cover width %v, want the card's %v", cover.W, card.W)
+	}
+	if want := card.W * 3 / 2; cover.H < want-0.5 || cover.H > want+0.5 {
+		t.Errorf("cover height %v, want %v", cover.H, want)
+	}
+	if title.Y < cover.Y+cover.H {
+		t.Errorf("title at y=%v, want it under the cover ending at %v",
+			title.Y, cover.Y+cover.H)
+	}
+}
+
+// TestWatchLaterCardWithoutCoverKeepsItsBox checks an entry saved without a
+// cover still leaves the cover's box, with the text under it.
+func TestWatchLaterCardWithoutCoverKeepsItsBox(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := newViewerApp(newImageTransport(nil))
+	a.watchLater = &WatchLater{}
+	a.watchLater.Add(WatchLaterEntry{ID: 2, Title: "没有封面", Artist: "画师二",
+		At: time.Now()})
+	a.route = routeWatchLater
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	card, ok := tt.Find(a.tf("a11y.card", "没有封面", "画师二"))
+	if !ok {
+		t.Fatalf("card missing: %q", tt.Texts())
+	}
+	title, ok := tt.Find("没有封面")
+	if !ok {
+		t.Fatalf("title missing: %q", tt.Texts())
+	}
+	coverHeight := card.W * 3 / 2
+	if card.H < coverHeight {
+		t.Errorf("card height %v, want at least the cover's %v", card.H, coverHeight)
+	}
+	if title.Y < card.Y+coverHeight {
+		t.Errorf("title at y=%v, want it under the cover ending at %v",
+			title.Y, card.Y+coverHeight)
+	}
+	if _, ok := tt.Find(a.tf("a11y.cover", "没有封面")); ok {
+		t.Error("a missing cover drew an image")
+	}
+	if tt.HasText(a.t("common.coverFailed")) {
+		t.Errorf("a missing cover is not a failed load: %q", tt.Texts())
+	}
+}

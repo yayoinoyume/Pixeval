@@ -279,7 +279,7 @@ func (a *App) watchLaterCard(c *ui.Context, e WatchLaterEntry, width float32) {
 		Cursor(ui.CursorPointer).OnClick(func() {
 		a.openSavedWork(e.ID, "watchLater.openFailed")
 	})
-	cover.Grow(0).Height(width * 3 / 2)
+	cover.Height(width * 3 / 2)
 	cover.Children(func() {
 		if e.Cover == "" {
 			return // an entry saved without a cover has no image to draw
