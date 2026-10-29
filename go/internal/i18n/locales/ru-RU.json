@@ -69,6 +69,11 @@
   "viewer": {
     "imageFailed": "Ошибка загрузки изображения",
     "image": "Illustration: %s (page %d of %d)",
+    "animated": "Анимация: %s",
+    "ugoiraLoading": "Загрузка анимации…",
+    "ugoiraFailed": "Ошибка загрузки анимации",
+    "ugoiraPlay": "Воспроизвести",
+    "ugoiraPause": "Пауза",
     "bookmark": "Добавить в закладки",
     "bookmarked": "В закладках",
     "download": "Скачать",

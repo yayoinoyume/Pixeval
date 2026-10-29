@@ -69,6 +69,11 @@
   "viewer": {
     "imageFailed": "Échec du chargement de l'image",
     "image": "Illustration: %s (page %d of %d)",
+    "animated": "Animation : %s",
+    "ugoiraLoading": "Chargement de l'animation…",
+    "ugoiraFailed": "Échec du chargement de l'animation",
+    "ugoiraPlay": "Lecture",
+    "ugoiraPause": "Pause",
     "bookmark": "Ajouter aux favoris",
     "bookmarked": "Ajouté aux favoris",
     "download": "Télécharger",

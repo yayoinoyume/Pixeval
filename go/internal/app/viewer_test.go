@@ -1,19 +1,23 @@
 package app
 
 import (
+	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/animated"
 	"github.com/yayoinoyume/pixeval-go/internal/artcolor"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
@@ -89,6 +93,7 @@ func newViewerApp(rt http.RoundTripper) *App {
 	a.session = nil
 	client := pixiv.NewClient()
 	client.HTTP().Transport = rt
+	a.client = client
 	a.images = imagex.New(client, "")
 	return a
 }
@@ -507,4 +512,257 @@ func TestViewerSeedFollowsPage(t *testing.T) {
 	if got, want := a.viewer.themeTokens.Bg, paletteFor(blue, a.viewer.themeDark).Bg; !sameColor(got, want) {
 		t.Errorf("room %v for the second page, want %v", got, want)
 	}
+}
+
+// ugoiraZipURL is the zip the fake metadata points at.
+const ugoiraZipURL = "https://example.invalid/ugoira.zip"
+
+// ugoiraWork is a one-page animation.
+func ugoiraWork() pixiv.Illustration {
+	return pixiv.Illustration{
+		ID:        77,
+		Title:     "动图作品",
+		Type:      "ugoira",
+		PageCount: 1,
+		Width:     4,
+		Height:    4,
+		ImageUrls: pixiv.ImageUrls{Large: "https://example.invalid/ugoira-cover.jpg"},
+		MetaSinglePage: pixiv.MetaSinglePage{
+			OriginalImageURL: "https://example.invalid/ugoira-still.jpg",
+		},
+	}
+}
+
+// ugoiraZip is a zip of n solid frames, which animated.ExtractZip decodes in
+// the order the metadata lists.
+func ugoiraZip(t *testing.T, n int) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i := 0; i < n; i++ {
+		w, err := zw.Create(fmt.Sprintf("frame_%d.png", i))
+		if err != nil {
+			t.Fatalf("zip.Create: %v", err)
+		}
+		img := image.NewRGBA(image.Rect(0, 0, 4, 4))
+		c := color.RGBA{R: uint8(40 + 40*i), G: 120, B: 40, A: 255}
+		for y := 0; y < 4; y++ {
+			for x := 0; x < 4; x++ {
+				img.SetRGBA(x, y, c)
+			}
+		}
+		if err := png.Encode(w, img); err != nil {
+			t.Fatalf("png.Encode: %v", err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatalf("zip.Close: %v", err)
+	}
+	return buf.Bytes()
+}
+
+// ugoiraMetadataJSON is the metadata endpoint's answer for n frames.
+func ugoiraMetadataJSON(n int) []byte {
+	frames := make([]string, n)
+	for i := range frames {
+		frames[i] = fmt.Sprintf(`{"file":"frame_%d.png","delay":20}`, i)
+	}
+	return []byte(fmt.Sprintf(`{"ugoira_metadata":{"zip_urls":{"medium":"%s"},"frames":[%s]}}`,
+		ugoiraZipURL, strings.Join(frames, ",")))
+}
+
+// ugoiraTransport serves the animation's metadata and zip, and a PNG for the
+// covers and avatars the viewer asks for, without a network.
+type ugoiraTransport struct {
+	frames  int
+	zipData []byte
+
+	mu       sync.Mutex
+	metaFail bool
+	zipErr   error
+	zipCalls int
+}
+
+func (tr *ugoiraTransport) setMetaFail(fail bool) {
+	tr.mu.Lock()
+	tr.metaFail = fail
+	tr.mu.Unlock()
+}
+
+func (tr *ugoiraTransport) zipCount() int {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.zipCalls
+}
+
+func (tr *ugoiraTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	tr.mu.Lock()
+	metaFail, zipErr := tr.metaFail, tr.zipErr
+	isZip := req.URL.String() == ugoiraZipURL
+	if isZip {
+		tr.zipCalls++
+	}
+	tr.mu.Unlock()
+	if strings.HasSuffix(req.URL.Path, "/v1/ugoira/metadata") {
+		if metaFail {
+			// A 404 is a failure the client does not retry, so the test does
+			// not wait through the backoff.
+			return &http.Response{
+				StatusCode: http.StatusNotFound,
+				Status:     "404 Not Found",
+				Header:     http.Header{},
+				Body:       io.NopCloser(strings.NewReader("")),
+				Request:    req,
+			}, nil
+		}
+		return testResponse(req, "application/json", ugoiraMetadataJSON(tr.frames)), nil
+	}
+	if isZip {
+		if zipErr != nil {
+			return nil, zipErr
+		}
+		return testResponse(req, "application/zip", tr.zipData), nil
+	}
+	return testResponse(req, "image/png", testPNG), nil
+}
+
+// testResponse is a 200 answer of body in one content type.
+func testResponse(req *http.Request, contentType string, body []byte) *http.Response {
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     http.Header{"Content-Type": []string{contentType}},
+		Body:       io.NopCloser(bytes.NewReader(body)),
+		Request:    req,
+	}
+}
+
+// waitUgoira waits for the animation's state to settle as want says.
+func waitUgoira(t *testing.T, v *viewerState, what string, want func(frames *animated.Frames, frame int, playing, loading, failed bool) bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		frames, frame, playing, loading, failed := v.ugoiraState()
+		if want(frames, frame, playing, loading, failed) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("ugoira did not %s", what)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestViewerUgoiraPlays checks the frames load once, the animation advances,
+// and the play control pauses it.
+func TestViewerUgoiraPlays(t *testing.T) {
+	tr := &ugoiraTransport{frames: 3, zipData: ugoiraZip(t, 3)}
+	a := newViewerApp(tr)
+	w := ugoiraWork()
+	a.openViewer(&w, 0)
+	waitUgoira(t, a.viewer, "load", func(frames *animated.Frames, _ int, playing, loading, failed bool) bool {
+		return frames != nil && playing && !loading && !failed
+	})
+	frames, frame, _, _, _ := a.viewer.ugoiraState()
+	if len(frames.Images) != 3 {
+		t.Fatalf("frames %d, want 3", len(frames.Images))
+	}
+	if len(frames.Delays) != 3 || frames.Delays[0] != 20*time.Millisecond {
+		t.Fatalf("delays %v, want three of 20ms", frames.Delays)
+	}
+	waitUgoira(t, a.viewer, "advance", func(_ *animated.Frames, f int, _ bool, _, _ bool) bool {
+		return f != frame
+	})
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if _, ok := tt.Find("动图：动图作品"); !ok {
+		t.Errorf("the frame has no label: %q", tt.Texts())
+	}
+	if err := tt.Click("暂停"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	_, paused, playing, _, _ := a.viewer.ugoiraState()
+	if playing {
+		t.Fatal("still playing after pause")
+	}
+	time.Sleep(100 * time.Millisecond)
+	if _, now, _, _, _ := a.viewer.ugoiraState(); now != paused {
+		t.Errorf("frame moved from %d to %d while paused", paused, now)
+	}
+	if got := tr.zipCount(); got != 1 {
+		t.Errorf("zip downloads %d, want 1", got)
+	}
+}
+
+// TestViewerUgoiraStops checks switching the work and closing the viewer both
+// stop the animation.
+func TestViewerUgoiraStops(t *testing.T) {
+	tr := &ugoiraTransport{frames: 2, zipData: ugoiraZip(t, 2)}
+	a := newViewerApp(tr)
+	w := ugoiraWork()
+	a.openViewer(&w, 0)
+	waitUgoira(t, a.viewer, "load", func(frames *animated.Frames, _ int, playing, _, _ bool) bool {
+		return frames != nil && playing
+	})
+	old := a.viewer
+	other := viewerWork()
+	a.openViewer(&other, 0)
+	if _, _, playing, _, _ := old.ugoiraState(); playing {
+		t.Fatal("the replaced viewer still plays")
+	}
+	_, frame, _, _, _ := old.ugoiraState()
+	time.Sleep(100 * time.Millisecond)
+	if _, now, _, _, _ := old.ugoiraState(); now != frame {
+		t.Errorf("the replaced viewer moved from frame %d to %d", frame, now)
+	}
+
+	a.openViewer(&w, 0)
+	waitUgoira(t, a.viewer, "load again", func(frames *animated.Frames, _ int, playing, _, _ bool) bool {
+		return frames != nil && playing
+	})
+	closed := a.viewer
+	a.closeViewer()
+	if _, _, playing, _, _ := closed.ugoiraState(); playing {
+		t.Fatal("the closed viewer still plays")
+	}
+	_, frame, _, _, _ = closed.ugoiraState()
+	time.Sleep(100 * time.Millisecond)
+	if _, now, _, _, _ := closed.ugoiraState(); now != frame {
+		t.Errorf("the closed viewer moved from frame %d to %d", frame, now)
+	}
+}
+
+// TestViewerUgoiraFailed checks a failed load says so and that the retry
+// fetches the frames again.
+func TestViewerUgoiraFailed(t *testing.T) {
+	tr := &ugoiraTransport{
+		frames:   2,
+		zipData:  ugoiraZip(t, 2),
+		metaFail: true,
+	}
+	a := newViewerApp(tr)
+	w := ugoiraWork()
+	a.openViewer(&w, 0)
+	waitUgoira(t, a.viewer, "fail", func(_ *animated.Frames, _ int, _, _, failed bool) bool {
+		return failed
+	})
+	if got := tr.zipCount(); got != 0 {
+		t.Fatalf("zip downloads %d after the metadata failed, want 0", got)
+	}
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if !tt.HasText("动图加载失败") {
+		t.Errorf("failure not shown: %q", tt.Texts())
+	}
+	if !tt.HasText("重试") {
+		t.Fatalf("retry not shown: %q", tt.Texts())
+	}
+	tr.setMetaFail(false)
+	if err := tt.Click("重试"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitUgoira(t, a.viewer, "load after the retry", func(frames *animated.Frames, _ int, playing, _, _ bool) bool {
+		return frames != nil && playing
+	})
 }
