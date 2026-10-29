@@ -292,7 +292,7 @@ func (a *App) loadMore(st *browseState) {
 			st.err = err.Error()
 		default:
 			st.started = true
-			st.add(page.Items, width, textHeight)
+			st.add(a.filterBlockedWorks(page.Items), width, textHeight)
 			st.next = page.NextURL
 		}
 		st.mu.Unlock()
@@ -308,6 +308,24 @@ func (st *browseState) add(items []pixiv.Illustration, width, textHeight float64
 		st.items = append(st.items, w)
 		st.tiles = append(st.tiles, widgets.MasonryItem{Key: w.ID, Aspect: cardAspect(w.Aspect(), width, textHeight)})
 	}
+}
+
+// removeAuthor drops the works by userID from the feed.
+func (st *browseState) removeAuthor(userID int64) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	items := make([]pixiv.Illustration, 0, len(st.items))
+	tiles := make([]widgets.MasonryItem, 0, len(st.tiles))
+	for i, w := range st.items {
+		if w.User.ID == userID {
+			continue
+		}
+		items = append(items, w)
+		if i < len(st.tiles) {
+			tiles = append(tiles, st.tiles[i])
+		}
+	}
+	st.items, st.tiles = items, tiles
 }
 
 // retry clears a failure, so the next frame loads the page again.
@@ -461,6 +479,10 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 		// Right click opens the author's page: the card's click is the work.
 		if m.Item(a.t("user.open")).Chosen() {
 			a.openUser(work.User.ID)
+		}
+		if m.Item(a.t("block.author")).Chosen() {
+			a.blockUser(work.User)
+			st.removeAuthor(work.User.ID)
 		}
 		if m.Item(a.watchLaterMenuLabel(work.ID)).Chosen() {
 			a.toggleWatchLater(work)

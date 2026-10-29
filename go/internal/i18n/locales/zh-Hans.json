@@ -316,5 +316,14 @@
   },
   "shortcuts": {
     "hint": "快捷键：Ctrl+K 搜索，Ctrl+, 设置，Ctrl+H 历史，Ctrl+D 下载，Esc 返回（macOS 用 Command 代替 Ctrl）"
+  },
+  "block": {
+    "user": "屏蔽用户",
+    "author": "屏蔽作者",
+    "userAdded": "已屏蔽 %s",
+    "remove": "取消屏蔽",
+    "clear": "清空屏蔽列表",
+    "empty": "还没有屏蔽任何用户",
+    "count": "已屏蔽 %d 位用户"
   }
 }

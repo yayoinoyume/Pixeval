@@ -264,6 +264,19 @@ func (st *userListState) canLoad() bool {
 	return st.armed && !st.loading && st.err == "" && (!st.started || st.next != "")
 }
 
+// removeUser drops the user ID from the list.
+func (st *userListState) removeUser(userID int64) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	users := make([]pixiv.UserPreview, 0, len(st.users))
+	for _, u := range st.users {
+		if u.User.ID != userID {
+			users = append(users, u)
+		}
+	}
+	st.users = users
+}
+
 // retry clears a failure, so the next frame loads the page again.
 func (st *userListState) retry() {
 	st.mu.Lock()
@@ -319,7 +332,7 @@ func (a *App) loadMoreUsers(st *userListState) {
 			st.err = err.Error()
 		default:
 			st.started = true
-			st.users = append(st.users, page.Items...)
+			st.users = append(st.users, a.filterBlockedUsers(page.Items)...)
 			st.next = page.NextURL
 		}
 		st.mu.Unlock()
@@ -432,6 +445,12 @@ func (a *App) userPage(c *ui.Context) {
 					ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 						a.followButton(c, v, s)
 						a.subscriptionButton(c, subscription.KindUser, s.user.ID, s.user.Name)
+						if !a.isBlocked(s.user.ID) {
+							if ui.Button(c, a.t("block.user")).Clicked() {
+								a.blockUser(s.user)
+								a.goBack()
+							}
+						}
 					})
 				}
 			})

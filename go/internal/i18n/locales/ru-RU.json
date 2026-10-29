@@ -316,5 +316,14 @@
   },
   "shortcuts": {
     "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
+  },
+  "block": {
+    "user": "Заблокированные пользователи",
+    "author": "Заблокировать автора",
+    "userAdded": "%s заблокирован",
+    "remove": "Разблокировать",
+    "clear": "Очистить список",
+    "empty": "Нет заблокированных пользователей",
+    "count": "Заблокировано: %d"
   }
 }
