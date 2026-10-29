@@ -31,6 +31,8 @@ func pageBodies() map[string]string {
 			`"account":"following8"}}],"next_url":""}`,
 		"/v1/user/follower": `{"user_previews":[{"user":{"id":9,"name":"粉丝九",` +
 			`"account":"follower9"}}],"next_url":""}`,
+		"/v1/user/bookmarks/illust": `{"illusts":[{"id":41,"title":"收藏四十一",` +
+			`"user":{"id":7,"name":"画师七"},"width":480,"height":720}],"next_url":""}`,
 		"/v1/illust/series/": `{"illust_series_detail":{"id":3,"title":"系列三","description":"系列简介"},` +
 			`"illusts":[{"id":21,"title":"系列作品","user":{"id":7,"name":"画师七"},` +
 			`"width":480,"height":720}],"next_url":""}`,
@@ -385,6 +387,147 @@ func TestUserPageSocialTabs(t *testing.T) {
 	}
 }
 
+// TestUserPageBookmarksPublicOnly checks another user's bookmarks tab asks
+// for the public list, offers no private list, and opens a work in the viewer.
+func TestUserPageBookmarksPublicOnly(t *testing.T) {
+	a := englishPageApp(pageBodies())
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
+
+	tr := a.client.HTTP().Transport.(*pageTransport)
+	if got := tr.requestedURLs(); containsPart(got, "/v1/user/bookmarks") {
+		t.Fatalf("opening the page fetched bookmarks: %v", got)
+	}
+
+	// The navigation's own Bookmarks item shares the tab's label, so the test
+	// chooses the tab instead of clicking that text.
+	a.userView.tab = userTabBookmarks
+	tt.Frame()
+	waitBrowse(t, a.userView.bookmarksFeed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	tt.Frame()
+	if !tt.HasText("收藏四十一") {
+		t.Errorf("bookmarks tab missing: %q", tt.Texts())
+	}
+	if tt.HasText(a.t("user.bookmarksPrivate")) {
+		t.Errorf("private sub-tab on another user's page: %q", tt.Texts())
+	}
+	if !containsPart(tr.requestedURLs(), "restrict=public") ||
+		!containsPart(tr.requestedURLs(), "user_id=7") {
+		t.Errorf("requests = %v, want the public list for user 7", tr.requestedURLs())
+	}
+	if containsPart(tr.requestedURLs(), "restrict=private") {
+		t.Errorf("requests = %v, want no private list", tr.requestedURLs())
+	}
+
+	card := a.tf("a11y.card", "收藏四十一", "画师七")
+	if err := tt.Click(card); err != nil {
+		t.Fatalf("Click %q: %v", card, err)
+	}
+	if a.viewer == nil || a.viewer.work.ID != 41 {
+		t.Fatalf("viewer %+v, want work 41", a.viewer)
+	}
+}
+
+// TestUserPageOwnBookmarksVisibility checks the signed-in user's own page
+// offers the private list, and switching visibility restarts only that list.
+func TestUserPageOwnBookmarksVisibility(t *testing.T) {
+	a := englishPageApp(pageBodies())
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7, Name: "画师七"}}
+	a.client.SetToken(a.session)
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
+
+	a.userView.tab = userTabBookmarks
+	tt.Frame()
+	waitBrowse(t, a.userView.bookmarksFeed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	tt.Frame()
+	for _, want := range []string{a.t("user.bookmarksPublic"), a.t("user.bookmarksPrivate")} {
+		if !tt.HasText(want) {
+			t.Errorf("%q missing: %q", want, tt.Texts())
+		}
+	}
+
+	if err := tt.Click(a.t("user.bookmarksPrivate")); err != nil {
+		t.Fatalf("Click private sub-tab: %v", err)
+	}
+	if a.userView.bookmarksTab != bookmarksPrivate {
+		t.Fatal("the private sub-tab is not selected")
+	}
+	waitBrowse(t, a.userView.bookmarksPrivateFeed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	tt.Frame()
+	if !tt.HasText("收藏四十一") {
+		t.Errorf("private list missing: %q", tt.Texts())
+	}
+	tr := a.client.HTTP().Transport.(*pageTransport)
+	if !containsPart(tr.requestedURLs(), "restrict=private") ||
+		!containsPart(tr.requestedURLs(), "user_id=7") {
+		t.Errorf("requests = %v, want the private list for user 7", tr.requestedURLs())
+	}
+
+	if err := tt.Click(a.t("user.bookmarksPublic")); err != nil {
+		t.Fatalf("Click public sub-tab: %v", err)
+	}
+	waitBrowse(t, a.userView.bookmarksFeed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	deadline := time.Now().Add(2 * time.Second)
+	for countPart(tr.requestedURLs(), "restrict=public") < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("public list not reloaded: %v", tr.requestedURLs())
+		}
+		tt.Frame()
+		time.Sleep(time.Millisecond)
+	}
+	if got := countPart(tr.requestedURLs(), "type=illust"); got != 1 {
+		t.Errorf("illustrations requested %d times, want 1: %v", got, tr.requestedURLs())
+	}
+	if got := countPart(tr.requestedURLs(), "restrict=private"); got != 1 {
+		t.Errorf("private list requested %d times, want 1: %v", got, tr.requestedURLs())
+	}
+}
+
+// TestUserPageBookmarksEmpty checks the bookmarks tab's empty state.
+func TestUserPageBookmarksEmpty(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/user/bookmarks/illust"] = `{"illusts":[],"next_url":""}`
+	a := englishPageApp(bodies)
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
+
+	a.userView.tab = userTabBookmarks
+	tt.Frame()
+	waitBrowse(t, a.userView.bookmarksFeed, "load", func(v browseView) bool {
+		return v.started && len(v.items) == 0
+	})
+	tt.Frame()
+	if !tt.HasText(a.t("user.noBookmarks")) {
+		t.Errorf("empty state missing: %q", tt.Texts())
+	}
+}
+
+// containsPart reports whether a requested URL holds part.
+func containsPart(urls []string, part string) bool {
+	return countPart(urls, part) > 0
+}
+
+// countPart counts the requested URLs holding part.
+func countPart(urls []string, part string) int {
+	n := 0
+	for _, u := range urls {
+		if strings.Contains(u, part) {
+			n++
+		}
+	}
+	return n
+}
+
 // TestUserPageFollowingEmpty checks the following tab's empty state.
 func TestUserPageFollowingEmpty(t *testing.T) {
 	bodies := pageBodies()
@@ -505,7 +648,7 @@ func TestUserPageLoadsTabsOnDemand(t *testing.T) {
 		return n
 	}
 	for _, part := range []string{"type=manga", "/v1/user/novels", "/v1/user/following",
-		"/v1/user/follower"} {
+		"/v1/user/follower", "/v1/user/bookmarks"} {
 		if n := requests(part); n != 0 {
 			t.Errorf("opening the page fetched %s: %v", part, tr.requestedURLs())
 		}
