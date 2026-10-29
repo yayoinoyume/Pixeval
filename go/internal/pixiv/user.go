@@ -31,6 +31,14 @@ func (c *Client) UserIllusts(ctx context.Context, userID int64, kind string) (*P
 	return c.illustPage(ctx, c.pageURL("/v1/user/illusts", q))
 }
 
+// UserNovels lists a user's novels.
+func (c *Client) UserNovels(ctx context.Context, userID int64) (*Page[Novel], error) {
+	q := url.Values{}
+	q.Set("user_id", strconv.FormatInt(userID, 10))
+	c.setFilter(q)
+	return c.novelPage(ctx, c.pageURL("/v1/user/novels", q))
+}
+
 // UserFollowing lists the users a user follows publicly.
 func (c *Client) UserFollowing(ctx context.Context, userID int64) (*Page[UserPreview], error) {
 	q := url.Values{}

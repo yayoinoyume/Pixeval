@@ -13,11 +13,27 @@ import (
 // avatarSize is the profile image's side in the user page header.
 const avatarSize = 96
 
-// userViewState is one user page: the profile and the user's works feed. The
+// The user page's works tabs, in the order they show: illustrations, manga and
+// novels.
+const (
+	userTabIllust = iota
+	userTabManga
+	userTabNovel
+)
+
+// userViewState is one user page: the profile and the user's works tabs. The
 // view runs on the main thread and reads the profile through snapshot; the
 // load goroutine writes it under mu.
 type userViewState struct {
-	feed *browseState
+	// feed is the illustration tab's works; mangaFeed and novelFeed are the
+	// other tabs'. Each keeps its own pages and place, so switching tabs loses
+	// nothing.
+	feed      *browseState
+	mangaFeed *browseState
+	novelFeed *novelFeedState
+	// tab is the works tab shown, one of userTabIllust, userTabManga and
+	// userTabNovel.
+	tab int
 
 	mu           sync.Mutex
 	user         pixiv.User
@@ -60,28 +76,45 @@ func (uv *userPageView) comment() string {
 	return uv.user.Comment
 }
 
-// openUser shows userID's page: the works feed starts here, and the profile
+// openUser shows userID's page: the works tabs start here, and the profile
 // fills in when the fetch lands.
 func (a *App) openUser(userID int64) {
 	if userID <= 0 {
 		return
 	}
-	st := &browseState{}
-	st.setFetch(a.userFeed(st, userID))
-	st.arm()
-	v := &userViewState{feed: st, loading: true}
+	illust := &browseState{}
+	illust.setFetch(a.userFeed(illust, userID, "illust"))
+	illust.arm()
+	manga := &browseState{}
+	manga.setFetch(a.userFeed(manga, userID, "manga"))
+	manga.arm()
+	novels := &novelFeedState{}
+	novels.setFetch(a.userNovelFeed(novels, userID))
+	novels.arm()
+	v := &userViewState{feed: illust, mangaFeed: manga, novelFeed: novels, loading: true}
 	a.backRoute, a.route, a.userView = a.route, routeUser, v
 	go a.loadUser(v, userID)
 }
 
-// userFeed maps the user's feed to its pages: the first from UserIllusts, the
+// userFeed maps a works tab to its pages: the first from UserIllusts, the
 // later ones from the cursor.
-func (a *App) userFeed(st *browseState, userID int64) func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+func (a *App) userFeed(st *browseState, userID int64, kind string) func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
 	return func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
 		if next := st.cursor(); next != "" {
 			return a.client.NextIllustrations(ctx, next)
 		}
-		return a.client.UserIllusts(ctx, userID, "illust")
+		return a.client.UserIllusts(ctx, userID, kind)
+	}
+}
+
+// userNovelFeed maps the novel tab to its pages: the first from UserNovels,
+// the later ones from the cursor.
+func (a *App) userNovelFeed(st *novelFeedState, userID int64) func(context.Context) (*pixiv.Page[pixiv.Novel], error) {
+	return func(ctx context.Context) (*pixiv.Page[pixiv.Novel], error) {
+		if next := st.cursor(); next != "" {
+			return a.client.NextNovels(ctx, next)
+		}
+		return a.client.UserNovels(ctx, userID)
 	}
 }
 
@@ -103,7 +136,7 @@ func (a *App) loadUser(v *userViewState, userID int64) {
 	})
 }
 
-// userPage draws the profile above the user's works.
+// userPage draws the profile above the user's works tabs.
 func (a *App) userPage(c *ui.Context) {
 	v := a.userView
 	if v == nil {
@@ -140,7 +173,17 @@ func (a *App) userPage(c *ui.Context) {
 				}
 			})
 		})
-		a.browsePage(c, v.feed)
+		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+			textTabs(c, t, &v.tab, a.t("user.tabIllust"), a.t("user.tabManga"), a.t("user.tabNovel"))
+		})
+		switch v.tab {
+		case userTabManga:
+			a.browsePage(c, v.mangaFeed)
+		case userTabNovel:
+			a.novelResultsFor(c, v.novelFeed, a.t("user.noNovels"))
+		default:
+			a.browsePage(c, v.feed)
+		}
 	})
 }
 
