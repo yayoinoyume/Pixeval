@@ -271,7 +271,10 @@
   "novel": {
     "loadFailed": "加载小说失败：%s",
     "imageUnsupported": "正文图片暂不支持",
-    "pages": "%d 页"
+    "pages": "%d 页",
+    "bookmark": "收藏",
+    "bookmarked": "已收藏",
+    "bookmarkFailed": "收藏失败：%s"
   },
   "filter": {
     "placeholder": "过滤表达式，如 bookmarks>100",
