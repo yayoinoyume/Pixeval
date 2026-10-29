@@ -376,7 +376,13 @@
     "remove": "取消屏蔽",
     "clear": "清空屏蔽列表",
     "empty": "还没有屏蔽任何用户",
-    "count": "已屏蔽 %d 位用户"
+    "count": "已屏蔽 %d 位用户",
+    "tag": "屏蔽标签",
+    "tagAdded": "已屏蔽标签 %s",
+    "tagRemove": "取消",
+    "tagCount": "已屏蔽 %d 个标签",
+    "tagEmpty": "还没有屏蔽任何标签",
+    "tagClear": "清空屏蔽标签"
   },
   "account": {
     "switch": "切换账号",

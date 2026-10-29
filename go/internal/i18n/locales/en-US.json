@@ -376,7 +376,13 @@
     "remove": "Unblock",
     "clear": "Clear blocked users",
     "empty": "No users blocked",
-    "count": "%d blocked"
+    "count": "%d blocked",
+    "tag": "Block tag",
+    "tagAdded": "Blocked tag %s",
+    "tagRemove": "Unblock",
+    "tagCount": "%d tags blocked",
+    "tagEmpty": "No tags blocked",
+    "tagClear": "Clear blocked tags"
   },
   "account": {
     "switch": "Switch account",

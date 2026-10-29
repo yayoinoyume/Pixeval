@@ -243,8 +243,8 @@ func (a *App) detailTags(c *ui.Context, t tokens, v *viewerState, tags []pixiv.T
 	})
 }
 
-// detailTag is one linked tag: its word, and its translation when the API
-// has one.
+// detailTag is one linked tag: its word, its translation when the API has
+// one, and a quiet action to block it.
 func (a *App) detailTag(c *ui.Context, t tokens, tag pixiv.Tag) {
 	word := tag.Name
 	if word == "" {
@@ -253,22 +253,31 @@ func (a *App) detailTag(c *ui.Context, t tokens, tag pixiv.Tag) {
 	if word == "" {
 		return
 	}
-	fg := t.Accent
-	b := ui.ButtonBase(c).Padding(0).Gap(2).Label(word)
-	if b.Hovered() {
-		fg = t.Text
-	}
-	if b.Clicked() {
-		a.searchTag(word)
-	}
-	b.Children(func() {
-		ui.Row(c).Gap(2).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "#").FontSize(t.TextMicro).TextColor(t.TextMuted)
-			ui.Text(c, word).FontSize(t.TextSmall).FontWeight(500).TextColor(fg)
-			if tag.TranslatedName != "" && tag.Name != "" {
-				ui.Text(c, "·").FontSize(t.TextMicro).TextColor(t.TextMuted)
-				ui.Text(c, tag.TranslatedName).FontSize(t.TextMicro).TextColor(t.TextMuted)
-			}
+	ui.Row(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
+		fg := t.Accent
+		b := ui.ButtonBase(c).Padding(0).Gap(2).Label(word)
+		if b.Hovered() {
+			fg = t.Text
+		}
+		if b.Clicked() {
+			a.searchTag(word)
+		}
+		b.Children(func() {
+			ui.Row(c).Gap(2).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "#").FontSize(t.TextMicro).TextColor(t.TextMuted)
+				ui.Text(c, word).FontSize(t.TextSmall).FontWeight(500).TextColor(fg)
+				if tag.TranslatedName != "" && tag.Name != "" {
+					ui.Text(c, "·").FontSize(t.TextMicro).TextColor(t.TextMuted)
+					ui.Text(c, tag.TranslatedName).FontSize(t.TextMicro).TextColor(t.TextMuted)
+				}
+			})
+		})
+		block := ui.ButtonBase(c).Padding(0, 2).Label(a.t("block.tag"))
+		if block.Clicked() {
+			a.blockTag(word)
+		}
+		block.Children(func() {
+			ui.Text(c, a.t("block.tag")).FontSize(t.TextMicro).TextColor(t.TextMuted)
 		})
 	})
 }

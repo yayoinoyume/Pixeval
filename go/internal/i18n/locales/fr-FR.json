@@ -376,7 +376,13 @@
     "remove": "Débloquer",
     "clear": "Vider la liste des bloqués",
     "empty": "Aucun utilisateur bloqué",
-    "count": "%d utilisateur(s) bloqué(s)"
+    "count": "%d utilisateur(s) bloqué(s)",
+    "tag": "Bloquer le tag",
+    "tagAdded": "Tag %s bloqué",
+    "tagRemove": "Débloquer",
+    "tagCount": "%d tag(s) bloqué(s)",
+    "tagEmpty": "Aucun tag bloqué",
+    "tagClear": "Effacer les tags bloqués"
   },
   "account": {
     "switch": "Changer de compte",

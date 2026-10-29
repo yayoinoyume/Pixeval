@@ -214,6 +214,28 @@ func TestViewerTagSearch(t *testing.T) {
 	}
 }
 
+// TestViewerTagBlock checks the tag action blocks the tag and drops the work
+// from the viewer at once.
+func TestViewerTagBlock(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := newViewerApp(newImageTransport(nil))
+	w := viewerWork()
+	w.Tags = []pixiv.Tag{{Name: "オリジナル"}}
+	a.openViewer(&w, 0)
+	tt := ui.NewTester(a.View, 1280, 820)
+	tt.Frame()
+
+	if err := tt.Click(a.t("block.tag")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !a.isTagBlocked("オリジナル") {
+		t.Fatalf("tag not blocked: %+v", a.blockedTagsSnapshot())
+	}
+	if a.viewer != nil {
+		t.Error("the viewer stayed open after blocking its tag")
+	}
+}
+
 // manyTagDetail is viewerDetail with a tag list longer than the card's room.
 func manyTagDetail() pixiv.Illustration {
 	w := viewerDetail()

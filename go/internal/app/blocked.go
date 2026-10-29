@@ -156,11 +156,12 @@ func (a *App) isBlocked(id int64) bool {
 	return a.blocked != nil && a.blocked.Has(id)
 }
 
-// filterBlockedWorks drops the works of blocked users from a loaded page.
+// filterBlockedWorks drops the works of blocked users and works carrying a
+// blocked tag from a loaded page.
 func (a *App) filterBlockedWorks(items []pixiv.Illustration) []pixiv.Illustration {
 	kept := make([]pixiv.Illustration, 0, len(items))
 	for _, w := range items {
-		if !a.isBlocked(w.User.ID) {
+		if !a.isBlocked(w.User.ID) && !a.workHasBlockedTag(w) {
 			kept = append(kept, w)
 		}
 	}
