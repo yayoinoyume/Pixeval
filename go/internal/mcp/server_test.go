@@ -706,12 +706,38 @@ func TestFeedAndSocialReadToolBadArgs(t *testing.T) {
 		{"following_users", `{"id":-1}`},
 		{"my_pixiv_users", `{}`},
 		{"related_users", `{"id":0}`},
+		// Arguments that are not an object are refused too, including for the
+		// tools that take none.
+		{"status", `"oops"`},
+		{"settings_summary", `"oops"`},
 	}
 	for _, tc := range cases {
 		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, tc.name, tc.args)
 		r := call(t, newTestServer(&fakeBackend{}), body)
 		if r.Error == nil || r.Error.Code != codeInvalidParams {
 			t.Errorf("%s: reply %+v", tc.name, r)
+		}
+	}
+}
+
+// TestRankingMode checks the ranking tool accepts the seven periods its schema
+// lists and refuses any other mode as invalid params.
+func TestRankingMode(t *testing.T) {
+	b := &fakeBackend{works: sampleWorks()}
+	h := newTestServer(b)
+	if got := len(rankModeNames()); got != 7 {
+		t.Fatalf("rank modes %v, want the seven the schema lists", rankModeNames())
+	}
+	for _, mode := range rankModeNames() {
+		callToolText(t, h, "ranking", fmt.Sprintf(`{"mode":%q}`, mode))
+		if b.mode != mode {
+			t.Errorf("ranking mode %q reached the backend as %q", mode, b.mode)
+		}
+	}
+	for _, mode := range []string{"hour", "day-male", "DAY"} {
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"ranking","arguments":{"mode":%q}}}`, mode)
+		if r := call(t, h, body); r.Error == nil || r.Error.Code != codeInvalidParams {
+			t.Errorf("ranking mode %q: reply %+v", mode, r)
 		}
 	}
 }
@@ -860,7 +886,10 @@ func TestCapabilitiesCall(t *testing.T) {
 	if got.IsError || len(got.Content) != 1 {
 		t.Fatalf("result %+v", got)
 	}
-	for _, want := range []string{"pixeval-go", "2025-06-18", "bearer", "capabilities", "history"} {
+	for _, want := range []string{
+		"pixeval-go", "2025-06-18", "bearer", "capabilities", "history",
+		fmt.Sprintf("list limit: %d by default", defaultLimit),
+	} {
 		if !strings.Contains(got.Content[0].Text, want) {
 			t.Errorf("text misses %q: %s", want, got.Content[0].Text)
 		}

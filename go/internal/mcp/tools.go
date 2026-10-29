@@ -128,6 +128,37 @@ var novelIDProperty = property{
 	Description: "The novel's Pixiv id.",
 }
 
+// rankModes are the ranking periods the tool accepts, in the order its schema
+// lists them. An empty mode means Day.
+var rankModes = []pixiv.RankMode{
+	pixiv.Day, pixiv.Week, pixiv.Month,
+	pixiv.DayMale, pixiv.DayFemale,
+	pixiv.WeekOriginal, pixiv.WeekRookie,
+}
+
+// rankModeNames is rankModes as the schema's enum.
+func rankModeNames() []string {
+	names := make([]string, len(rankModes))
+	for i, mode := range rankModes {
+		names[i] = string(mode)
+	}
+	return names
+}
+
+// parseRankMode checks the mode a call names, which must be empty or one of
+// rankModes.
+func parseRankMode(mode string) (pixiv.RankMode, error) {
+	if mode == "" {
+		return pixiv.Day, nil
+	}
+	for _, m := range rankModes {
+		if string(m) == mode {
+			return m, nil
+		}
+	}
+	return "", fmt.Errorf("mode must be one of %s", strings.Join(rankModeNames(), ", "))
+}
+
 var kindProperty = property{
 	Type:        "string",
 	Description: "Which works to list: illust or manga.",
@@ -244,12 +275,8 @@ var toolDefs = []tool{
 				"mode": {
 					Type:        "string",
 					Description: "The ranking period; day when omitted.",
-					Enum: []string{
-						string(pixiv.Day), string(pixiv.Week), string(pixiv.Month),
-						string(pixiv.DayMale), string(pixiv.DayFemale),
-						string(pixiv.WeekOriginal), string(pixiv.WeekRookie),
-					},
-					Default: string(pixiv.Day),
+					Enum:        rankModeNames(),
+					Default:     string(pixiv.Day),
 				},
 				"limit": limitProperty,
 			},
@@ -760,7 +787,11 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		if err := decodeArgs(raw, &args); err != nil {
 			return callResult{}, err
 		}
-		works, err := b.Ranking(ctx, args.Mode, clampLimit(args.Limit))
+		mode, err := parseRankMode(args.Mode)
+		if err != nil {
+			return callResult{}, err
+		}
+		works, err := b.Ranking(ctx, string(mode), clampLimit(args.Limit))
 		if err != nil {
 			return failure(err), nil
 		}
@@ -801,6 +832,10 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		}
 		return textResult(fmt.Sprintf("queued %d page(s) of work %d", n, args.ID)), nil
 	case "status":
+		var args struct{}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
 		return textResult(b.Status()), nil
 	case "search_users":
 		var args struct {
@@ -1103,6 +1138,10 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		}
 		return tagsResult(limitItems(tags, clampListLimit(args.Limit))), nil
 	case "settings_summary":
+		var args struct{}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
 		summary, err := b.SettingsSummary(ctx)
 		if err != nil {
 			return failure(err), nil
@@ -1628,7 +1667,8 @@ func capabilitiesText() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "server: pixeval-go 0.1.0\nprotocol: %s\nauth: bearer token on every request\n", protocolVersion)
 	fmt.Fprintf(&b, "tools: %d\n%s\n", len(toolDefs), strings.Join(names, ", "))
-	fmt.Fprintf(&b, "list limit: %d by default, %d at most", defaultListLimit, maxLimit)
+	fmt.Fprintf(&b, "list limit: %d by default for the list tools, %d for the newer read tools, %d at most",
+		defaultLimit, defaultListLimit, maxLimit)
 	return b.String()
 }
 

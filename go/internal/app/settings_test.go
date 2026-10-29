@@ -1076,3 +1076,41 @@ func TestSettingsPageSavesNotificationsOff(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+// TestSettingsSnapshotRaceFree replaces the settings the settings page edits
+// while a goroutine reads the published copy the MCP server uses. The values
+// matter less than the race detector staying quiet.
+func TestSettingsSnapshotRaceFree(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	dir := t.TempDir()
+	a.settings.DownloadDir = dir
+	a.publishSettings()
+
+	const rounds = 200
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < rounds; i++ {
+			if _, err := a.SettingsSummary(context.Background()); err != nil {
+				t.Errorf("SettingsSummary: %v", err)
+				return
+			}
+			if _, err := a.DownloadMacro(context.Background()); err != nil {
+				t.Errorf("DownloadMacro: %v", err)
+				return
+			}
+			if got := a.Status(); !strings.Contains(got, dir) {
+				t.Errorf("Status %q misses the download directory", got)
+				return
+			}
+		}
+	}()
+	for i := 0; i < rounds; i++ {
+		// The settings page writes these in place on the main thread.
+		a.settings.DownloadDir = dir
+		a.settings.DownloadMacro = "@{id}.@{ext}"
+		a.publishSettings()
+	}
+	<-done
+}

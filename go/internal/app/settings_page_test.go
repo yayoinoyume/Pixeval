@@ -526,6 +526,35 @@ func TestSettingsPageClearCancel(t *testing.T) {
 	}
 }
 
+// TestSettingsPageConfirmDroppedOnLeave checks a data action's confirmation
+// is dropped when the settings page is left, so returning to it by shortcut
+// does not ask again. The dialog covers the window and takes the keys, so the
+// pending action is set and the page left the way a page change does it.
+func TestSettingsPageConfirmDroppedOnLeave(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.history.Add(HistoryEntry{ID: 1, Title: "作品"})
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 2600)
+	settingsConfirmPending = settingsConfirmBrowseHistory
+	a.goRoute(routeHistory)
+	tt.Frame()
+	if settingsConfirmPending != settingsConfirmNone {
+		t.Fatalf("pending action %v survived leaving the page", settingsConfirmPending)
+	}
+	tt.Key(ui.Cmd, ui.KeyComma)
+	tt.Frame()
+	if a.route != routeSettings {
+		t.Fatalf("route %q after the settings shortcut, want %q", a.route, routeSettings)
+	}
+	if tt.HasText(a.t("settings.confirmBrowseHistory")) {
+		t.Errorf("the confirmation came back after leaving the page")
+	}
+	if got := len(a.history.Snapshot()); got != 1 {
+		t.Errorf("history %d entries, want the record kept", got)
+	}
+}
+
 // TestSettingsPageMCPCard checks the MCP card shows the local address, the
 // token clients send and the button that replaces it.
 func TestSettingsPageMCPCard(t *testing.T) {
