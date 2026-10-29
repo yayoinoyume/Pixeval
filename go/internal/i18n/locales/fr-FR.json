@@ -388,6 +388,8 @@
     "switch": "Changer de compte",
     "add": "Ajouter un compte",
     "current": "Compte actuel : %s",
+    "delete": "Supprimer %s",
+    "deleted": "Compte %s supprimé",
     "switchFailed": "Impossible de changer de compte ; le compte actuel est conservé"
   }
 }

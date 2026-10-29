@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"testing"
 	"time"
 
@@ -32,7 +31,9 @@ func TestAccountsSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "accounts.json")
 	now := time.Now().Truncate(time.Second)
 	accs := &Accounts{}
-	accs.Upsert(tokenFor(7, "七"), now)
+	tok := tokenFor(7, "七")
+	tok.User.ProfileImageUrls.Px50x50 = "https://example.invalid/avatar-7.jpg"
+	accs.Upsert(tok, now)
 	if err := accs.Save(path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -57,6 +58,9 @@ func TestAccountsSaveLoadRoundTrip(t *testing.T) {
 	got := saved[0]
 	if got.UserID != 7 || got.Name != "七" || got.Account != "七" {
 		t.Errorf("account %+v", got)
+	}
+	if want := "https://example.invalid/avatar-7.jpg"; got.AvatarURL != want {
+		t.Errorf("avatar %q, want %q", got.AvatarURL, want)
 	}
 	if got.Token.RefreshToken != "refresh-7" || got.Token.AccessToken != "access-7" {
 		t.Errorf("token %+v", got.Token)
@@ -126,6 +130,9 @@ func TestAccountsLoadSkipsIncomplete(t *testing.T) {
 	}
 	if accs.ActiveID() != 0 {
 		t.Errorf("active %d, want 0: the active account was dropped", accs.ActiveID())
+	}
+	if saved[0].AvatarURL != "" {
+		t.Errorf("avatar %q, want empty: the old file has no field for it", saved[0].AvatarURL)
 	}
 }
 
@@ -276,26 +283,115 @@ func TestSwitchAccountKeepsCurrentOnRefreshFailure(t *testing.T) {
 	}
 }
 
-// TestAccountMenuListsSavedAccounts checks the account pill opens a menu of
-// the saved accounts, with the way to add one and to sign out.
-func TestAccountMenuListsSavedAccounts(t *testing.T) {
+// TestAccountMenuShowsAccountsAndRemovesThem checks the account panel lists
+// each saved account with its avatar, name and account, marks the current one,
+// and removes only another account, leaving the session's token file alone.
+func TestAccountMenuShowsAccountsAndRemovesThem(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	resetAccountMenu()
 	a := New()
 	first, second := tokenFor(51, "五十一"), tokenFor(52, "五十二")
 	a.accounts.Upsert(second, time.Now())
 	a.accounts.Upsert(first, time.Now())
 	a.applySession(first)
+	tokenFile, err := tokenPath()
+	if err != nil {
+		t.Fatalf("tokenPath: %v", err)
+	}
+	if err := pixiv.SaveToken(tokenFile, first); err != nil {
+		t.Fatalf("SaveToken: %v", err)
+	}
 
 	tt := ui.NewTester(a.View, 1280, 900)
+	tt.Frame()
 	if err := tt.Click("五十一"); err != nil {
-		t.Fatalf("Click: %v", err)
+		t.Fatalf("Click the account pill: %v", err)
 	}
-	menu := tt.Menu()
-	for _, want := range []string{"五十一", "五十二", a.t("account.add"), a.t("nav.logout")} {
-		if !slices.Contains(menu, want) {
-			t.Errorf("menu %q lacks %q", menu, want)
+	tt.Frame()
+	for _, want := range []string{
+		"@五十一", "@五十二",
+		a.tf("a11y.avatar", "五十一"), a.tf("a11y.avatar", "五十二"),
+		a.tf("account.delete", "五十二"),
+		a.t("account.add"), a.t("nav.logout"),
+	} {
+		if !tt.HasText(want) {
+			t.Errorf("%q missing: %q", want, tt.Texts())
 		}
 	}
+	if !tt.HasText("✓") {
+		t.Errorf("the current account is not marked: %q", tt.Texts())
+	}
+	if _, ok := tt.Find(a.tf("account.delete", "五十一")); ok {
+		t.Error("the current account offers a delete")
+	}
+
+	if err := tt.Click(a.tf("account.delete", "五十二")); err != nil {
+		t.Fatalf("Click the delete: %v", err)
+	}
+	tt.Frame()
+	saved := a.accounts.Snapshot()
+	if len(saved) != 1 || saved[0].UserID != 51 {
+		t.Fatalf("saved %+v, want only user 51", saved)
+	}
+	if a.accounts.ActiveID() != 51 {
+		t.Errorf("active %d, want 51 kept", a.accounts.ActiveID())
+	}
+	if tt.HasText("@五十二") {
+		t.Errorf("the deleted account is still shown: %q", tt.Texts())
+	}
+	path, err := accountsPath()
+	if err != nil {
+		t.Fatalf("accountsPath: %v", err)
+	}
+	onDisk := &Accounts{}
+	if err := onDisk.Load(path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got := onDisk.Snapshot(); len(got) != 1 || got[0].UserID != 51 {
+		t.Errorf("file has %+v, want only user 51", got)
+	}
+	if _, err := os.Stat(tokenFile); err != nil {
+		t.Errorf("token.json removed with a saved account: %v", err)
+	}
+}
+
+// TestDeleteAccountKeepsCurrentAndReports checks a saved account is removed
+// with its notice, while the account in use cannot be removed at all.
+func TestDeleteAccountKeepsCurrentAndReports(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	current, other := tokenFor(53, "五十三"), tokenFor(54, "五十四")
+	a.accounts.Upsert(other, time.Now())
+	a.accounts.Upsert(current, time.Now())
+	a.applySession(current)
+
+	a.deleteAccount(53)
+	saved := a.accounts.Snapshot()
+	if len(saved) != 2 || a.accounts.ActiveID() != 53 {
+		t.Fatalf("deleting the current account changed the list: %+v active %d", saved, a.accounts.ActiveID())
+	}
+	if a.notice != "" {
+		t.Errorf("notice %q after refusing the current account", a.notice)
+	}
+
+	a.deleteAccount(54)
+	if got, want := a.notice, a.tf("account.deleted", "五十四"); got != want {
+		t.Errorf("notice %q, want %q", got, want)
+	}
+	if saved := a.accounts.Snapshot(); len(saved) != 1 || saved[0].UserID != 53 {
+		t.Errorf("saved %+v, want only the current account", saved)
+	}
+	if a.accounts.ActiveID() != 53 {
+		t.Errorf("active %d, want 53 kept", a.accounts.ActiveID())
+	}
+}
+
+// resetAccountMenu closes the header's account panel, which one test may leave
+// open for the window the next one builds.
+func resetAccountMenu() {
+	accountMenuState.open = false
+	accountMenuState.userID = 0
+	accountMenuState.failed = nil
 }
 
 // TestSwitchAccountSerializesToLatest checks two switches whose refreshes

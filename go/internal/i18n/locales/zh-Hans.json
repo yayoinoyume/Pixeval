@@ -388,6 +388,8 @@
     "switch": "切换账号",
     "add": "添加账号",
     "current": "当前账号：%s",
+    "delete": "删除 %s",
+    "deleted": "已删除账号 %s",
     "switchFailed": "切换账号失败，已保留当前账号"
   }
 }
