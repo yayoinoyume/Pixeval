@@ -23,7 +23,7 @@ const (
 var jst = time.FixedZone("JST", 9*3600)
 
 // Ranking lists the top works of a period. An empty mode means Day, and an
-// empty date means yesterday in Japan, whose ranking is already published.
+// empty date means the newest date Pixiv has already listed.
 func (c *Client) Ranking(ctx context.Context, mode RankMode, date string) (*Page[Illustration], error) {
 	if mode == "" {
 		mode = Day
@@ -47,9 +47,10 @@ func (c *Client) Following(ctx context.Context) (*Page[Illustration], error) {
 }
 
 // defaultRankingDate is the ranking date used when the caller passes none.
-// Pixiv publishes a day's ranking only after it ends, so today is still empty.
+// Pixiv lists yesterday's ranking from noon JST, so Mako caps the date at
+// "today" in UTC-3 minus one day rather than at today in Japan.
 func defaultRankingDate(now time.Time) string {
-	return jstDate(now.AddDate(0, 0, -1))
+	return now.UTC().Add(-3*time.Hour).AddDate(0, 0, -1).Format("2006-01-02")
 }
 
 // jstDate formats t as a Pixiv ranking date in Japan.
