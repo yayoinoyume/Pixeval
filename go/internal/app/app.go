@@ -49,6 +49,11 @@ type App struct {
 	downloadFilter int
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
+	// accounts are the saved sign-ins, and refreshTokenFn renews an expired
+	// account's token when a switch adopts it; tests replace the latter to
+	// avoid the network.
+	accounts       *Accounts
+	refreshTokenFn func(ctx context.Context, refresh string) (*pixiv.Token, error)
 	// webviewOK reports whether the system webview is there; without it the
 	// login window takes a pasted refresh token instead of Pixiv's page.
 	webviewOK bool
@@ -223,6 +228,7 @@ func New() *App {
 	subs.Store = subsStore
 	a := &App{
 		client:           client,
+		accounts:         loadAccounts(),
 		subsStore:        subsStore,
 		subs:             subs,
 		images:           imagex.New(client, imageDir()),
@@ -246,6 +252,9 @@ func New() *App {
 			return client.RemoveBookmark(ctx, id)
 		},
 		bookmarks: &browseState{},
+		refreshTokenFn: func(ctx context.Context, refresh string) (*pixiv.Token, error) {
+			return pixiv.RefreshToken(ctx, loginHTTP, refresh)
+		},
 		bookmarksPageFn: func(ctx context.Context, private bool, next string) (*pixiv.Page[pixiv.Illustration], error) {
 			if next != "" {
 				return client.NextIllustrations(ctx, next)
@@ -496,6 +505,11 @@ func (a *App) restoreSession() {
 			log.Printf("pixiv session: save: %v", err)
 		}
 	}
+	// The token file is the session in use: keep the account list in step with
+	// it, including a login saved by a version that only knew token.json.
+	if err := a.rememberAccount(tok); err != nil {
+		log.Printf("accounts: %v", err)
+	}
 	a.applySession(tok)
 }
 
@@ -515,7 +529,8 @@ func (a *App) syncSession() {
 	a.applySession(tok)
 }
 
-// applySession makes tok the session on the main thread.
+// applySession makes tok the session on the main thread. The pages hold the
+// account before it, so they start empty.
 func (a *App) applySession(tok *pixiv.Token) {
 	a.update(func() {
 		a.session = tok
@@ -523,10 +538,32 @@ func (a *App) applySession(tok *pixiv.Token) {
 			a.client.SetToken(tok)
 		}
 		a.setTitle()
-		// A signed-out start never draws the feed, so the home tab it shows
-		// is armed here before the next frame loads it.
-		a.armHome(a.homeTab)
+		a.resetAccountPages()
 	})
+}
+
+// resetAccountPages drops the pages that held the signed-in account's works,
+// so the next account never shows them.
+func (a *App) resetAccountPages() {
+	a.homeFeeds = newHomeFeeds()
+	// A signed-out start never draws the feed, so the home tab it shows is
+	// armed here before the next frame loads it.
+	a.armHome(a.homeTab)
+	a.bookmarks = &browseState{}
+	a.newFeed = &browseState{}
+	a.myPixivFeed = &browseState{}
+	a.search = &browseState{}
+	a.searchNovels = &novelFeedState{}
+	a.searchUsers = &userListState{}
+	a.userView = nil
+	a.relatedUsers = nil
+	a.seriesView = nil
+	a.related = nil
+	a.novelView = nil
+	switch a.route {
+	case routeUser, routeUserRelated, routeSeries, routeRelated, routeNovel:
+		a.route = routeHome
+	}
 }
 
 // logout forgets the session off the main thread: the token file goes, then
@@ -550,11 +587,7 @@ func (a *App) logout() {
 			a.setTitle()
 			// The feeds hold the signed-out account's works: drop them so the
 			// next login starts empty.
-			a.homeFeeds = newHomeFeeds()
-			a.armHome(a.homeTab)
-			a.bookmarks = &browseState{}
-			a.newFeed = &browseState{}
-			a.myPixivFeed = &browseState{}
+			a.resetAccountPages()
 		})
 	}()
 }

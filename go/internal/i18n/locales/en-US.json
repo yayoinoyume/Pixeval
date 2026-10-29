@@ -342,5 +342,11 @@
     "clear": "Clear blocked users",
     "empty": "No users blocked",
     "count": "%d blocked"
+  },
+  "account": {
+    "switch": "Switch account",
+    "add": "Add account",
+    "current": "Current account: %s",
+    "switchFailed": "Could not switch account; the current one is kept"
   }
 }
