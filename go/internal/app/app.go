@@ -55,6 +55,8 @@ type App struct {
 	userView *userViewState
 	// seriesView is the series page shown, nil until one opens.
 	seriesView *seriesViewState
+	// related is the related-works page shown, nil until one opens.
+	related *relatedViewState
 	// novelView is the novel reading page shown, nil until one opens.
 	novelView *novelViewState
 	// homeTab is the home feed shown: recommended, following or ranking.
@@ -131,6 +133,9 @@ type App struct {
 	// illustrationFn fetches one work's detail, which carries a novel body
 	// image's URL; tests replace it to avoid the network.
 	illustrationFn func(ctx context.Context, id int64) (*pixiv.Illustration, error)
+	// relatedFn fetches one page of a work's related list off the main thread;
+	// tests replace it to avoid the network.
+	relatedFn func(ctx context.Context, illustID int64) (*pixiv.Page[pixiv.Illustration], error)
 	// subsStore holds the followed users and series, loaded at start, and subs
 	// checks them on demand and every subscriptionInterval.
 	subsStore *subscription.Store
@@ -234,6 +239,7 @@ func New() *App {
 			return client.RemoveNovelBookmark(ctx, id)
 		},
 		illustrationFn: client.Illustration,
+		relatedFn:      client.RelatedIllustrations,
 		route:          routeHome,
 		cardText:       60,
 		homeFeeds:      newHomeFeeds(),

@@ -34,6 +34,14 @@ func (c *Client) MyPixivIllustrations(ctx context.Context) (*Page[Illustration],
 	return c.illustPage(ctx, c.pageURL("/v1/illust/mypixiv", q))
 }
 
+// RelatedIllustrations is the feed of works Pixiv lists beside illustID.
+func (c *Client) RelatedIllustrations(ctx context.Context, illustID int64) (*Page[Illustration], error) {
+	q := url.Values{}
+	q.Set("illust_id", strconv.FormatInt(illustID, 10))
+	c.setFilter(q)
+	return c.illustPage(ctx, c.pageURL("/v1/illust/related", q))
+}
+
 // SearchOptions are the filters of an illustration search.
 type SearchOptions struct {
 	Word      string

@@ -107,7 +107,8 @@
     "copyFailed": "复制链接失败：%s",
     "openBrowser": "在浏览器打开",
     "openFailed": "无法打开浏览器：%s",
-    "seriesLabel": "系列：%s"
+    "seriesLabel": "系列：%s",
+    "related": "相关作品"
   },
   "comments": {
     "title": "评论",
@@ -249,6 +250,11 @@
   "series": {
     "open": "系列",
     "loadFailed": "加载系列失败：%s"
+  },
+  "related": {
+    "title": "相关作品",
+    "empty": "没有相关作品",
+    "loadFailed": "相关作品加载失败：%s"
   },
   "subs": {
     "count": "%d 个追更订阅",

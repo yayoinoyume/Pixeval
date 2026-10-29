@@ -28,10 +28,14 @@ const (
 	routeUser       route = "user"
 	routeSeries     route = "series"
 	routeNovel      route = "novel"
+	routeRelated    route = "related"
 )
 
 // routeLabel is the navigation label of the page.
 func (a *App) routeLabel(r route) string {
+	if r == routeRelated {
+		return a.t("related.title")
+	}
 	return a.t("nav." + string(r))
 }
 
@@ -92,7 +96,7 @@ func (a *App) escape() {
 		return
 	}
 	switch a.route {
-	case routeUser, routeSeries, routeNovel:
+	case routeUser, routeSeries, routeNovel, routeRelated:
 		a.goBack()
 	}
 }
@@ -186,7 +190,7 @@ func (a *App) header(c *ui.Context) {
 	t := themeOf(c)
 	ui.Row(c).Height(84).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-		if a.route == routeUser || a.route == routeSeries {
+		if a.route == routeUser || a.route == routeSeries || a.route == routeRelated {
 			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
@@ -249,6 +253,8 @@ func (a *App) page(c *ui.Context) {
 		a.seriesPage(c)
 	case routeNovel:
 		a.novelPage(c)
+	case routeRelated:
+		a.relatedPage(c)
 	default:
 		t := themeOf(c)
 		ui.Column(c).Grow(1).Center().Children(func() {
@@ -257,8 +263,24 @@ func (a *App) page(c *ui.Context) {
 	}
 }
 
-// goBack leaves a user page or series page for the page it was opened from.
+// goBack leaves a user, series or related page for the viewer or page it was
+// opened from.
 func (a *App) goBack() {
+	if a.route == routeRelated && a.related != nil {
+		r := a.related
+		a.related = r.parent
+		a.viewer, a.comments, a.commentsOpen = r.viewer, r.comments, r.commentsOpen
+		// A nested related page goes back to the viewer it was opened from,
+		// which sits over the parent related page.
+		if a.related != nil {
+			return
+		}
+		if a.backRoute == "" {
+			a.backRoute = routeHome
+		}
+		a.route = a.backRoute
+		return
+	}
 	if a.backRoute == "" {
 		a.backRoute = routeHome
 	}

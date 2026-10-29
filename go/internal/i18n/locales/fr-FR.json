@@ -107,7 +107,8 @@
     "copyFailed": "Impossible de copier le lien : %s",
     "openBrowser": "Ouvrir dans le navigateur",
     "openFailed": "Impossible d'ouvrir le navigateur : %s",
-    "seriesLabel": "Série : %s"
+    "seriesLabel": "Série : %s",
+    "related": "Œuvres similaires"
   },
   "comments": {
     "title": "Commentaires",
@@ -249,6 +250,11 @@
   "series": {
     "open": "Série",
     "loadFailed": "Impossible de charger la série : %s"
+  },
+  "related": {
+    "title": "Œuvres similaires",
+    "empty": "Aucune œuvre similaire",
+    "loadFailed": "Impossible de charger les œuvres similaires : %s"
   },
   "subs": {
     "count": "%d abonnements",

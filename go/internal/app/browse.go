@@ -56,6 +56,11 @@ type browseState struct {
 	// would spin on a broken URL.
 	failed map[string]bool
 
+	// emptyKey and errorKey name the feed's empty and failure messages; empty
+	// means the browse feed's own.
+	emptyKey string
+	errorKey string
+
 	// query is the search box's text, edited on the main thread. armed is
 	// set when a page may load: once the window runs for the home feed, on
 	// the first submitted word for search.
@@ -392,9 +397,13 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 	a.filterBar(c, st)
 	v := st.snapshot()
 	if v.err != "" {
+		errorKey := st.errorKey
+		if errorKey == "" {
+			errorKey = "common.loadFailed"
+		}
 		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, contentPadding).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, iconAlert).Size(18, 18).TextColor(t.Danger)
-			ui.Text(c, a.tf("common.loadFailed", v.err)).FontSize(t.TextSmall).
+			ui.Text(c, a.tf(errorKey, v.err)).FontSize(t.TextSmall).
 				TextColor(t.Danger).Grow(1)
 			if ui.Button(c, a.t("common.retry")).Clicked() {
 				st.retry()
@@ -419,7 +428,11 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 	case !v.started:
 		skeletonFeed(c, width)
 	default:
-		emptyState(c, iconImage, a.t("common.noWorks"), "", nil)
+		emptyKey := st.emptyKey
+		if emptyKey == "" {
+			emptyKey = "common.noWorks"
+		}
+		emptyState(c, iconImage, a.t(emptyKey), "", nil)
 	}
 	// A filtered feed is not paged on past its first page: a strict expression
 	// would fetch page after page looking for a match that is not in them.
