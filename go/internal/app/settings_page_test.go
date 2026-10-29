@@ -149,6 +149,36 @@ func TestSettingsControlsNamed(t *testing.T) {
 	}
 }
 
+// TestSettingsPageNetworkAdvanced checks the network card keeps the proxy and
+// fronting switch in reach and reveals the resolver and mirror fields from the
+// advanced button.
+func TestSettingsPageNetworkAdvanced(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 1800)
+	if tt.HasText(a.t("settings.appAPIResolver")) {
+		t.Fatal("advanced fields shown before opening")
+	}
+	if !tt.HasText(a.t("settings.proxy")) || !tt.HasText(a.t("settings.domainFronting")) {
+		t.Fatalf("network controls missing: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("settings.networkAdvanced")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	for _, want := range []string{
+		a.t("settings.appAPIResolver"),
+		a.t("settings.imageResolver"),
+		a.t("settings.oauthResolver"),
+		a.t("settings.imageMirror"),
+	} {
+		if !tt.HasText(want) {
+			t.Errorf("%q missing after opening: %q", want, tt.Texts())
+		}
+	}
+}
+
 // tabToLabel tabs forward until the element named label has the focus.
 func tabToLabel(t *testing.T, tt *ui.Tester, label string) {
 	t.Helper()
