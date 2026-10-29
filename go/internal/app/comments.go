@@ -45,6 +45,9 @@ type commentState struct {
 	// avatarFailed holds the avatars that did not load, so a broken URL is not
 	// asked for again every frame.
 	avatarFailed map[string]bool
+	// deleting holds the comments whose delete is in flight, so a second click
+	// does not send it again.
+	deleting map[int64]bool
 }
 
 // commentsView is what the panel draws.
@@ -72,6 +75,13 @@ func (st *commentState) avatarFailedURL(url string) bool {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.avatarFailed[url]
+}
+
+// deletingComment reports whether a delete for the comment is in flight.
+func (st *commentState) deletingComment(id int64) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.deleting[id]
 }
 
 // toggleComments shows or hides the comment section, loading the first page
@@ -194,6 +204,52 @@ func (a *App) submitComment(st *commentState) {
 	}()
 }
 
+// deleteComment removes one of the user's own comments off the main thread.
+// The comment leaves the list only once the request succeeds, so a failure
+// leaves the panel as it was.
+func (a *App) deleteComment(st *commentState, id int64) {
+	if st == nil || a.deleteCommentFn == nil {
+		return
+	}
+	st.mu.Lock()
+	if st.deleting[id] {
+		st.mu.Unlock()
+		return
+	}
+	if st.deleting == nil {
+		st.deleting = map[int64]bool{}
+	}
+	st.deleting[id] = true
+	st.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
+		defer cancel()
+		err := a.deleteCommentFn(ctx, id)
+		a.update(func() {
+			// The notice comes before the list change: a test that waits on
+			// the comment state then also sees the message.
+			if err != nil {
+				a.notice = a.tf("comments.deleteFailed", err.Error())
+			} else {
+				a.notice = a.t("comments.deleted")
+			}
+			st.mu.Lock()
+			delete(st.deleting, id)
+			if err == nil {
+				kept := make([]pixiv.Comment, 0, len(st.items))
+				for _, cm := range st.items {
+					if cm.ID != id {
+						kept = append(kept, cm)
+					}
+				}
+				st.items, st.offset = kept, len(kept)
+			}
+			st.mu.Unlock()
+		})
+	}()
+}
+
 // takeSentDraft returns the text of the send that finished, once.
 func (st *commentState) takeSentDraft() (string, bool) {
 	st.mu.Lock()
@@ -271,6 +327,16 @@ func (a *App) commentsSection(c *ui.Context, t tokens, st *commentState) {
 	})
 }
 
+// isOwnComment reports whether the comment is the signed-in user's, the only
+// kind the API lets the app delete. A session without a user id matches none.
+func (a *App) isOwnComment(cm *pixiv.Comment) bool {
+	if a.session == nil {
+		return false
+	}
+	me := int64(a.session.User.ID)
+	return me != 0 && cm.User.ID == me
+}
+
 // commentItem draws one comment: its avatar, author, age, text and reply
 // button.
 func (a *App) commentItem(c *ui.Context, t tokens, st *commentState, cm *pixiv.Comment) {
@@ -296,17 +362,33 @@ func (a *App) commentItem(c *ui.Context, t tokens, st *commentState, cm *pixiv.C
 			})
 			ui.Text(c, cm.Comment).FontSize(t.TextSmall).LineHeight(1.55).
 				TextColor(t.Text).MaxLines(5)
-			rb := ui.ButtonBase(c).Height(22).Radius(t.RadiusXS).Padding(0).
-				Label(a.t("comments.reply"))
-			rf := t.TextMuted
-			if rb.Hovered() {
-				rf = t.Accent
-			}
-			if rb.Clicked() {
-				st.replyTo = cm
-			}
-			rb.Children(func() {
-				ui.Text(c, a.t("comments.reply")).FontSize(t.TextMicro).TextColor(rf)
+			ui.Row(c).Gap(t.SpaceXS).Children(func() {
+				rb := ui.ButtonBase(c).Height(22).Radius(t.RadiusXS).Padding(0).
+					Label(a.t("comments.reply"))
+				rf := t.TextMuted
+				if rb.Hovered() {
+					rf = t.Accent
+				}
+				if rb.Clicked() {
+					st.replyTo = cm
+				}
+				rb.Children(func() {
+					ui.Text(c, a.t("comments.reply")).FontSize(t.TextMicro).TextColor(rf)
+				})
+				if a.isOwnComment(cm) {
+					db := ui.ButtonBase(c).Height(22).Radius(t.RadiusXS).Padding(0).
+						Label(a.t("comments.delete")).Disabled(st.deletingComment(cm.ID))
+					df := t.TextMuted
+					if db.Hovered() {
+						df = t.Danger
+					}
+					if db.Clicked() {
+						a.deleteComment(st, cm.ID)
+					}
+					db.Children(func() {
+						ui.Text(c, a.t("comments.delete")).FontSize(t.TextMicro).TextColor(df)
+					})
+				}
 			})
 		})
 	})

@@ -117,7 +117,10 @@
     "minutesAgo": "il y a %d minutes",
     "hoursAgo": "il y a %d heures",
     "daysAgo": "il y a %d jours",
-    "sendFailed": "Échec de l'envoi du commentaire : %s"
+    "sendFailed": "Échec de l'envoi du commentaire : %s",
+    "delete": "Supprimer",
+    "deleted": "Commentaire supprimé",
+    "deleteFailed": "Échec de la suppression du commentaire : %s"
   },
   "download": {
     "running": "Téléchargement",

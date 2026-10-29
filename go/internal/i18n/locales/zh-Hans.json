@@ -117,7 +117,10 @@
     "minutesAgo": "%d 分钟前",
     "hoursAgo": "%d 小时前",
     "daysAgo": "%d 天前",
-    "sendFailed": "评论发送失败：%s"
+    "sendFailed": "评论发送失败：%s",
+    "delete": "删除",
+    "deleted": "已删除评论",
+    "deleteFailed": "删除评论失败：%s"
   },
   "download": {
     "running": "下载中",

@@ -113,10 +113,11 @@ type App struct {
 	// followFn follows or unfollows a user off the main thread; tests replace
 	// it to avoid the network.
 	followFn func(ctx context.Context, id int64, on bool) error
-	// fetchCommentPage and addCommentFn answer the comment panel off the main
-	// thread; tests replace them to avoid the network.
+	// fetchCommentPage, addCommentFn and deleteCommentFn answer the comment
+	// panel off the main thread; tests replace them to avoid the network.
 	fetchCommentPage func(ctx context.Context, illustID int64, offset int) (*pixiv.Page[pixiv.Comment], error)
 	addCommentFn     func(ctx context.Context, illustID int64, text string) (*pixiv.Comment, error)
+	deleteCommentFn  func(ctx context.Context, commentID int64) error
 	// novelContent fetches a novel body off the main thread; tests replace it
 	// to avoid the network.
 	novelContent func(ctx context.Context, novelID int64) (string, error)
@@ -215,6 +216,7 @@ func New() *App {
 		},
 		fetchCommentPage: client.Comments,
 		addCommentFn:     client.AddComment,
+		deleteCommentFn:  client.DeleteComment,
 		novelContent:     client.NovelContent,
 		illustrationFn:   client.Illustration,
 		route:            routeHome,
