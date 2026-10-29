@@ -16,6 +16,7 @@
     "user": "User",
     "series": "Series",
     "novel": "Novel",
+    "watchLater": "Watch later",
     "region": "Navigation",
     "groupBrowse": "Browse",
     "groupLibrary": "Library"
@@ -182,6 +183,15 @@
     "emptyHint": "Works you open are recorded here",
     "count": "%d entries",
     "clear": "Clear history",
+    "openFailed": "Failed to open work: %s"
+  },
+  "watchLater": {
+    "add": "Watch later",
+    "added": "Added",
+    "remove": "Remove from watch later",
+    "empty": "Nothing saved for later",
+    "emptyHint": "Works you save from a card or the viewer are kept here",
+    "clear": "Clear list",
     "openFailed": "Failed to open work: %s"
   },
   "bookmarks": {

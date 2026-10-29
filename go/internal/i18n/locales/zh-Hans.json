@@ -16,6 +16,7 @@
     "user": "用户",
     "series": "系列",
     "novel": "小说",
+    "watchLater": "稍后再看",
     "region": "导航",
     "groupBrowse": "浏览",
     "groupLibrary": "库"
@@ -182,6 +183,15 @@
     "emptyHint": "打开作品后会自动记录",
     "count": "%d 条记录",
     "clear": "清空历史",
+    "openFailed": "打开作品失败：%s"
+  },
+  "watchLater": {
+    "add": "稍后再看",
+    "added": "已加入",
+    "remove": "移出稍后再看",
+    "empty": "还没有稍后再看的作品",
+    "emptyHint": "在作品卡片或查看器里加入的作品会显示在这里",
+    "clear": "清空列表",
     "openFailed": "打开作品失败：%s"
   },
   "bookmarks": {

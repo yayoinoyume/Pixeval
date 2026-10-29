@@ -880,6 +880,9 @@ func (a *App) viewerActions(c *ui.Context, t tokens, v *viewerState, failed bool
 				a.toggleUgoira(v)
 			}
 		}
+		if b := a.viewerAction(c, t, iconHistory, a.watchLaterLabel(v), a.inWatchLater(v.work.ID)); b.Clicked() {
+			a.toggleWatchLater(v.work)
+		}
 		if b := a.viewerAction(c, t, iconDownload, a.t("viewer.download"), false); b.Clicked() {
 			queued, ok := a.downloadWork(v.work)
 			switch {
@@ -927,6 +930,15 @@ func (a *App) viewerPrimary(c *ui.Context, t tokens, glyph *ui.SVG, label string
 		ui.Text(c, label).FontSize(t.TextSmall).FontWeight(600).TextColor(t.AccentText)
 	})
 	return b
+}
+
+// watchLaterLabel is the watch-later action's name: the work's saved state
+// says whether a click adds it or removes it.
+func (a *App) watchLaterLabel(v *viewerState) string {
+	if a.inWatchLater(v.work.ID) {
+		return a.t("watchLater.added")
+	}
+	return a.t("watchLater.add")
 }
 
 // viewerAction is a quiet text action: an icon when it has one, and its name.

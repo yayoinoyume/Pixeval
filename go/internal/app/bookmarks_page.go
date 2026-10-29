@@ -118,6 +118,9 @@ func (a *App) bookmarkCard(c *ui.Context, st *browseState, items []pixiv.Illustr
 		if m.Item(a.t("bookmarks.unbookmark")).Chosen() {
 			a.unbookmark(st, work.ID)
 		}
+		if m.Item(a.watchLaterMenuLabel(work.ID)).Chosen() {
+			a.toggleWatchLater(work)
+		}
 	})
 	cover.Children(func() {
 		if st.imageFailed(key) {

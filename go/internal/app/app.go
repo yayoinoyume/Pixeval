@@ -98,6 +98,10 @@ type App struct {
 	// historyFailed holds the history covers that did not load, so a broken
 	// URL is not asked for again every frame.
 	historyFailed map[string]bool
+	// watchLater is the works the user saved for later, newest first, and
+	// watchLaterFailed the covers of it that did not load.
+	watchLater       *WatchLater
+	watchLaterFailed map[string]bool
 	// bookmarkFn sets or clears a work's bookmark off the main thread; tests
 	// replace it to avoid the network.
 	bookmarkFn func(ctx context.Context, id int64, on bool) error
@@ -179,17 +183,19 @@ func New() *App {
 	subs := subscription.New(pixivFetcher{client: client})
 	subs.Store = subsStore
 	a := &App{
-		client:        client,
-		subsStore:     subsStore,
-		subs:          subs,
-		images:        imagex.New(client, imageDir()),
-		downloads:     download.New(client, settings.DownloadConcurrency),
-		downloadsDir:  settingsDownloadDir(settings),
-		settings:      settings,
-		settingsSaved: make(chan error, 1),
-		paused:        map[string]bool{},
-		history:       loadHistory(),
-		historyFailed: map[string]bool{},
+		client:           client,
+		subsStore:        subsStore,
+		subs:             subs,
+		images:           imagex.New(client, imageDir()),
+		downloads:        download.New(client, settings.DownloadConcurrency),
+		downloadsDir:     settingsDownloadDir(settings),
+		settings:         settings,
+		settingsSaved:    make(chan error, 1),
+		paused:           map[string]bool{},
+		history:          loadHistory(),
+		historyFailed:    map[string]bool{},
+		watchLater:       loadWatchLater(),
+		watchLaterFailed: map[string]bool{},
 		bookmarkFn: func(ctx context.Context, id int64, on bool) error {
 			if on {
 				return client.AddBookmark(ctx, id, false)

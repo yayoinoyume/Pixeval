@@ -113,20 +113,31 @@ func (a *App) historyCoverReady(key string) func() {
 	}
 }
 
-// openHistory fetches the work an entry names off the main thread, then opens
-// it in the viewer.
-func (a *App) openHistory(e HistoryEntry) {
+// openSavedWork fetches the work an entry names off the main thread, then
+// opens it in the viewer. A failure shows the message under failKey. The
+// history and watch-later pages both open works this way.
+func (a *App) openSavedWork(id int64, failKey string) {
+	fetch := a.illustrationFn
+	if fetch == nil {
+		return
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
 		defer cancel()
-		w, err := a.client.Illustration(ctx, e.ID)
+		w, err := fetch(ctx, id)
 		a.update(func() {
 			if err != nil {
-				log.Printf("history: open %d: %v", e.ID, err)
-				a.notice = a.tf("history.openFailed", err.Error())
+				log.Printf("saved work: open %d: %v", id, err)
+				a.notice = a.tf(failKey, err.Error())
 				return
 			}
 			a.openViewer(w, 0)
 		})
 	}()
+}
+
+// openHistory fetches the work an entry names off the main thread, then opens
+// it in the viewer.
+func (a *App) openHistory(e HistoryEntry) {
+	a.openSavedWork(e.ID, "history.openFailed")
 }
