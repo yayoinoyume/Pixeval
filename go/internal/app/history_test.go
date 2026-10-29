@@ -186,9 +186,7 @@ func TestHistoryPageEmpty(t *testing.T) {
 	a := newViewerApp(newImageTransport(nil))
 	a.history = &History{}
 	tt := ui.NewTester(a.View, 1000, 700)
-	if err := tt.Click("历史"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "历史")
 	if a.route != routeHistory {
 		t.Errorf("route %q, want %q", a.route, routeHistory)
 	}
@@ -250,9 +248,9 @@ func TestHistoryGridFitsWidth(t *testing.T) {
 		cols int
 		card float32
 	}{
-		{"narrow", 960, 700, 3, 253.33334},
-		{"wide", 1280, 820, 4, 265},
-		{"wider", 1600, 900, 5, 272},
+		{"narrow", 960, 700, 3, 248},
+		{"wide", 1280, 820, 4, 261},
+		{"wider", 1600, 900, 5, 268.8},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

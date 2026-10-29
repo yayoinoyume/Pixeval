@@ -185,8 +185,8 @@ func TestEditorialContrast(t *testing.T) {
 // only for avatars.
 func TestDesignScale(t *testing.T) {
 	tok := lightTokens
-	if navWidth != 80 || contentPadding != 40 {
-		t.Errorf("rail %v, padding %v, want 80 and 40", navWidth, contentPadding)
+	if navWidth != 96 || contentPadding != 40 {
+		t.Errorf("rail %v, padding %v, want 96 and 40", navWidth, contentPadding)
 	}
 	radii := []struct {
 		name string

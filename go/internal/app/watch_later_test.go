@@ -215,13 +215,7 @@ func TestWatchLaterPageEmpty(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := newWatchLaterApp()
 	tt := ui.NewTester(a.View, 1000, 700)
-	// Settings is pinned under the scrolling destinations, so the last
-	// destination needs the rail scrolled at this height.
-	tt.Scroll(30, 400, 0, 400)
-	tt.Frame()
-	if err := tt.Click("稍后再看"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "稍后再看")
 	if a.route != routeWatchLater {
 		t.Errorf("route %q, want %q", a.route, routeWatchLater)
 	}
