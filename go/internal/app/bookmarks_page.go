@@ -18,10 +18,11 @@ const (
 // bookmarksPage draws the signed-in user's bookmarks, one tab per visibility.
 func (a *App) bookmarksPage(c *ui.Context) {
 	t := themeOf(c)
-	ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+	ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
 		if textTabs(c, t, &a.bookmarksTab, a.t("bookmarks.public"), a.t("bookmarks.private")) {
 			a.restartBookmarks()
 		}
+		a.downloadLoadedButton(c, a.bookmarks.snapshot().items)
 	})
 	if a.session == nil {
 		a.loginPrompt(c)

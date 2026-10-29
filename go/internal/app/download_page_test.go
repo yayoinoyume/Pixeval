@@ -300,3 +300,38 @@ func TestDownloadContextKeepsDataOutOfPathSegments(t *testing.T) {
 		t.Errorf("context %+v", ctx)
 	}
 }
+
+// TestDownloadLoadedSkipsQueued checks a second call queues nothing new, and
+// says so.
+func TestDownloadLoadedSkipsQueued(t *testing.T) {
+	a := newDownloadApp(t)
+	works := fakeWorks(0, 2)
+	if queued := a.downloadLoaded(works); queued != 2 {
+		t.Fatalf("queued %d pages, want 2", queued)
+	}
+	if want := a.tf("download.allQueued", 2); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	if queued := a.downloadLoaded(works); queued != 0 {
+		t.Errorf("queued %d pages again, want 0", queued)
+	}
+	if want := a.t("download.none"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
+// TestDownloadLoadedWithoutDir checks saving off queues nothing and leaves a
+// notice.
+func TestDownloadLoadedWithoutDir(t *testing.T) {
+	a := newDownloadApp(t)
+	a.downloadsDir = ""
+	if queued := a.downloadLoaded(fakeWorks(0, 2)); queued != 0 {
+		t.Errorf("queued %d pages without a directory, want 0", queued)
+	}
+	if want := a.t("viewer.noDownloadDir"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Errorf("%d tasks queued without a directory, want 0", len(tasks))
+	}
+}

@@ -414,10 +414,16 @@ func (a *App) userPage(c *ui.Context) {
 				}
 			})
 		})
-		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
 			textTabs(c, t, &v.tab, a.t("user.tabIllust"), a.t("user.tabManga"),
 				a.t("user.tabNovel"), a.t("user.tabFollowing"), a.t("user.tabFollowers"),
 				a.t("user.tabBookmarks"))
+			switch v.tab {
+			case userTabIllust:
+				a.downloadLoadedButton(c, v.feed.snapshot().items)
+			case userTabManga:
+				a.downloadLoadedButton(c, v.mangaFeed.snapshot().items)
+			}
 		})
 		if v.tab == userTabBookmarks && a.userIsSelf(v.userID) {
 			ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Children(func() {

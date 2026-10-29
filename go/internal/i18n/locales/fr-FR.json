@@ -138,7 +138,10 @@
     "resume": "Reprendre",
     "pause": "Pause",
     "cancel": "Annuler",
-    "remove": "Retirer"
+    "remove": "Retirer",
+    "allLoaded": "Télécharger les œuvres chargées (%d)",
+    "none": "Rien de nouveau à mettre en file",
+    "allQueued": "%d pages ajoutées à la file"
   },
   "settings": {
     "theme": "Thème",

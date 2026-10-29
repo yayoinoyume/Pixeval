@@ -106,8 +106,9 @@ func (a *App) seriesPage(c *ui.Context) {
 					if s.detail.Description != "" {
 						ui.Text(c, s.detail.Description).FontSize(t.TextSmall).TextColor(t.TextMuted).MaxLines(3)
 					}
-					ui.Row(c).AlignItems(ui.Center).Children(func() {
+					ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 						a.subscriptionButton(c, subscription.KindSeries, s.detail.ID, s.detail.Title)
+						a.downloadLoadedButton(c, v.feed.snapshot().items)
 					})
 				}
 			})
