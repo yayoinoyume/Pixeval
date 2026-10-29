@@ -116,6 +116,31 @@ func TestShellRailGroupsReachDestinations(t *testing.T) {
 	}
 }
 
+// TestShellRailGroupTipNamesThePage checks a group's tooltip names the page
+// showing with its label, not a missing message key, after the series list
+// opens.
+func TestShellRailGroupTipNamesThePage(t *testing.T) {
+	a := englishPageApp(nil)
+	a.route = routeSeriesList
+	tt := ui.NewTester(a.View, 1024, 720)
+	tt.Frame()
+	r, ok := tt.Find(a.t("nav.works"))
+	if !ok {
+		t.Fatalf("the Works group is missing: %q", tt.Texts())
+	}
+	tt.Move(r.X+r.W/2, r.Y+r.H/2)
+	tt.Frame()
+	tt.Advance(time.Second)
+	tt.Frame()
+	tip := a.t("nav.works") + " · " + a.t("nav.series")
+	if !tt.HasText(tip) {
+		t.Errorf("the Works description is not %q: %q", tip, tt.Texts())
+	}
+	if tt.HasText("nav.") {
+		t.Errorf("the Works description still shows a message key: %q", tt.Texts())
+	}
+}
+
 // TestShellRailDoesNotScroll checks the rail does not scroll: its
 // destinations stay put when the pointer scrolls over it, and Settings stays
 // in reach at the design window.

@@ -238,7 +238,7 @@ func (a *App) navGroupItem(c *ui.Context, g navGroup) {
 	selected := active != ""
 	tip := label
 	if selected {
-		tip += " · " + a.t("nav."+string(active))
+		tip += " · " + a.routeLabel(active)
 	}
 	b := ui.ButtonBase(c).Key("nav.group."+g.id).Width(80).Height(52).
 		Radius(t.RadiusS).Padding(6, 0, t.SpaceXS, 0).Gap(1).
