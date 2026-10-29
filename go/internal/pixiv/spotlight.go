@@ -7,7 +7,7 @@ import (
 
 // SpotlightArticle is one Pixivision article in the spotlight list.
 type SpotlightArticle struct {
-	ID          string `json:"id"`
+	ID          int64  `json:"id"`
 	Title       string `json:"title"`
 	PureTitle   string `json:"pure_title"`
 	Thumbnail   string `json:"thumbnail"`

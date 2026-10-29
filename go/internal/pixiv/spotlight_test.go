@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-const spotlightBody = `{"spotlight_articles":[{"id":"12345","title":"特辑标题",` +
+const spotlightBody = `{"spotlight_articles":[{"id":12345,"title":"特辑标题",` +
 	`"pure_title":"特辑标题（纯）","thumbnail":"https://i.pximg.net/spotlight.jpg",` +
 	`"article_url":"https://www.pixivision.net/zh/a/12345",` +
 	`"publish_date":"2026-10-01 12:00:00"}],` +
@@ -41,7 +41,7 @@ func TestSpotlightArticlesRequestsAndParses(t *testing.T) {
 		t.Fatalf("items = %+v, want one article", page.Items)
 	}
 	article := page.Items[0]
-	if article.ID != "12345" || article.Title != "特辑标题" || article.PureTitle != "特辑标题（纯）" {
+	if article.ID != 12345 || article.Title != "特辑标题" || article.PureTitle != "特辑标题（纯）" {
 		t.Errorf("article = %+v", article)
 	}
 	if article.Thumbnail != "https://i.pximg.net/spotlight.jpg" {
@@ -55,6 +55,23 @@ func TestSpotlightArticlesRequestsAndParses(t *testing.T) {
 	}
 	if page.NextURL == "" {
 		t.Error("next_url is empty")
+	}
+}
+
+// TestSpotlightArticleNumericID checks the live feed's numeric id decodes
+// into the article: the API sends a number, not the string an earlier
+// fixture used.
+func TestSpotlightArticleNumericID(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got,
+		`{"spotlight_articles":[{"id":9876543210123}],"next_url":""}`))
+
+	page, err := c.SpotlightArticles(context.Background())
+	if err != nil {
+		t.Fatalf("SpotlightArticles: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != 9876543210123 {
+		t.Fatalf("items = %+v, want the numeric id", page.Items)
 	}
 }
 
@@ -82,11 +99,11 @@ func TestSpotlightArticlesNextPage(t *testing.T) {
 		offsets = append(offsets, r.URL.Query().Get("offset"))
 		categories = append(categories, r.URL.Query().Get("category"))
 		if len(offsets) == 1 {
-			fmt.Fprintf(w, `{"spotlight_articles":[{"id":"1"}],`+
+			fmt.Fprintf(w, `{"spotlight_articles":[{"id":1}],`+
 				`"next_url":"%s/v1/spotlight/articles?category=all&offset=10"}`, srv.URL)
 			return
 		}
-		io.WriteString(w, `{"spotlight_articles":[{"id":"2"}],"next_url":""}`)
+		io.WriteString(w, `{"spotlight_articles":[{"id":2}],"next_url":""}`)
 	}))
 	t.Cleanup(srv.Close)
 	c := NewClient()
@@ -108,7 +125,7 @@ func TestSpotlightArticlesNextPage(t *testing.T) {
 	if len(categories) != 2 || categories[0] != "all" || categories[1] != "all" {
 		t.Errorf("categories = %v, want all on both pages", categories)
 	}
-	if len(next.Items) != 1 || next.Items[0].ID != "2" {
+	if len(next.Items) != 1 || next.Items[0].ID != 2 {
 		t.Errorf("next items = %+v, want the second page", next.Items)
 	}
 	if next.NextURL != "" {

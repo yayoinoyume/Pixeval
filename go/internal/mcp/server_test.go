@@ -407,7 +407,7 @@ func TestReadToolsCallBackend(t *testing.T) {
 			Kind: "user", TargetID: 7, TargetName: "Ame", LastChecked: savedAt,
 		}},
 		articles: []pixiv.SpotlightArticle{{
-			ID: "1", Title: "Article", ArticleURL: "https://www.pixivision.net/a/1",
+			ID: 1, Title: "Article", ArticleURL: "https://www.pixivision.net/a/1",
 			PublishDate: "2026-10-01",
 		}},
 	}
