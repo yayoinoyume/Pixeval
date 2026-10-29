@@ -214,6 +214,16 @@ func TestViewerTagSearch(t *testing.T) {
 	}
 }
 
+// manyTagDetail is viewerDetail with a tag list longer than the card's room.
+func manyTagDetail() pixiv.Illustration {
+	w := viewerDetail()
+	w.Tags = nil
+	for i := 1; i <= 9; i++ {
+		w.Tags = append(w.Tags, pixiv.Tag{Name: fmt.Sprintf("标签%d", i)})
+	}
+	return w
+}
+
 // TestViewerTagsExpand checks a long tag list shows its first tags until the
 // reader asks for all of them, folds back, and still searches on a click.
 func TestViewerTagsExpand(t *testing.T) {
@@ -222,11 +232,7 @@ func TestViewerTagsExpand(t *testing.T) {
 	a.fetchCommentPage = noCommentPages
 	// The search itself must not reach the network either.
 	a.client.HTTP().Transport = newImageTransport(nil)
-	detail := viewerDetail()
-	detail.Tags = nil
-	for i := 1; i <= 9; i++ {
-		detail.Tags = append(detail.Tags, pixiv.Tag{Name: fmt.Sprintf("标签%d", i)})
-	}
+	detail := manyTagDetail()
 	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
 		return &detail, nil
 	}
@@ -271,6 +277,38 @@ func TestViewerTagsExpand(t *testing.T) {
 	}
 	if a.search.query != "标签9" {
 		t.Errorf("search query %q, want %q", a.search.query, "标签9")
+	}
+}
+
+// TestViewerTagsFoldOnReopen checks a viewer opened again on the same work
+// starts folded, so the expansion does not outlive the viewer.
+func TestViewerTagsFoldOnReopen(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
+	detail := manyTagDetail()
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		return &detail, nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	waitViewerDetail(t, a, "load", func(d *pixiv.Illustration, _ string) bool { return d != nil })
+	tt := ui.NewTester(a.View, 1280, 1200)
+	if err := tt.Click(a.t("detail.showAllTags")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("标签9") {
+		t.Fatalf("the last tag does not show after expanding: %q", tt.Texts())
+	}
+
+	a.closeViewer()
+	a.openViewer(&w, 0)
+	waitViewerDetail(t, a, "load", func(d *pixiv.Illustration, _ string) bool { return d != nil })
+	tt = ui.NewTester(a.View, 1280, 1200)
+	tt.Frame()
+	if tt.HasText("标签7") {
+		t.Errorf("the reopened viewer kept the tags expanded: %q", tt.Texts())
 	}
 }
 

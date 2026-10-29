@@ -45,6 +45,9 @@ type viewerState struct {
 	// to an animation's frames alike.
 	rotation int
 	mirror   bool
+	// tagsOpen keeps the info card's tag list expanded. It is main-thread
+	// state, as drawing is, and a new viewer starts folded.
+	tagsOpen bool
 	// The page's colors are cached for the seed, appearance and text scale
 	// they were made from. The view runs on the main thread, so the fields
 	// need no lock.

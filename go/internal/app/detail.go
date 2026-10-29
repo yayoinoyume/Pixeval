@@ -23,14 +23,6 @@ const viewerDetailWidth = 360
 // comments far down.
 const detailTagLimit = 6
 
-// detailTagList is the info card's tag list: the work it was last drawn for,
-// and whether the reader expanded it. The card draws on the main thread only,
-// and another work starts folded.
-var detailTagList struct {
-	workID int64
-	open   bool
-}
-
 // loadViewerDetail fetches the work's full record off the main thread and
 // leaves it to the info card. A result that lands after the viewer closed is
 // dropped, and a bookmark request already running wins over the record's
@@ -99,7 +91,7 @@ func (a *App) viewerInfo(c *ui.Context, t tokens, v *viewerState) {
 				a.detailAuthor(c, t, v, info.User)
 				a.detailStats(c, t, info)
 				a.detailMeta(c, t, info)
-				a.detailTags(c, t, info)
+				a.detailTags(c, t, v, info.Tags)
 				if caption := plainCaption(info.Caption); caption != "" {
 					ui.Text(c, caption).FontSize(t.TextBody).LineHeight(1.7).
 						TextColor(t.Text)
@@ -221,16 +213,12 @@ func (a *App) detailMeta(c *ui.Context, t tokens, w pixiv.Illustration) {
 // detailTags is the tag list as quiet linked words, not filled pills. A
 // translation sits under its original in the smallest type. A list longer
 // than the card's room shows its first tags until the reader asks for all.
-func (a *App) detailTags(c *ui.Context, t tokens, w pixiv.Illustration) {
-	tags := w.Tags
+func (a *App) detailTags(c *ui.Context, t tokens, v *viewerState, tags []pixiv.Tag) {
 	if len(tags) == 0 {
 		return
 	}
-	if detailTagList.workID != w.ID {
-		detailTagList.workID, detailTagList.open = w.ID, false
-	}
 	shown := tags
-	if !detailTagList.open && len(tags) > detailTagLimit {
+	if !v.tagsOpen && len(tags) > detailTagLimit {
 		shown = tags[:detailTagLimit]
 	}
 	ui.Column(c).Gap(t.SpaceS).Children(func() {
@@ -246,11 +234,11 @@ func (a *App) detailTags(c *ui.Context, t tokens, w pixiv.Illustration) {
 			return
 		}
 		label := a.t("detail.showAllTags")
-		if detailTagList.open {
+		if v.tagsOpen {
 			label = a.t("detail.showFewerTags")
 		}
 		if ui.Button(c, label).FontSize(t.TextTiny).Clicked() {
-			detailTagList.open = !detailTagList.open
+			v.tagsOpen = !v.tagsOpen
 		}
 	})
 }
