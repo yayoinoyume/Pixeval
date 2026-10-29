@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,6 +69,9 @@ type Settings struct {
 	NovelFontSize   int     `json:"novelFontSize"`
 	NovelLineHeight float64 `json:"novelLineHeight"`
 	NovelWidth      float64 `json:"novelWidth"`
+	// ProxyURL routes the app's requests through a proxy; empty follows the
+	// environment's proxy settings.
+	ProxyURL string `json:"proxyUrl"`
 }
 
 // Default is the settings of a first run.
@@ -215,6 +219,10 @@ func (s *Settings) normalize() {
 		s.SubscriptionIntervalMinutes > subscriptionIntervalMax {
 		s.SubscriptionIntervalMinutes = subscriptionIntervalDefault
 	}
+	s.ProxyURL = strings.TrimSpace(s.ProxyURL)
+	if !validProxyURL(s.ProxyURL) {
+		s.ProxyURL = ""
+	}
 	// A template the parser rejects cannot name a file, so it falls back to
 	// the default one instead of failing every download.
 	if strings.TrimSpace(s.DownloadMacro) == "" {
@@ -222,6 +230,24 @@ func (s *Settings) normalize() {
 	} else if _, err := download.Parse(s.DownloadMacro); err != nil {
 		s.DownloadMacro = download.DefaultMacro
 	}
+}
+
+// validProxyURL reports whether raw is empty or an http, https or socks5 URL
+// with a host, the forms the shared transport can dial.
+func validProxyURL(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	switch u.Scheme {
+	case "http", "https", "socks5":
+		return true
+	}
+	return false
 }
 
 // Save writes s to path as JSON only the user can read, replacing the file in

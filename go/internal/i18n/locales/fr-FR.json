@@ -206,6 +206,10 @@
     "decrease": "Diminuer",
     "increase": "Augmenter",
     "groupContent": "Contenu",
+    "groupNetwork": "Réseau",
+    "proxy": "Adresse du proxy",
+    "proxyHint": "Vide suit le proxy du système ou des variables d'environnement ; http://, https:// et socks5:// sont acceptés",
+    "proxyInvalid": "L'adresse du proxy n'est pas valide, rien n'a été enregistré",
     "groupAbout": "À propos"
   },
   "history": {

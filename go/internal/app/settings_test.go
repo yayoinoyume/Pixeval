@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -34,6 +35,8 @@ func TestSettingsRoundTrip(t *testing.T) {
 		NovelFontSize:   novelFontSizeMax,
 		NovelLineHeight: 1.6,
 		NovelWidth:      900,
+
+		ProxyURL: "socks5://127.0.0.1:1080",
 	}
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -291,13 +294,69 @@ func TestAppFallsBackToDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadNormalizesProxy checks a saved proxy keeps an accepted URL, trims
+// surrounding space and drops one the transport cannot dial.
+func TestLoadNormalizesProxy(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"http://127.0.0.1:7890", "http://127.0.0.1:7890"},
+		{"https://proxy.example:8080", "https://proxy.example:8080"},
+		{"socks5://127.0.0.1:1080", "socks5://127.0.0.1:1080"},
+		{"  http://127.0.0.1:7890  ", "http://127.0.0.1:7890"},
+		{"", ""},
+		{"127.0.0.1:7890", ""},
+		{"ftp://127.0.0.1:21", ""},
+		{"http://", ""},
+	} {
+		path := filepath.Join(t.TempDir(), "settings.json")
+		data := `{"proxyUrl":` + strconv.Quote(tt.in) + `}`
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if s.ProxyURL != tt.want {
+			t.Errorf("proxy %q, want %q", s.ProxyURL, tt.want)
+		}
+	}
+}
+
+// TestAppliesSavedProxy checks starting the app with a saved proxy points the
+// shared client at it.
+func TestAppliesSavedProxy(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	s := Default()
+	s.ProxyURL = "http://127.0.0.1:7890"
+	if err := Save(path, s); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	a := New()
+	tr, ok := a.client.HTTP().Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("Transport is not *http.Transport")
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://www.pixiv.net", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := tr.Proxy(req)
+	if err != nil || got == nil || got.String() != s.ProxyURL {
+		t.Errorf("proxy = %v, %v, want %s", got, err, s.ProxyURL)
+	}
+}
+
 // TestSettingsPageShowsFields checks the page draws all five preferences.
 func TestSettingsPageShowsFields(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := New()
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽"} {
+	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽", "网络", "代理地址"} {
 		if !tt.HasText(label) {
 			t.Errorf("label %q missing: %q", label, tt.Texts())
 		}
@@ -432,6 +491,80 @@ func TestSettingsPageRejectsInvalidMacro(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err == nil {
 		t.Fatal("settings saved with an invalid macro")
+	}
+}
+
+// TestSettingsPageSavesProxy checks a save writes the proxy, points the
+// running client at it, and a later load reads it back.
+func TestSettingsPageSavesProxy(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	a.settings.ProxyURL = "socks5://127.0.0.1:1080"
+	tt := ui.NewTester(a.View, 1000, 820)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil && got.ProxyURL == a.settings.ProxyURL {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("settings not saved: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	tr, ok := a.client.HTTP().Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("Transport is not *http.Transport")
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://www.pixiv.net", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		got, err := tr.Proxy(req)
+		if err == nil && got != nil && got.String() == a.settings.ProxyURL {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("client proxy = %v, %v, want %s", got, err, a.settings.ProxyURL)
+		}
+		tt.Frame()
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestSettingsPageRejectsInvalidProxy checks a proxy the transport cannot
+// dial is reported and nothing is written.
+func TestSettingsPageRejectsInvalidProxy(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	a.settings.ProxyURL = "ftp://127.0.0.1:21"
+	tt := ui.NewTester(a.View, 1000, 820)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("代理地址无效，未保存") {
+		t.Errorf("invalid proxy not reported: %q", tt.Texts())
+	}
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("settings saved with an invalid proxy")
 	}
 }
 
