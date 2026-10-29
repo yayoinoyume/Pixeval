@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/yayoinoyume/pixeval-go/internal/artcolor"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 
 	// Decoders for the formats Pixiv serves. GIF decodes its first frame.
@@ -39,6 +41,10 @@ const (
 	defaultDiskLimit = 512 << 20
 	maxDownloads     = 6
 	downloadTimeout  = 2 * time.Minute
+	// maxSeeds bounds the colors kept for the whole session: a feed surfacing
+	// thousands of works would otherwise keep a color for every picture it has
+	// ever decoded.
+	maxSeeds = 4096
 )
 
 // Loader caches illustrations from a Pixiv client. It is safe for concurrent
@@ -54,6 +60,7 @@ type Loader struct {
 	budget    int64
 	diskLimit int64
 	inflight  map[string][]func() // memory key -> callbacks of the load in progress
+	seeds     map[string]ui.Color // image URL -> its characteristic color
 
 	diskMu sync.Mutex // serializes disk writes and eviction
 	sem    chan struct{}
@@ -76,6 +83,7 @@ func New(client *pixiv.Client, diskDir string) *Loader {
 		budget:    defaultBudget,
 		diskLimit: defaultDiskLimit,
 		inflight:  map[string][]func(){},
+		seeds:     map[string]ui.Color{},
 		sem:       make(chan struct{}, maxDownloads),
 	}
 	if client != nil {
@@ -125,6 +133,16 @@ func (l *Loader) Thumb(key string, w, h int, onReady func()) *ui.Bitmap {
 // while the image loads and calls onReady once it is there.
 func (l *Loader) Original(key string, onReady func()) *ui.Bitmap {
 	return l.bitmap(key+"@original", key, onReady, nil)
+}
+
+// Seed returns the characteristic color the last decoded image at url had.
+// It is false while the image has not loaded. A caller that uses it to tint a
+// page can redraw from an image callback and ask again.
+func (l *Loader) Seed(url string) (ui.Color, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	c, ok := l.seeds[url]
+	return c, ok
 }
 
 // Cached returns the original of key already decoded in memory, without
@@ -198,11 +216,47 @@ func (l *Loader) decode(memKey, url string, scale func(image.Image) image.Image)
 	if !fromDisk {
 		l.diskPut(url, data)
 	}
+	// One picture is decoded under several memory keys, as a thumbnail and as
+	// an original; its color is the same one every time, so only the first
+	// decode of a URL pays for it.
+	l.mu.Lock()
+	_, haveSeed := l.seeds[url]
+	l.mu.Unlock()
+	var seed ui.Color
+	if !haveSeed {
+		seed = artcolor.Extract(img)
+	}
 	if scale != nil {
 		img = scale(img)
 	}
 	b := img.Bounds()
 	l.put(memKey, ui.NewBitmap(img), int64(b.Dx())*int64(b.Dy())*4)
+	if !haveSeed && seed.A != 0 {
+		l.setSeed(url, seed)
+	}
+}
+
+// setSeed keeps an image's color, dropping an arbitrary older one once the
+// bound is reached. The bound only has to keep the map from growing without
+// limit; a dropped color is extracted again the next time its image is decoded.
+func (l *Loader) setSeed(url string, seed ui.Color) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.seeds == nil {
+		l.seeds = map[string]ui.Color{}
+	}
+	// The cover and the original are separate URLs; the first decode of each
+	// decides its seed, so a smaller rendition cannot drift.
+	if _, ok := l.seeds[url]; ok {
+		return
+	}
+	if len(l.seeds) >= maxSeeds {
+		for key := range l.seeds {
+			delete(l.seeds, key)
+			break
+		}
+	}
+	l.seeds[url] = seed
 }
 
 // fetch returns the image data from the disk cache, or downloads it. Only a

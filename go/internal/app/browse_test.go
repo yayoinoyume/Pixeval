@@ -392,6 +392,12 @@ func newFilterFeed(t *testing.T) (*App, *browseState, *ui.Tester) {
 // runFilter types expr in the box and clicks apply.
 func runFilter(t *testing.T, st *browseState, tt *ui.Tester, expr string) {
 	t.Helper()
+	if !st.filterOpen {
+		if err := tt.Click("筛选"); err != nil {
+			t.Fatalf("open filter: %v", err)
+		}
+		tt.Frame()
+	}
 	st.filterText = expr
 	if err := tt.Click("应用"); err != nil {
 		t.Fatalf("Click: %v", err)
@@ -459,19 +465,73 @@ func TestFilterClearedRestoresList(t *testing.T) {
 	checkShown(t, tt, "作品 0", "作品 1", "作品 2")
 }
 
+// TestFilterCollapsedNamesExpression checks the collapsed bar keeps showing the
+// expression in force, so a filtered feed that stops paging is not read as one
+// that ran out, and that its clear control drops the filter.
+func TestFilterCollapsedNamesExpression(t *testing.T) {
+	_, st, tt := newFilterFeed(t)
+	runFilter(t, st, tt, "bookmarks>100")
+	if st.filterOpen {
+		t.Fatal("the box stayed open after apply")
+	}
+	if !tt.HasText("已筛选：bookmarks>100") {
+		t.Fatalf("the applied expression is not named: %q", tt.Texts())
+	}
+	checkShown(t, tt, "作品 1")
+
+	if err := tt.Click("清除筛选"); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	tt.Frame()
+	if st.filterExpr != nil || st.filterText != "" {
+		t.Fatalf("filter kept after clear: expr=%v text=%q", st.filterExpr, st.filterText)
+	}
+	if tt.HasText("已筛选") {
+		t.Errorf("the cleared expression is still named: %q", tt.Texts())
+	}
+	checkShown(t, tt, "作品 0", "作品 1", "作品 2")
+}
+
+// TestFilterCollapsedKeepsAppliedExpression checks the collapsed bar names the
+// expression in force, not the one being typed: a draft edited and then closed
+// without applying leaves the filter that passes the works shown.
+func TestFilterCollapsedKeepsAppliedExpression(t *testing.T) {
+	_, st, tt := newFilterFeed(t)
+	runFilter(t, st, tt, "bookmarks>100")
+	if err := tt.Click("筛选"); err != nil {
+		t.Fatalf("open filter: %v", err)
+	}
+	tt.Frame()
+	st.filterText = "bookmarks>400"
+	if err := tt.Click("关闭"); err != nil {
+		t.Fatalf("close filter: %v", err)
+	}
+	tt.Frame()
+	if st.filterOpen {
+		t.Fatal("the box stayed open")
+	}
+	if tt.HasText("已筛选：bookmarks>400") {
+		t.Errorf("the collapsed bar shows the draft: %q", tt.Texts())
+	}
+	if !tt.HasText("已筛选：bookmarks>100") {
+		t.Fatalf("the collapsed bar does not name the applied expression: %q", tt.Texts())
+	}
+	checkShown(t, tt, "作品 1")
+}
+
 // TestBrowseCardMetrics checks the feed keeps the card width the settings
 // choose, the design's gap, and the cover size the thumbnails are cached at.
 func TestBrowseCardMetrics(t *testing.T) {
 	if cardWidth != 240 {
 		t.Errorf("card width %v, want the default 240", cardWidth)
 	}
-	if cardGap != 16 {
-		t.Errorf("card gap %v, want 16", cardGap)
+	if cardGap != 20 {
+		t.Errorf("card gap %v, want 20", cardGap)
 	}
 	if coverWidth != 480 || coverHeight != 720 {
 		t.Errorf("cover %vx%v, want 480x720", coverWidth, coverHeight)
 	}
-	if contentPadding != 28 {
-		t.Errorf("content padding %v, want 28", contentPadding)
+	if contentPadding != 40 {
+		t.Errorf("content padding %v, want 40", contentPadding)
 	}
 }

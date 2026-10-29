@@ -16,11 +16,11 @@ import (
 
 // viewerDetailWidth is the info card's width, narrowed as the window shrinks
 // so the artwork keeps most of it.
-const viewerDetailWidth = 380
+const viewerDetailWidth = 360
 
 // detailTagLimit is how many of a work's tags the card shows; a long list
 // would push the description and the comments far down.
-const detailTagLimit = 5
+const detailTagLimit = 6
 
 // loadViewerDetail fetches the work's full record off the main thread and
 // leaves it to the info card. A result that lands after the viewer closed is
@@ -65,10 +65,10 @@ func (a *App) loadViewerDetail(v *viewerState) {
 	}()
 }
 
-// viewerInfo is the scrollable card beside the artwork: the work's author,
-// title, stats, metadata, tags, description, series and comments.
-func (a *App) viewerInfo(c *ui.Context, v *viewerState) {
-	t := themeOf(c)
+// viewerInfo is the editorial rail beside the artwork: title, author, quiet
+// numbers, tags, the work's own words and the comments. It is transparent on
+// the room's wash; one hairline separates it from the picture.
+func (a *App) viewerInfo(c *ui.Context, t tokens, v *viewerState) {
 	width := float32(viewerDetailWidth)
 	if winW, _ := c.Size(); winW < 960 {
 		width = 300
@@ -80,20 +80,23 @@ func (a *App) viewerInfo(c *ui.Context, v *viewerState) {
 	if detail != nil {
 		info = *detail
 	}
-	ui.Scroll(c).Width(width).Shrink(0).FillHeight().Radius(t.RadiusXL).
-		Background(t.Surface).Role(ui.RoleGroup).Label(a.t("viewer.info")).
-		Children(func() {
-			ui.Column(c).Padding(t.SpaceXL).Gap(t.SpaceL).Children(func() {
-				a.detailAuthor(c, v, info.User)
-				ui.Text(c, info.Title).FontSize(t.TextDetail).FontWeight(600).TextColor(t.Text)
-				a.detailStats(c, info)
-				a.detailMeta(c, info)
-				a.detailTags(c, info.Tags)
-				if info.Caption != "" {
-					ui.Text(c, info.Caption).FontSize(t.TextBody).LineHeight(1.6).TextColor(t.TextMuted)
+	ui.Box(c).Width(width).Shrink(0).FillHeight().
+		BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
+		Role(ui.RoleGroup).Label(a.t("viewer.info")).Children(func() {
+		ui.Scroll(c).Fill().Children(func() {
+			ui.Column(c).Padding(t.SpaceXS, t.SpaceL, t.Space2XL, t.Space2XL).
+				Gap(t.SpaceL).Children(func() {
+				a.detailTitle(c, t, info)
+				a.detailAuthor(c, t, v, info.User)
+				a.detailStats(c, t, info)
+				a.detailMeta(c, t, info)
+				a.detailTags(c, t, info.Tags)
+				if caption := plainCaption(info.Caption); caption != "" {
+					ui.Text(c, caption).FontSize(t.TextBody).LineHeight(1.7).
+						TextColor(t.Text)
 				}
 				if info.Series != nil {
-					a.detailSeries(c, *info.Series)
+					a.detailSeries(c, t, *info.Series)
 				}
 				switch {
 				case loading:
@@ -108,10 +111,10 @@ func (a *App) viewerInfo(c *ui.Context, v *viewerState) {
 					})
 				}
 				if a.commentsOpen {
-					// Comments need a session; signed out, the card says so
+					// Comments need a session; signed out, the rail says so
 					// instead of drawing a composer that cannot post.
 					if a.session != nil && a.comments != nil {
-						a.commentsSection(c, a.comments)
+						a.commentsSection(c, t, a.comments)
 					} else {
 						ui.Text(c, a.t("comments.login")).FontSize(t.TextSmall).
 							TextColor(t.TextMuted)
@@ -119,19 +122,30 @@ func (a *App) viewerInfo(c *ui.Context, v *viewerState) {
 				}
 			})
 		})
+	})
 }
 
-// detailAuthor is the author row: the avatar or its initial, the name and the
-// user ID. Clicking it leaves the viewer for the user's page.
-func (a *App) detailAuthor(c *ui.Context, v *viewerState, user pixiv.User) {
+// detailTitle is the work's name, in the display serif. It comes before the
+// author so the page reads like a catalogue entry, not like a profile card.
+func (a *App) detailTitle(c *ui.Context, t tokens, w pixiv.Illustration) {
+	if w.Title == "" {
+		return
+	}
+	displayText(c, w.Title).FontSize(t.TextDetail).FontWeight(500).
+		LineHeight(1.16).TextColor(t.Text)
+}
+
+// detailAuthor is the author line: a small avatar, the name, the account or
+// ID, and a quiet chevron. The whole line opens the author's page.
+func (a *App) detailAuthor(c *ui.Context, t tokens, v *viewerState, user pixiv.User) {
 	if user.ID <= 0 {
 		return
 	}
-	t := themeOf(c)
-	b := ui.ButtonBase(c).Radius(t.RadiusM).Padding(t.SpaceS).Gap(t.SpaceM).
+	b := ui.ButtonBase(c).FillWidth().Radius(t.RadiusS).
+		Padding(t.SpaceS, t.SpaceS, t.SpaceS, 0).Gap(t.SpaceM).
 		Label(a.t("user.open"))
 	if b.Hovered() {
-		b = b.Background(t.SurfaceAlt)
+		b = b.Background(t.Surface.Alpha(0.45))
 	}
 	if b.Clicked() {
 		a.closeViewer()
@@ -139,76 +153,83 @@ func (a *App) detailAuthor(c *ui.Context, v *viewerState, user pixiv.User) {
 	}
 	b.Children(func() {
 		url := user.ProfileImageUrls.Px50x50
-		avatar := ui.Box(c).Size(44, 44).Shrink(0).Radius(t.RadiusFull).
+		avatar := ui.Box(c).Size(32, 32).Shrink(0).Radius(t.RadiusFull).
 			Background(t.AccentSoft).Clip().Center().
 			Label(a.tf("a11y.avatar", user.Name))
 		avatar.Children(func() {
 			if url != "" && !v.imageFailedURL(url) {
-				if bmp := a.images.Thumb(url, 44, 44, a.viewerImageReady(v, url, 44)); bmp != nil {
+				if bmp := a.images.Thumb(url, 32, 32, a.viewerImageReady(v, url, 32)); bmp != nil {
 					ui.Image(c, bmp).Fill().Fit(ui.Cover)
 					return
 				}
 			}
-			ui.Text(c, initialOf(user.Name)).FontSize(t.TextTitle).FontWeight(600).TextColor(t.Accent)
+			ui.Text(c, initialOf(user.Name)).FontSize(t.TextSmall).FontWeight(600).
+				TextColor(t.Accent)
 		})
-		ui.Column(c).Gap(2).MinWidth(0).Children(func() {
-			ui.Text(c, user.Name).FontSize(t.TextBody).FontWeight(600).TextColor(t.Text).
+		ui.Column(c).Grow(1).Gap(1).MinWidth(0).Children(func() {
+			ui.Text(c, user.Name).FontSize(t.TextSmall).FontWeight(600).TextColor(t.Text).
 				MaxLines(1)
-			ui.Text(c, fmt.Sprintf("ID %d", user.ID)).FontSize(t.TextTiny).
-				FontWeight(500).TextColor(t.Accent)
+			sub := fmt.Sprintf("ID %d", user.ID)
+			if user.Account != "" {
+				sub = "@" + user.Account
+			}
+			ui.Text(c, sub).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 		})
+		ui.Icon(c, iconRight).Size(14, 14).TextColor(t.TextMuted)
 	})
 }
 
-// detailStats is the bookmark and view counts, side by side.
-func (a *App) detailStats(c *ui.Context, w pixiv.Illustration) {
-	t := themeOf(c)
-	stat := func(n int, label string) {
-		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, detailCount(n)).FontSize(t.TextTitle).FontWeight(600).TextColor(t.Text)
+// detailStats is the work's two counts, on one quiet line. They are numbers
+// in the interface's text face, not oversized display figures.
+func (a *App) detailStats(c *ui.Context, t tokens, w pixiv.Illustration) {
+	metric := func(n int, label string) {
+		ui.Column(c).Gap(1).Children(func() {
+			ui.Text(c, detailCount(n)).FontSize(t.TextBody).FontWeight(600).
+				FontFeatures("tnum").TextColor(t.Text)
 			ui.Text(c, label).FontSize(t.TextTiny).TextColor(t.TextMuted)
 		})
 	}
-	ui.Row(c).Gap(t.Space2XL).Children(func() {
-		stat(w.TotalBookmarks, a.t("viewer.bookmarkCount"))
-		stat(w.TotalView, a.t("viewer.views"))
+	ui.Row(c).Gap(t.SpaceL).AlignItems(ui.Center).Children(func() {
+		metric(w.TotalBookmarks, a.t("viewer.bookmarkCount"))
+		ui.Box(c).Width(1).Height(26).Background(t.Border)
+		metric(w.TotalView, a.t("viewer.views"))
 	})
 }
 
-// detailMeta is the publication date and the work ID, above a rule.
-func (a *App) detailMeta(c *ui.Context, w pixiv.Illustration) {
-	t := themeOf(c)
-	col := func(label, value string) {
-		ui.Column(c).Gap(2).MinWidth(0).Children(func() {
-			ui.Text(c, label).FontSize(t.TextTiny).TextColor(t.TextMuted)
-			ui.Text(c, value).FontSize(t.TextSmall).TextColor(t.Text)
-		})
-	}
-	ui.Row(c).Gap(t.SpaceXL).Padding(t.SpaceM, 0, 0, 0).
-		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		col(a.t("viewer.published"), detailDate(w.CreateDate))
-		col(a.t("viewer.workID"), strconv.FormatInt(w.ID, 10))
+// detailMeta is the publication time and the work number, small and
+// monospaced by the tabular figures, without boxed labels.
+func (a *App) detailMeta(c *ui.Context, t tokens, w pixiv.Illustration) {
+	ui.Row(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, detailDate(w.CreateDate)).FontSize(t.TextTiny).
+			FontFeatures("tnum").TextColor(t.TextMuted)
+		ui.Text(c, "·").FontSize(t.TextTiny).TextColor(t.TextMuted)
+		ui.Text(c, a.t("viewer.workID")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+		ui.Text(c, strconv.FormatInt(w.ID, 10)).FontSize(t.TextTiny).
+			FontFeatures("tnum").TextColor(t.TextMuted)
 	})
 }
 
-// detailTags is the work's tags as chips; clicking one searches for it.
-func (a *App) detailTags(c *ui.Context, tags []pixiv.Tag) {
+// detailTags is the tag list as quiet linked words, not filled pills. A
+// translation sits under its original in the smallest type.
+func (a *App) detailTags(c *ui.Context, t tokens, tags []pixiv.Tag) {
 	if len(tags) == 0 {
 		return
 	}
-	t := themeOf(c)
-	ui.Row(c).Wrap().Gap(t.SpaceS).Role(ui.RoleGroup).Label(a.t("viewer.tags")).
-		Children(func() {
-			for i := 0; i < len(tags) && i < detailTagLimit; i++ {
-				a.detailTag(c, tags[i])
-			}
-		})
+	ui.Column(c).Gap(t.SpaceS).Children(func() {
+		ui.Text(c, a.t("viewer.tags")).FontSize(t.TextTiny).LetterSpacing(0.5).
+			TextColor(t.TextMuted)
+		ui.Row(c).Wrap().Gap(t.SpaceM).Role(ui.RoleGroup).Label(a.t("viewer.tags")).
+			Children(func() {
+				for i := 0; i < len(tags) && i < detailTagLimit; i++ {
+					a.detailTag(c, t, tags[i])
+				}
+			})
+	})
 }
 
-// detailTag is one tag chip: the tag, and its translation under it when the
-// API has one.
-func (a *App) detailTag(c *ui.Context, tag pixiv.Tag) {
-	t := themeOf(c)
+// detailTag is one linked tag: its word, and its translation when the API
+// has one.
+func (a *App) detailTag(c *ui.Context, t tokens, tag pixiv.Tag) {
 	word := tag.Name
 	if word == "" {
 		word = tag.TranslatedName
@@ -216,42 +237,48 @@ func (a *App) detailTag(c *ui.Context, tag pixiv.Tag) {
 	if word == "" {
 		return
 	}
-	b := ui.ButtonBase(c).Radius(t.RadiusFull).Padding(t.SpaceS, t.SpaceM).
-		Background(t.AccentSoft).Label(word)
+	fg := t.Accent
+	b := ui.ButtonBase(c).Padding(0).Gap(2).Label(word)
 	if b.Hovered() {
-		b = b.Background(t.AccentSoft.Mix(t.Accent, 0.2))
+		fg = t.Text
 	}
 	if b.Clicked() {
 		a.searchTag(word)
 	}
 	b.Children(func() {
-		ui.Column(c).Gap(1).AlignItems(ui.Start).Children(func() {
-			ui.Text(c, word).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Accent)
+		ui.Row(c).Gap(2).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "#").FontSize(t.TextMicro).TextColor(t.TextMuted)
+			ui.Text(c, word).FontSize(t.TextSmall).FontWeight(500).TextColor(fg)
 			if tag.TranslatedName != "" && tag.Name != "" {
-				ui.Text(c, tag.TranslatedName).FontSize(t.TextTiny).TextColor(t.TextMuted)
+				ui.Text(c, "·").FontSize(t.TextMicro).TextColor(t.TextMuted)
+				ui.Text(c, tag.TranslatedName).FontSize(t.TextMicro).TextColor(t.TextMuted)
 			}
 		})
 	})
 }
 
-// detailSeries is the series row: its icon, title and chevron, which opens
-// the series page.
-func (a *App) detailSeries(c *ui.Context, s pixiv.Series) {
-	t := themeOf(c)
-	b := ui.ButtonBase(c).Radius(t.RadiusM).Padding(t.SpaceS).Gap(t.SpaceM).
-		Label(a.tf("viewer.seriesLabel", s.Title))
-	if b.Hovered() {
-		b = b.Background(t.SurfaceAlt)
-	}
-	if b.Clicked() {
-		a.closeViewer()
-		a.openSeries(s.ID)
-	}
-	b.Children(func() {
-		ui.Icon(c, iconSeries).Size(16, 16).TextColor(t.Accent)
-		ui.Text(c, s.Title).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text).
-			Grow(1).MaxLines(2).MinWidth(0)
-		ui.Icon(c, iconRight).Size(14, 14).TextColor(t.TextMuted)
+// detailSeries is the series line: a quiet rule, the series name and a
+// chevron to its page.
+func (a *App) detailSeries(c *ui.Context, t tokens, s pixiv.Series) {
+	ui.Column(c).Gap(t.SpaceS).Padding(t.SpaceM, 0, 0, 0).
+		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Text(c, a.t("nav.series")).FontSize(t.TextTiny).LetterSpacing(0.5).
+			TextColor(t.TextMuted)
+		b := ui.ButtonBase(c).FillWidth().Radius(t.RadiusS).Padding(0).
+			Gap(t.SpaceS).Label(a.tf("viewer.seriesLabel", s.Title))
+		if b.Hovered() {
+			b = b.Background(t.Surface.Alpha(0.45))
+		}
+		if b.Clicked() {
+			a.closeViewer()
+			a.openSeries(s.ID)
+		}
+		b.Children(func() {
+			ui.Icon(c, iconSeries).Size(15, 15).TextColor(t.Accent)
+			ui.Text(c, s.Title).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text).
+				Grow(1).MaxLines(2).MinWidth(0)
+			ui.Icon(c, iconRight).Size(14, 14).TextColor(t.TextMuted)
+		})
 	})
 }
 

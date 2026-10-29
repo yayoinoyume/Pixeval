@@ -66,7 +66,6 @@
     "pageThumb": "Page %d",
     "views": "Views",
     "bookmarkCount": "Bookmarks",
-    "published": "Published",
     "workID": "Work ID",
     "tags": "Tags",
     "info": "Work details",
@@ -206,7 +205,10 @@
   "filter": {
     "placeholder": "Filter works, e.g. bookmarks>100",
     "action": "Apply",
-    "invalid": "Invalid filter: %s"
+    "invalid": "Invalid filter: %s",
+    "title": "Filter",
+    "active": "Filtered: %s",
+    "clear": "Clear filter"
   },
   "shortcuts": {
     "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"

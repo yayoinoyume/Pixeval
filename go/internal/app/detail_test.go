@@ -113,6 +113,38 @@ func TestViewerDetailFetch(t *testing.T) {
 	}
 }
 
+// TestViewerCaptionIsPlainText checks the rail shows the caption's words, not
+// Pixiv's HTML tags or link attributes.
+func TestViewerCaptionIsPlainText(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
+	detail := viewerDetail()
+	detail.Caption = `一行目<br />二行目 &amp; <a href="https://example.invalid">リンク</a>`
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		return &detail, nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	waitViewerDetail(t, a, "load", func(d *pixiv.Illustration, _ string) bool { return d != nil })
+
+	tt := ui.NewTester(a.View, 1280, 820)
+	var caption string
+	for _, s := range tt.Texts() {
+		if strings.Contains(s, "一行目") {
+			caption = s
+		}
+	}
+	if !strings.Contains(caption, "一行目") || !strings.Contains(caption, "リンク") ||
+		!strings.Contains(caption, "&") {
+		t.Fatalf("caption %q, want its plain text: %q", caption, tt.Texts())
+	}
+	if strings.Contains(caption, "<br") || strings.Contains(caption, "<a") ||
+		strings.Contains(caption, "href") {
+		t.Errorf("caption still has HTML: %q", caption)
+	}
+}
+
 // TestViewerDetailFailure checks a failed detail keeps the feed's data and
 // offers a retry that fetches again.
 func TestViewerDetailFailure(t *testing.T) {

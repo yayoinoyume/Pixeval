@@ -273,7 +273,7 @@ func (a *App) numberStepper[T int | float64](c *ui.Context, value *T, lo, hi, st
 // stepperButton is one square button of a number stepper.
 func (a *App) stepperButton(c *ui.Context, glyph *ui.SVG, label string) ui.Element {
 	t := themeOf(c)
-	b := ui.ButtonBase(c).Size(36, 36).Radius(t.RadiusM).Label(label).Tooltip(label).
+	b := ui.ButtonBase(c).Size(36, 36).Radius(t.RadiusS).Label(label).Tooltip(label).
 		Background(t.SurfaceAlt)
 	if b.Hovered() {
 		b = b.Background(t.SurfaceHover)

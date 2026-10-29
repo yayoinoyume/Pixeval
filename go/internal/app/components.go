@@ -13,7 +13,7 @@ import (
 // technology.
 func iconButton(c *ui.Context, glyph *ui.SVG, label string, size float32, fg, hover ui.Color) ui.Element {
 	t := themeOf(c)
-	b := ui.ButtonBase(c).Size(size, size).Radius(t.RadiusFull).Label(label).Tooltip(label)
+	b := ui.ButtonBase(c).Size(size, size).Radius(t.RadiusS).Label(label).Tooltip(label)
 	if b.Hovered() {
 		b = b.Background(hover)
 	}
@@ -25,9 +25,12 @@ func iconButton(c *ui.Context, glyph *ui.SVG, label string, size float32, fg, ho
 
 // cardTextHeight is the room a card leaves for its title and author at the
 // current text scale: the two lines, their gap and the card's padding, plus a
-// little slack for line metrics.
+// little slack for line metrics. The title is the design's body size, so the
+// room follows it.
 func cardTextHeight(t tokens) float64 {
-	return float64(t.SpaceM*2+2) + float64(t.TextSmall+t.TextTiny)*1.4 + 4
+	// Two lines and the small gap between them, plus a little slack for
+	// the font's line metrics. The card has no padding of its own.
+	return 2 + float64(t.TextBody+t.TextTiny)*1.35 + 6
 }
 
 // cardShell is the frame shared by the work, novel and history cards: a
@@ -36,15 +39,13 @@ func cardTextHeight(t tokens) float64 {
 // the cover's contents, the text block, and the card's label and click.
 func cardShell(c *ui.Context) (ui.Element, *ui.Element) {
 	t := themeOf(c)
-	card := ui.Column(c).Background(t.SurfaceContainerLow).Radius(t.RadiusL).
-		Border(1, t.OutlineVariant).Clip()
-	if card.Hovered() {
-		card = card.Background(t.SurfaceContainerHigh).Border(0, ui.Color{}).
-			Shadow(0, 6, 18, 0, t.Shadow)
-	}
+	// A card is a picture and two lines, not a raised box. The cover has the
+	// one small radius; the text block is transparent.
+	card := ui.Column(c).Gap(t.SpaceS).Clip()
 	var cover ui.Element
 	card.Children(func() {
-		cover = ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceContainer)
+		cover = ui.Box(c).Grow(1).FillWidth().Background(t.SurfaceAlt).
+			Radius(t.RadiusXS).Clip()
 	})
 	return card, &cover
 }
@@ -55,21 +56,21 @@ func cardShell(c *ui.Context) (ui.Element, *ui.Element) {
 func emptyState(c *ui.Context, glyph *ui.SVG, title, hint string, action func()) {
 	t := themeOf(c)
 	ui.Column(c).Grow(1).Center().Padding(t.Space2XL).Children(func() {
-		ui.Column(c).Width(460).MaxWidthPercent(100).Padding(t.Space2XL).AlignItems(ui.Center).
-			Background(t.SurfaceContainerLow).Radius(t.RadiusXL).Children(func() {
-			ui.Box(c).Size(80, 80).Radius(t.RadiusFull).Background(t.PrimaryContainer).Center().Children(func() {
-				ui.Icon(c, glyph).Size(36, 36).TextColor(t.Accent)
+		ui.Column(c).Width(420).MaxWidthPercent(100).AlignItems(ui.Center).
+			Children(func() {
+				ui.Icon(c, glyph).Size(30, 30).TextColor(t.TextMuted)
+				displayText(c, title).FontSize(t.TextDisplay).FontWeight(500).
+					LineHeight(1.2).TextColor(t.Text).TextAlign(ui.Center).
+					Padding(t.SpaceL, 0, 0, 0)
+				if hint != "" {
+					ui.Text(c, hint).FontSize(t.TextSmall).LineHeight(1.6).
+						TextColor(t.TextMuted).TextAlign(ui.Center).MaxWidth(360).
+						Padding(t.SpaceS, 0, 0, 0)
+				}
+				if action != nil {
+					ui.Row(c).Padding(t.SpaceXL, 0, 0, 0).Children(action)
+				}
 			})
-			ui.Text(c, title).FontSize(t.TextTitle).FontWeight(600).TextColor(t.Text).
-				TextAlign(ui.Center).Padding(t.SpaceL, 0, 0, 0)
-			if hint != "" {
-				ui.Text(c, hint).FontSize(t.TextSmall).TextColor(t.TextMuted).
-					TextAlign(ui.Center).MaxWidth(360).Padding(t.SpaceS, 0, 0, 0)
-			}
-			if action != nil {
-				ui.Row(c).Padding(t.SpaceXL, 0, 0, 0).Children(action)
-			}
-		})
 	})
 }
 
@@ -78,9 +79,9 @@ func emptyState(c *ui.Context, glyph *ui.SVG, title, hint string, action func())
 func skeletonCard(c *ui.Context, width float32) {
 	t := themeOf(c)
 	ui.Column(c).Width(width).Gap(t.SpaceS).Children(func() {
-		ui.Box(c).FillWidth().Height(width * 4 / 3).Radius(t.RadiusL).Background(t.SurfaceContainer)
-		ui.Box(c).FillWidth().Height(12).Radius(t.RadiusS).Background(t.SurfaceContainerHigh)
-		ui.Box(c).Width(width * 0.45).Height(10).Radius(t.RadiusS).Background(t.SurfaceContainerHigh)
+		ui.Box(c).FillWidth().Height(width * 4 / 3).Radius(t.RadiusXS).Background(t.SurfaceAlt)
+		ui.Box(c).FillWidth().Height(12).Radius(t.RadiusXS).Background(t.SurfaceAlt)
+		ui.Box(c).Width(width * 0.45).Height(10).Radius(t.RadiusXS).Background(t.SurfaceAlt)
 	})
 }
 

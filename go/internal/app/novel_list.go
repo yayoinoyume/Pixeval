@@ -312,8 +312,8 @@ func (a *App) novelCard(c *ui.Context, st *novelFeedState, items []pixiv.Novel, 
 		}
 	})
 	card.Children(func() {
-		ui.Column(c).Padding(t.SpaceS, t.SpaceM, t.SpaceM, t.SpaceM).Gap(2).Children(func() {
-			ui.Text(c, novel.Title).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(1)
+		ui.Column(c).Gap(2).Children(func() {
+			ui.Text(c, novel.Title).FontSize(t.TextBody).FontWeight(600).TextColor(t.Text).MaxLines(1)
 			ui.Row(c).Gap(6).Children(func() {
 				ui.Text(c, novel.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).
 					MaxLines(1).Grow(1)

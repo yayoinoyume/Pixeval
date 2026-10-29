@@ -212,21 +212,20 @@ func (st *commentState) retry() {
 // commentsSection draws the viewer's comments inside the info card: the title
 // and count, the list, and the composer. The card's padding frames it, so it
 // sets no width or outer border of its own.
-func (a *App) commentsSection(c *ui.Context, st *commentState) {
-	t := themeOf(c)
+func (a *App) commentsSection(c *ui.Context, t tokens, st *commentState) {
 	// The composer is edited on the main thread only: a send leaves the text
 	// it posted here, and this frame clears it if it is still what was sent.
 	if sent, ok := st.takeSentDraft(); ok && st.draft == sent {
 		st.draft, st.replyTo = "", nil
 	}
 	v := st.snapshot()
-	ui.Column(c).Gap(t.SpaceM).Padding(t.SpaceL, 0, 0, 0).
+	ui.Column(c).Gap(t.SpaceM).Padding(t.SpaceXL, 0, 0, 0).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		ui.Row(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.t("comments.title")).FontSize(t.TextBody).FontWeight(600).
-				TextColor(t.Text)
+			ui.Text(c, a.t("comments.title")).FontSize(t.TextTiny).LetterSpacing(0.5).
+				TextColor(t.TextMuted)
 			if len(v.items) > 0 {
-				ui.Text(c, detailCount(len(v.items))).FontSize(t.TextTiny).
+				ui.Text(c, detailCount(len(v.items))).FontSize(t.TextMicro).
 					TextColor(t.TextMuted)
 			}
 		})
@@ -243,7 +242,7 @@ func (a *App) commentsSection(c *ui.Context, st *commentState) {
 			ui.Text(c, a.t("comments.empty")).TextColor(t.TextMuted)
 		}
 		for i := range v.items {
-			a.commentItem(c, st, &v.items[i])
+			a.commentItem(c, t, st, &v.items[i])
 		}
 		if v.loading {
 			ui.Text(c, a.t("common.loading")).FontSize(t.TextTiny).TextColor(t.TextMuted)
@@ -274,8 +273,7 @@ func (a *App) commentsSection(c *ui.Context, st *commentState) {
 
 // commentItem draws one comment: its avatar, author, age, text and reply
 // button.
-func (a *App) commentItem(c *ui.Context, st *commentState, cm *pixiv.Comment) {
-	t := themeOf(c)
+func (a *App) commentItem(c *ui.Context, t tokens, st *commentState, cm *pixiv.Comment) {
 	ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Start).
 		Label(a.tf("a11y.comment", cm.User.Name)).Children(func() {
 		avatar := ui.Box(c).Width(commentAvatar).Height(commentAvatar).Shrink(0).
@@ -291,13 +289,25 @@ func (a *App) commentItem(c *ui.Context, st *commentState, cm *pixiv.Comment) {
 		}
 		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
 			ui.Row(c).Gap(t.SpaceXS).Children(func() {
-				ui.Text(c, cm.User.Name).FontSize(t.TextSmall).Bold().TextColor(t.Text).MaxLines(1).Grow(1)
-				ui.Text(c, a.commentTime(cm.CreateDate)).FontSize(t.TextTiny).TextColor(t.TextMuted)
+				ui.Text(c, cm.User.Name).FontSize(t.TextSmall).FontWeight(600).
+					TextColor(t.Text).MaxLines(1).Grow(1)
+				ui.Text(c, a.commentTime(cm.CreateDate)).FontSize(t.TextMicro).
+					TextColor(t.TextMuted)
 			})
-			ui.Text(c, cm.Comment).FontSize(t.TextSmall).TextColor(t.Text).MaxLines(4)
-			if ui.Button(c, a.t("comments.reply")).Clicked() {
+			ui.Text(c, cm.Comment).FontSize(t.TextSmall).LineHeight(1.55).
+				TextColor(t.Text).MaxLines(5)
+			rb := ui.ButtonBase(c).Height(22).Radius(t.RadiusXS).Padding(0).
+				Label(a.t("comments.reply"))
+			rf := t.TextMuted
+			if rb.Hovered() {
+				rf = t.Accent
+			}
+			if rb.Clicked() {
 				st.replyTo = cm
 			}
+			rb.Children(func() {
+				ui.Text(c, a.t("comments.reply")).FontSize(t.TextMicro).TextColor(rf)
+			})
 		})
 	})
 }
