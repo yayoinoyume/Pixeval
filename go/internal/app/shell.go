@@ -443,6 +443,10 @@ func (a *App) searchTargetValue(label string) string {
 	}
 }
 
+// searchUser is the search page's user tab, after the illustration and novel
+// ones.
+const searchUser = searchNovel + 1
+
 // searchPage draws the search box and its results.
 func (a *App) searchPage(c *ui.Context) {
 	if a.session == nil {
@@ -465,9 +469,10 @@ func (a *App) searchPage(c *ui.Context) {
 			}
 		})
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
-			textTabs(c, t, &a.searchKind, a.t("search.illust"), a.t("search.novel"))
+			textTabs(c, t, &a.searchKind, a.t("search.illust"), a.t("search.novel"),
+				a.t("search.user"))
 		})
-		if a.searchKind != searchNovel {
+		if a.searchKind == searchIllust {
 			ui.Row(c).Gap(t.SpaceS).Padding(0, contentPadding, 0, contentPadding).
 				AlignItems(ui.Center).Children(func() {
 				sort := a.searchSortLabel(a.searchSort)
@@ -488,14 +493,21 @@ func (a *App) searchPage(c *ui.Context) {
 			a.novelResults(c)
 			return
 		}
+		if a.searchKind == searchUser {
+			a.userListPage(c, a.searchUsers, a.t("user.noSearchResults"), "common.loadFailed")
+			return
+		}
 		a.browsePage(c, st)
 	})
 }
 
 // searchArmed reports whether the result list the search page shows may load.
 func (a *App) searchArmed() bool {
-	if a.searchKind == searchNovel {
+	switch a.searchKind {
+	case searchNovel:
 		return a.searchNovels.isArmed()
+	case searchUser:
+		return a.searchUsers.isArmed()
 	}
 	return a.search.isArmed()
 }
@@ -521,11 +533,29 @@ func (a *App) startSearch(st *browseState) {
 	})
 	st.masonry = widgets.MasonryState{}
 	a.startNovelSearch(word)
+	a.startUserSearch(word)
 	if a.searchKind == searchNovel {
 		a.loadMoreNovels(a.searchNovels)
 		return
 	}
+	if a.searchKind == searchUser {
+		a.loadMoreUsers(a.searchUsers)
+		return
+	}
 	a.loadMore(st)
+}
+
+// startUserSearch replaces the user list with a search for word. The page is
+// not fetched here: it loads when the user tab first draws it.
+func (a *App) startUserSearch(word string) {
+	st := a.searchUsers
+	st.restart()
+	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error) {
+		if next := st.cursor(); next != "" {
+			return a.client.NextUserPreviews(ctx, next)
+		}
+		return a.client.SearchUsers(ctx, word)
+	})
 }
 
 // filterBar draws a feed's filter expression box. Each feed keeps its own

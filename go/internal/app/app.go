@@ -69,11 +69,12 @@ type App struct {
 	// works by the users the signed-in user follows.
 	newFeed     *browseState
 	myPixivFeed *browseState
-	// search is the last illustration search's results, and searchNovels the
-	// last novel search's. searchKind is which of the two the search page
-	// shows.
+	// search is the last illustration search's results, searchNovels the last
+	// novel search's and searchUsers the last user search's. searchKind is which
+	// of the three the search page shows.
 	search       *browseState
 	searchNovels *novelFeedState
+	searchUsers  *userListState
 	searchKind   int
 	// searchSort and searchTarget are the illustration search's order and
 	// match, chosen on the search page.
@@ -242,6 +243,7 @@ func New() *App {
 		rankMode:       pixiv.Day,
 		search:         &browseState{},
 		searchNovels:   &novelFeedState{},
+		searchUsers:    &userListState{},
 		searchSort:     searchSortDateDesc,
 		searchTarget:   searchTargetPartial,
 		updater:        mygoUpdater{},

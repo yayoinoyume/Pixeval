@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -262,5 +263,195 @@ func TestSearchOptionsReachSearch(t *testing.T) {
 	}
 	if want := (searchPixivRequest{"猫", searchSortDateAsc, searchTargetExact}); got[1] != want {
 		t.Fatalf("second search %+v, want %+v", got[1], want)
+	}
+}
+
+// newSearchApp is a signed-in app on the search page whose API answers from
+// bodies, without images or a network.
+func newSearchApp(bodies map[string]string) *App {
+	if _, ok := bodies["/v1/search/illust"]; !ok {
+		bodies["/v1/search/illust"] = `{"illusts":[],"next_url":""}`
+	}
+	a := newPageAppWithBodies(bodies)
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	a.client.SetToken(a.session)
+	a.route = routeSearch
+	a.search.query = "猫"
+	return a
+}
+
+// userSearchQueries returns the user searches the app asked for.
+func userSearchQueries(t *testing.T, a *App) []url.Values {
+	t.Helper()
+	tr, ok := a.client.HTTP().Transport.(*pageTransport)
+	if !ok {
+		t.Fatal("the transport is not the page transport")
+	}
+	var queries []url.Values
+	for _, u := range tr.requestedURLs() {
+		if !strings.HasPrefix(u, "/v1/search/user?") {
+			continue
+		}
+		parsed, err := url.Parse(u)
+		if err != nil {
+			t.Fatalf("parse %q: %v", u, err)
+		}
+		queries = append(queries, parsed.Query())
+	}
+	return queries
+}
+
+// userTab shows the user tab of a search and waits for its list.
+func userTab(t *testing.T, a *App, tt *ui.Tester) {
+	t.Helper()
+	if err := tt.Click(a.t("search.user")); err != nil {
+		t.Fatalf("Click user tab: %v", err)
+	}
+	if a.searchKind != searchUser {
+		t.Fatalf("searchKind %d, want %d", a.searchKind, searchUser)
+	}
+	waitUsers(t, a.searchUsers, func(v userListView) bool { return len(v.users) == 1 })
+	tt.Frame()
+}
+
+// TestSearchUserTabRequestsWordAndFilter checks the user tab searches the
+// search box's word with the R18 filter and draws the users.
+func TestSearchUserTabRequestsWordAndFilter(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/search/user"] = `{"user_previews":[{"user":{"id":5,"name":"猫画师",` +
+		`"account":"cat"}}],"next_url":""}`
+	a := newSearchApp(bodies)
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	a.startSearch(a.search)
+	tt.Frame()
+	userTab(t, a, tt)
+
+	for _, want := range []string{"猫画师", "@cat"} {
+		if !tt.HasText(want) {
+			t.Errorf("%q missing: %q", want, tt.Texts())
+		}
+	}
+	queries := userSearchQueries(t, a)
+	if len(queries) != 1 {
+		t.Fatalf("user searches = %v, want one", queries)
+	}
+	if q := queries[0]; q.Get("word") != "猫" || q.Get("filter") != "for_android" {
+		t.Errorf("query = %v", q)
+	}
+}
+
+// TestSearchUserTabPages checks the user tab loads its next page from the
+// cursor.
+func TestSearchUserTabPages(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/search/user"] = `{"user_previews":[{"user":{"id":5,"name":"猫画师"}}],` +
+		`"next_url":"https://app-api.pixiv.net/v1/search/user?word=猫&offset=1"}`
+	a := newSearchApp(bodies)
+	a.client.HTTP().Transport.(*pageTransport).byURL = map[string]string{
+		"/v1/search/user?word=猫&offset=1": `{"user_previews":[{"user":{"id":6,"name":"猫助手"}}],` +
+			`"next_url":""}`,
+	}
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	a.startSearch(a.search)
+	tt.Frame()
+	if err := tt.Click(a.t("search.user")); err != nil {
+		t.Fatalf("Click user tab: %v", err)
+	}
+	// The list draws its first page, sees its end, and loads the next one.
+	deadline := time.Now().Add(2 * time.Second)
+	for len(a.searchUsers.snapshot().users) < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("user list has %d users, want 2", len(a.searchUsers.snapshot().users))
+		}
+		tt.Frame()
+		time.Sleep(time.Millisecond)
+	}
+	tt.Frame()
+	if !tt.HasText("猫助手") {
+		t.Errorf("second page missing: %q", tt.Texts())
+	}
+}
+
+// TestSearchUserTabEmpty checks the user tab's empty state when no user
+// matches.
+func TestSearchUserTabEmpty(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/search/user"] = `{"user_previews":[],"next_url":""}`
+	a := newSearchApp(bodies)
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	a.startSearch(a.search)
+	tt.Frame()
+	if err := tt.Click(a.t("search.user")); err != nil {
+		t.Fatalf("Click user tab: %v", err)
+	}
+	waitUsers(t, a.searchUsers, func(v userListView) bool {
+		return v.started && len(v.users) == 0
+	})
+	tt.Frame()
+	if !tt.HasText(a.t("user.noSearchResults")) {
+		t.Errorf("empty state missing: %q", tt.Texts())
+	}
+}
+
+// TestSearchUserCardOpensUser checks clicking a searched user opens that
+// user's page.
+func TestSearchUserCardOpensUser(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/search/user"] = `{"user_previews":[{"user":{"id":5,"name":"猫画师"}}],` +
+		`"next_url":""}`
+	a := newSearchApp(bodies)
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	a.startSearch(a.search)
+	tt.Frame()
+	userTab(t, a, tt)
+
+	if err := tt.Click("猫画师"); err != nil {
+		t.Fatalf("Click the user: %v", err)
+	}
+	if a.route != routeUser {
+		t.Fatalf("route %q after the click, want %q", a.route, routeUser)
+	}
+	if a.userView == nil || a.userView.userID != 5 {
+		t.Fatalf("user view %+v, want user 5", a.userView)
+	}
+	if a.backRoute != routeSearch {
+		t.Errorf("backRoute %q, want %q", a.backRoute, routeSearch)
+	}
+}
+
+// TestSearchAgainResetsUsers checks a new search drops the users the last one
+// loaded and asks for the new word.
+func TestSearchAgainResetsUsers(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/search/user"] = `{"user_previews":[{"user":{"id":5,"name":"猫画师"}}],` +
+		`"next_url":""}`
+	a := newSearchApp(bodies)
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	a.startSearch(a.search)
+	tt.Frame()
+	userTab(t, a, tt)
+	waitBrowse(t, a.search, "load the illustration search",
+		func(v browseView) bool { return v.started })
+
+	a.search.query = "犬"
+	// The next search answers with a different user, so a list that kept the
+	// last search's users would end with two.
+	bodies["/v1/search/user"] = `{"user_previews":[{"user":{"id":6,"name":"犬画师"}}],` +
+		`"next_url":""}`
+	a.startSearch(a.search)
+	waitUsers(t, a.searchUsers, func(v userListView) bool {
+		return len(v.users) == 1 && v.users[0].User.Name == "犬画师"
+	})
+	queries := userSearchQueries(t, a)
+	if len(queries) != 2 {
+		t.Fatalf("user searches = %v, want two", queries)
+	}
+	if q := queries[1]; q.Get("word") != "犬" {
+		t.Errorf("second query = %v, want the new word", q)
 	}
 }
