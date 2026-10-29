@@ -209,6 +209,15 @@ func (a *App) settingsPage(c *ui.Context) {
 						}
 						ui.Box(c).Height(1).FillWidth().Background(t.Border)
 						row(a.t("settings.updates"), "", func() {
+							if ui.Button(c, a.t("help.title")).Clicked() {
+								a.openHelp()
+							}
+							// The card title is also About, so the button's name says
+							// what it opens.
+							about := a.t("about.title")
+							if ui.Button(c, about).Label(about + " Pixeval Go").Clicked() {
+								a.openAbout()
+							}
 							st := a.updateSnapshot()
 							if ui.Button(c, a.t("settings.checkUpdate")).Disabled(st.off || st.checking || st.installing).Clicked() {
 								a.checkUpdate()

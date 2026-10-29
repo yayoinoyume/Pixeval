@@ -281,6 +281,18 @@
     "historyCleared": "Effacé",
     "resetDone": "Réglages rétablis par défaut"
   },
+  "help": {
+    "title": "Aide",
+    "shortcuts": "Ctrl+K recherche, Ctrl+, réglages, Ctrl+H historique, Ctrl+D téléchargements, Échap retour (utilisez Commande au lieu de Ctrl sur macOS)",
+    "features": "Parcourez les œuvres recommandées, suivies et classées ; recherchez des illustrations et des romans ; affichez et téléchargez des œuvres ; gardez des favoris et des lectures ultérieures."
+  },
+  "about": {
+    "title": "À propos",
+    "version": "Version %s",
+    "license": "Pixeval Go est un logiciel libre sous licence publique générale GNU version 3.",
+    "github": "Ouvrir sur GitHub",
+    "openFailed": "Impossible d'ouvrir le lien : %s"
+  },
   "history": {
     "empty": "Aucun historique pour l'instant",
     "emptyHint": "Les œuvres que vous ouvrez sont enregistrées ici",

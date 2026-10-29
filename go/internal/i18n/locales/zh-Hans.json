@@ -281,6 +281,18 @@
     "historyCleared": "已清空",
     "resetDone": "已恢复默认设置"
   },
+  "help": {
+    "title": "帮助",
+    "shortcuts": "Ctrl+K 搜索，Ctrl+, 设置，Ctrl+H 历史，Ctrl+D 下载，Esc 返回（macOS 用 Command 代替 Ctrl）",
+    "features": "浏览推荐、关注和排行榜作品，搜索插画与小说，查看并下载作品，收藏和稍后再看。"
+  },
+  "about": {
+    "title": "关于",
+    "version": "版本 %s",
+    "license": "Pixeval Go 是遵循 GNU 通用公共许可证第 3 版的开源软件。",
+    "github": "在 GitHub 上查看",
+    "openFailed": "无法打开链接：%s"
+  },
   "history": {
     "empty": "还没有浏览记录",
     "emptyHint": "打开作品后会自动记录",
