@@ -338,11 +338,12 @@ var dataClearRows = []struct {
 	label   string
 	button  string
 	confirm string
+	action  string
 }{
-	{"settings.browseHistory", "settings.clearBrowseHistory", "settings.confirmBrowseHistory"},
-	{"settings.downloadHistory", "settings.clearDownloadHistory", "settings.confirmDownloadHistory"},
-	{"settings.searchHistory", "settings.clearSearchHistory", "settings.confirmSearchHistory"},
-	{"settings.novelReading", "settings.clearNovelProgress", "settings.confirmNovelProgress"},
+	{"settings.browseHistory", "settings.clearBrowseHistory", "settings.confirmBrowseHistory", "settings.confirmClearBrowseHistory"},
+	{"settings.downloadHistory", "settings.clearDownloadHistory", "settings.confirmDownloadHistory", "settings.confirmClearDownloadHistory"},
+	{"settings.searchHistory", "settings.clearSearchHistory", "settings.confirmSearchHistory", "settings.confirmClearSearchHistory"},
+	{"settings.novelReading", "settings.clearNovelProgress", "settings.confirmNovelProgress", "settings.confirmClearNovelProgress"},
 }
 
 // TestSettingsPageDataCard checks the data card offers every record it can
@@ -367,7 +368,10 @@ func TestSettingsPageDataCard(t *testing.T) {
 		}
 	}
 	// Every row names the record its button empties, so a clear action is
-	// never an unnamed button.
+	// never an unnamed button. The buttons share one width and sit at the
+	// card's end, so their labels share one center instead of each following
+	// its own length.
+	var actionCenter float32
 	for _, pair := range dataClearRows {
 		label, ok := tt.Find(a.t(pair.label))
 		if !ok || label.W == 0 {
@@ -383,7 +387,27 @@ func TestSettingsPageDataCard(t *testing.T) {
 			t.Errorf("%s at %v is not left of %s at %v on the same row",
 				pair.label, label, pair.button, button)
 		}
+		center := button.X + button.W/2
+		if actionCenter == 0 {
+			actionCenter = center
+		} else if abs32(center-actionCenter) > 0.5 {
+			t.Errorf("%s button center is %v, want the row's %v", pair.button, center, actionCenter)
+		}
 	}
+	reset, ok := tt.Find(a.t("settings.reset"))
+	if !ok || reset.W == 0 {
+		t.Errorf("the reset button is not laid out: %q", tt.Texts())
+	} else if center := reset.X + reset.W/2; abs32(center-actionCenter) > 0.5 {
+		t.Errorf("reset button center is %v, want the clear buttons' %v", center, actionCenter)
+	}
+}
+
+// abs32 is the distance between two coordinates.
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // TestSettingsPageClearButtons checks each button of the data card empties
@@ -397,19 +421,19 @@ func TestSettingsPageClearButtons(t *testing.T) {
 	a.novelProgress.Set(7, 0.5)
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 2500)
-	click := func(key string) {
+	click := func(key, action string) {
 		t.Helper()
 		if err := tt.Click(a.t(key)); err != nil {
 			t.Fatalf("Click %s: %v", key, err)
 		}
 		tt.Frame()
-		if err := tt.Click(a.t("common.confirm")); err != nil {
+		if err := tt.Click(a.t(action)); err != nil {
 			t.Fatalf("Confirm %s: %v", key, err)
 		}
 		tt.Frame()
 	}
 
-	click("settings.clearBrowseHistory")
+	click("settings.clearBrowseHistory", "settings.confirmClearBrowseHistory")
 	if got := a.history.Snapshot(); len(got) != 0 {
 		t.Errorf("history %+v after clearing, want none", got)
 	}
@@ -426,7 +450,7 @@ func TestSettingsPageClearButtons(t *testing.T) {
 		t.Errorf("download history %+v changed by the browse clear", got)
 	}
 
-	click("settings.clearDownloadHistory")
+	click("settings.clearDownloadHistory", "settings.confirmClearDownloadHistory")
 	if got := a.downloadHistory.Snapshot(); len(got) != 0 {
 		t.Errorf("download history %+v after clearing, want none", got)
 	}
@@ -437,7 +461,7 @@ func TestSettingsPageClearButtons(t *testing.T) {
 		t.Errorf("search history %q changed by the download clear", got)
 	}
 
-	click("settings.clearSearchHistory")
+	click("settings.clearSearchHistory", "settings.confirmClearSearchHistory")
 	if got := a.searchHistory.Snapshot(); len(got) != 0 {
 		t.Errorf("search history %q after clearing, want none", got)
 	}
@@ -445,7 +469,7 @@ func TestSettingsPageClearButtons(t *testing.T) {
 		t.Errorf("novel place %v changed by the search clear", got)
 	}
 
-	click("settings.clearNovelProgress")
+	click("settings.clearNovelProgress", "settings.confirmClearNovelProgress")
 	if got := a.novelProgress.Get(7); got != 0 {
 		t.Errorf("novel place %v after clearing, want none", got)
 	}
@@ -477,6 +501,14 @@ func TestSettingsPageClearCancel(t *testing.T) {
 		tt.Frame()
 		if !tt.HasText(a.t(pair.confirm)) {
 			t.Errorf("%s did not ask for confirmation", pair.button)
+		}
+		// The confirm button names the action; a bare Confirm could belong to
+		// anything.
+		if !tt.HasText(a.t(pair.action)) {
+			t.Errorf("%s confirm button does not name the action", pair.button)
+		}
+		if tt.HasText(a.t("common.confirm")) {
+			t.Errorf("%s still offers a generic Confirm", pair.button)
 		}
 		if !unchanged() {
 			t.Fatalf("%s ran before confirmation", pair.button)
@@ -595,12 +627,15 @@ func TestSettingsPageResetsSettings(t *testing.T) {
 	a.history.Add(HistoryEntry{ID: 1, Title: "作品"})
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 2600)
-	if err := tt.Click(a.t("settings.resetSettings")); err != nil {
+	if err := tt.Click(a.t("settings.reset")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	tt.Frame()
 	if a.settings.Theme != themeDark {
 		t.Fatal("reset ran before confirmation")
+	}
+	if !tt.HasText(a.t("settings.confirmResetAction")) {
+		t.Fatalf("the confirm button does not name the reset: %q", tt.Texts())
 	}
 	if err := tt.Click(a.t("common.cancel")); err != nil {
 		t.Fatalf("Cancel: %v", err)
@@ -609,11 +644,11 @@ func TestSettingsPageResetsSettings(t *testing.T) {
 	if a.settings.Theme != themeDark {
 		t.Fatal("reset ran after Cancel")
 	}
-	if err := tt.Click(a.t("settings.resetSettings")); err != nil {
+	if err := tt.Click(a.t("settings.reset")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	tt.Frame()
-	if err := tt.Click(a.t("common.confirm")); err != nil {
+	if err := tt.Click(a.t("settings.confirmResetAction")); err != nil {
 		t.Fatalf("Confirm: %v", err)
 	}
 	waitSettingsSaved(t, a, tt)
@@ -677,7 +712,11 @@ func TestSettingsPageFitsNarrowWindow(t *testing.T) {
 	settingsConfirmPending = settingsConfirmNone
 	a.route = routeSettings
 	const width, height = 1024, 720
-	tt := ui.NewTester(a.View, width, height)
+	var tok tokens
+	tt := ui.NewTester(func(c *ui.Context) {
+		tok = themeOf(c)
+		a.View(c)
+	}, width, height)
 	tt.Frame()
 
 	save, ok := tt.Find(a.t("common.save"))
@@ -732,24 +771,56 @@ func TestSettingsPageFitsNarrowWindow(t *testing.T) {
 				pair.label, r, width, height)
 		}
 	}
+	// The reset row names what it does and keeps the same button width, so it
+	// reads as part of the card rather than a stray action.
+	for _, key := range []string{"settings.resetSettings", "settings.resetHint", "settings.reset"} {
+		r, ok := tt.Find(a.t(key))
+		if !ok || r.W == 0 {
+			t.Fatalf("%q is not laid out: %q", key, tt.Texts())
+		}
+		if r.X < 0 || r.X+r.W > width || r.Y < 0 || r.Y+r.H > height {
+			t.Errorf("%q at %v is outside the %d by %d window", key, r, width, height)
+		}
+	}
 	if after, ok := tt.Find(a.t("common.save")); !ok || after.Y != save.Y {
 		t.Errorf("save moved from y=%v to %v while scrolling", save.Y, after.Y)
 	}
 
-	// A clear asks first in a dialog that fits the same window.
+	// A clear asks first in a dialog that fits the same window, and its
+	// confirm button is a filled danger button naming the action.
 	if err := tt.Click(a.t("settings.clearBrowseHistory")); err != nil {
 		t.Fatalf("Click the browse history clear: %v", err)
 	}
 	tt.Frame()
 	for _, key := range []string{
 		"settings.confirmBrowseHistory",
+		"settings.confirmClearBrowseHistory",
 		"common.cancel",
-		"common.confirm",
 	} {
 		r, ok := tt.Find(a.t(key))
 		if !ok || r.W == 0 || r.H == 0 || r.X < 0 || r.Y < 0 || r.X+r.W > width || r.Y+r.H > height {
 			t.Errorf("%s at %v is not in the %d by %d window", key, r, width, height)
 		}
+	}
+	if tt.HasText(a.t("common.confirm")) {
+		t.Errorf("the dialog still offers a generic Confirm: %q", tt.Texts())
+	}
+	// Cancel comes first, so it is where the keyboard starts and where a
+	// stray Enter lands.
+	if !tt.Focused(a.t("common.cancel")) {
+		t.Errorf("Cancel does not hold the focus when the dialog opens")
+	}
+	confirm, ok := tt.Find(a.t("settings.confirmClearBrowseHistory"))
+	if !ok || confirm.W == 0 {
+		t.Fatalf("the confirm button is not laid out: %q", tt.Texts())
+	}
+	// Sample inside the button's left padding, away from its label.
+	img := tt.Image()
+	px, py := int(confirm.X)+8, int(confirm.Y+confirm.H/2)
+	r8, g8, b8, _ := img.At(px, py).RGBA()
+	got := ui.RGB(uint8(r8>>8), uint8(g8>>8), uint8(b8>>8))
+	if got.R != tok.Danger.R || got.G != tok.Danger.G || got.B != tok.Danger.B {
+		t.Errorf("confirm button background %v, want the danger fill %v", got, tok.Danger)
 	}
 	if err := tt.Click(a.t("common.cancel")); err != nil {
 		t.Fatalf("Cancel the confirmation: %v", err)

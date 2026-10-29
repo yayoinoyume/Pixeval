@@ -152,6 +152,11 @@ var settingsConfirmPending settingsConfirmAction
 // settingsPad is the horizontal inset of a settings card's title and rows.
 const settingsPad float32 = 20
 
+// settingsDataActionWidth is the width of every button in the data card, so
+// their left edges line up instead of following each label's length. It fits
+// the longest shipped label.
+const settingsDataActionWidth float32 = 264
+
 // blockedListShown is how many blocked users the settings card lists; the
 // rest are counted by the card's count text only.
 const blockedListShown = 10
@@ -393,28 +398,32 @@ func (a *App) settingsPage(c *ui.Context) {
 
 					a.settingsGroup(c, a.t("settings.groupData"), func(row settingsRow) {
 						row(a.t("settings.browseHistory"), "", func() {
-							if ui.Button(c, a.t("settings.clearBrowseHistory")).TextColor(t.Danger).Clicked() {
+							if ui.Button(c, a.t("settings.clearBrowseHistory")).Width(settingsDataActionWidth).
+								TextColor(t.Danger).Clicked() {
 								settingsConfirmPending = settingsConfirmBrowseHistory
 							}
 						})
 						row(a.t("settings.downloadHistory"), "", func() {
-							if ui.Button(c, a.t("settings.clearDownloadHistory")).TextColor(t.Danger).Clicked() {
+							if ui.Button(c, a.t("settings.clearDownloadHistory")).Width(settingsDataActionWidth).
+								TextColor(t.Danger).Clicked() {
 								settingsConfirmPending = settingsConfirmDownloadHistory
 							}
 						})
 						row(a.t("settings.searchHistory"), "", func() {
-							if ui.Button(c, a.t("settings.clearSearchHistory")).TextColor(t.Danger).Clicked() {
+							if ui.Button(c, a.t("settings.clearSearchHistory")).Width(settingsDataActionWidth).
+								TextColor(t.Danger).Clicked() {
 								settingsConfirmPending = settingsConfirmSearchHistory
 							}
 						})
 						row(a.t("settings.novelReading"), "", func() {
-							if ui.Button(c, a.t("settings.clearNovelProgress")).TextColor(t.Danger).Clicked() {
+							if ui.Button(c, a.t("settings.clearNovelProgress")).Width(settingsDataActionWidth).
+								TextColor(t.Danger).Clicked() {
 								settingsConfirmPending = settingsConfirmNovelProgress
 							}
 						})
 						ui.Box(c).Height(1).FillWidth().Background(t.Border)
-						row(a.t("settings.resetHint"), "", func() {
-							if ui.Button(c, a.t("settings.resetSettings")).Clicked() {
+						row(a.t("settings.resetSettings"), a.t("settings.resetHint"), func() {
+							if ui.Button(c, a.t("settings.reset")).Width(settingsDataActionWidth).Clicked() {
 								settingsConfirmPending = settingsConfirmReset
 							}
 						})
@@ -444,8 +453,34 @@ func (a *App) settingsConfirmTitle(action settingsConfirmAction) (title, hint st
 	return "", ""
 }
 
+// settingsConfirmActionLabel is the confirm button's text: the action it runs,
+// not a bare Confirm that could belong to anything.
+func (a *App) settingsConfirmActionLabel(action settingsConfirmAction) string {
+	switch action {
+	case settingsConfirmBrowseHistory:
+		return a.t("settings.confirmClearBrowseHistory")
+	case settingsConfirmDownloadHistory:
+		return a.t("settings.confirmClearDownloadHistory")
+	case settingsConfirmSearchHistory:
+		return a.t("settings.confirmClearSearchHistory")
+	case settingsConfirmNovelProgress:
+		return a.t("settings.confirmClearNovelProgress")
+	case settingsConfirmReset:
+		return a.t("settings.confirmResetAction")
+	}
+	return ""
+}
+
+// settingsDangerButton is a filled button for an action that destroys data, so
+// the accent color never invites it.
+func settingsDangerButton(c *ui.Context, label string) ui.Element {
+	t := themeOf(c)
+	return ui.Button(c, label).Background(t.Danger).TextColor(t.InverseText)
+}
+
 // settingsConfirmDialog asks before a data action runs. Cancel, Escape and a
-// click outside leave the record alone; only Confirm runs the action.
+// click outside leave the record alone; only the action's own button runs it.
+// Cancel comes first, so it holds the focus and the default.
 func (a *App) settingsConfirmDialog(c *ui.Context) {
 	action := settingsConfirmPending
 	open := action != settingsConfirmNone
@@ -458,7 +493,14 @@ func (a *App) settingsConfirmDialog(c *ui.Context) {
 			if ui.Button(c, a.t("common.cancel")).Clicked() {
 				open = false
 			}
-			if ui.PrimaryButton(c, a.t("common.confirm")).Clicked() {
+			label := a.settingsConfirmActionLabel(action)
+			var confirm ui.Element
+			if action == settingsConfirmReset {
+				confirm = ui.PrimaryButton(c, label)
+			} else {
+				confirm = settingsDangerButton(c, label)
+			}
+			if confirm.Clicked() {
 				open = false
 				a.runSettingsConfirm(c, action)
 			}
