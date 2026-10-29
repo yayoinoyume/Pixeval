@@ -117,7 +117,10 @@
     "minutesAgo": "%d minutes ago",
     "hoursAgo": "%d hours ago",
     "daysAgo": "%d days ago",
-    "sendFailed": "Comment failed to send: %s"
+    "sendFailed": "Comment failed to send: %s",
+    "delete": "Delete",
+    "deleted": "Comment deleted",
+    "deleteFailed": "Comment failed to delete: %s"
   },
   "download": {
     "running": "Downloading",

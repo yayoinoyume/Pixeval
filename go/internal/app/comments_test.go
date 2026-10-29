@@ -425,3 +425,152 @@ func TestCommentsReplyShowsReplyTo(t *testing.T) {
 		t.Errorf("reply target not shown: %q", tt.Texts())
 	}
 }
+
+// ownComment is a comment the given user posted.
+func ownComment(id, userID int64, text string) pixiv.Comment {
+	return pixiv.Comment{ID: id, Comment: text, User: pixiv.User{ID: userID, Name: "本人"}}
+}
+
+// countTexts counts the frame texts equal to s.
+func countTexts(texts []string, s string) int {
+	n := 0
+	for _, text := range texts {
+		if text == s {
+			n++
+		}
+	}
+	return n
+}
+
+// TestCommentsDeleteOnlyOnOwnComment checks the delete button marks the
+// signed-in user's comment and no other.
+func TestCommentsDeleteOnlyOnOwnComment(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7}}
+	a.commentsOpen = true
+	st := a.comments
+	st.mu.Lock()
+	st.started = true
+	st.items = []pixiv.Comment{
+		ownComment(1, 7, "我的评论"),
+		commentFixture(2, "作者乙", "别人的评论"),
+	}
+	st.mu.Unlock()
+
+	tt := ui.NewTester(a.View, 1280, 800)
+	// A button's label and the text it draws are both in the frame, so one
+	// delete button shows "删除" twice.
+	if got := countTexts(tt.Texts(), "删除"); got != 2 {
+		t.Fatalf("delete texts %d, want 2: %q", got, tt.Texts())
+	}
+
+	st.mu.Lock()
+	st.items = []pixiv.Comment{commentFixture(2, "作者乙", "别人的评论")}
+	st.mu.Unlock()
+	tt.Frame()
+	if got := countTexts(tt.Texts(), "删除"); got != 0 {
+		t.Fatalf("delete texts %d for another user's comment, want 0: %q", got, tt.Texts())
+	}
+}
+
+// TestCommentsDeleteRemovesOwnComment checks deleting posts the comment's id
+// and drops it from the list.
+func TestCommentsDeleteRemovesOwnComment(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7}}
+	a.commentsOpen = true
+	st := a.comments
+	st.mu.Lock()
+	st.started = true
+	st.items = []pixiv.Comment{
+		ownComment(11, 7, "我的评论"),
+		commentFixture(12, "作者乙", "别人的评论"),
+	}
+	st.mu.Unlock()
+
+	// The request is gated so the click's own frames finish before the
+	// delete lands; a frame in between would show and clear the notice.
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var deleted []int64
+	a.deleteCommentFn = func(_ context.Context, id int64) error {
+		<-release
+		mu.Lock()
+		deleted = append(deleted, id)
+		mu.Unlock()
+		return nil
+	}
+
+	tt := ui.NewTester(a.View, 1280, 800)
+	if err := tt.Click("删除"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	close(release)
+	waitComments(t, st, "delete the comment", func() bool {
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		return len(st.items) == 1
+	})
+
+	mu.Lock()
+	got := append([]int64(nil), deleted...)
+	mu.Unlock()
+	if len(got) != 1 || got[0] != 11 {
+		t.Errorf("deleted %v, want [11]", got)
+	}
+	st.mu.Lock()
+	kept := st.items[0].ID
+	st.mu.Unlock()
+	if kept != 12 {
+		t.Errorf("kept comment %d, want 12", kept)
+	}
+	if a.notice != "已删除评论" {
+		t.Errorf("notice %q, want 已删除评论", a.notice)
+	}
+}
+
+// TestCommentsDeleteFailureKeepsComment checks a failed delete leaves the
+// comment in the list and reports the error.
+func TestCommentsDeleteFailureKeepsComment(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7}}
+	a.commentsOpen = true
+	st := a.comments
+	st.mu.Lock()
+	st.started = true
+	st.items = []pixiv.Comment{ownComment(11, 7, "我的评论")}
+	st.mu.Unlock()
+
+	release := make(chan struct{})
+	a.deleteCommentFn = func(_ context.Context, _ int64) error {
+		<-release
+		return errors.New("网络错误")
+	}
+
+	tt := ui.NewTester(a.View, 1280, 800)
+	if err := tt.Click("删除"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	close(release)
+	waitComments(t, st, "finish the failed delete", func() bool {
+		st.mu.Lock()
+		defer st.mu.Unlock()
+		return !st.deleting[11]
+	})
+
+	st.mu.Lock()
+	items := len(st.items)
+	st.mu.Unlock()
+	if items != 1 {
+		t.Errorf("%d comments left, want 1", items)
+	}
+	if a.notice != "删除评论失败：网络错误" {
+		t.Errorf("notice %q, want 删除评论失败：网络错误", a.notice)
+	}
+}
