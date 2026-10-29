@@ -152,8 +152,8 @@ func (a *App) settingsPage(c *ui.Context) {
 	t := themeOf(c)
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Row(c).Padding(t.SpaceXL, contentPadding).Children(func() {
-				ui.Column(c).Width(min(contentWidth(c), 900)).Gap(t.SpaceL).Children(func() {
+			ui.Row(c).Padding(t.SpaceXL, contentPadding, t.Space2XL, contentPadding).Children(func() {
+				ui.Column(c).Width(min(contentWidth(c), 900)).Gap(t.SpaceXL).Children(func() {
 					a.settingsGroup(c, a.t("settings.groupAppearance"), func(row settingsRow) {
 						theme := a.themeLabel(s.Theme)
 						row(a.t("settings.theme"), "", func() {
@@ -432,7 +432,7 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 	ui.Column(c).FillWidth().Background(t.Surface).Radius(t.RadiusL).
 		Border(1, t.Border).Clip().Children(func() {
 		ui.Text(c, title).FontSize(t.TextSmall).TextColor(t.TextMuted).
-			Padding(t.SpaceM, settingsPad, t.SpaceXS, settingsPad)
+			Padding(t.SpaceL, settingsPad, t.SpaceS, settingsPad)
 		first := true
 		row := func(label, hint string, control func()) {
 			if !first {
@@ -445,11 +445,12 @@ func (a *App) settingsGroup(c *ui.Context, title string, body func(row settingsR
 	})
 }
 
-// settingsRow places the control at the end of a row at least 44 high. A
-// long hint may take two lines and grow the row.
+// settingsRow places the control at the end of a row at least 52 high, with
+// room above and below its text. A long hint may take two lines and grow the
+// row.
 func (a *App) settingsRow(c *ui.Context, label, hint string, control func()) {
 	t := themeOf(c)
-	ui.Row(c).FillWidth().MinHeight(44).Padding(0, settingsPad).Gap(t.SpaceXL).
+	ui.Row(c).FillWidth().MinHeight(52).Padding(t.SpaceS, settingsPad).Gap(t.SpaceXL).
 		AlignItems(ui.Center).Children(func() {
 		ui.Column(c).Grow(1).MinWidth(100).Gap(2).Children(func() {
 			ui.Text(c, label).FontSize(t.TextBody).TextColor(t.Text)
@@ -509,7 +510,7 @@ func (a *App) stepperButton(c *ui.Context, glyph *ui.SVG, label string) ui.Eleme
 // chevron that turns as the hint below opens.
 func (a *App) settingsToggleRow(c *ui.Context, label string, open *bool) {
 	t := themeOf(c)
-	b := ui.ButtonBase(c).Height(44).FillWidth().Padding(0, settingsPad).Gap(t.SpaceS).
+	b := ui.ButtonBase(c).Height(52).FillWidth().Padding(0, settingsPad).Gap(t.SpaceS).
 		AlignItems(ui.Center).Justify(ui.Start)
 	if b.Hovered() {
 		b = b.Background(t.SurfaceAlt)

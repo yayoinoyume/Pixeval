@@ -46,7 +46,7 @@ func newUpdatesApp(t *testing.T, f *fakeUpdater) (*App, *ui.Tester) {
 	a.updater = f
 	a.updateSt.off = !f.enabled
 	a.route = routeSettings
-	return a, ui.NewTester(a.View, 1000, 1200)
+	return a, ui.NewTester(a.View, 1000, 1500)
 }
 
 // waitUpdate waits for the check to land as want says.
@@ -258,7 +258,7 @@ func TestSettingsPageBlockedTags(t *testing.T) {
 	a.blockedTags.Add(BlockedTag{Name: "オリジナル"})
 	a.blockedTags.Add(BlockedTag{Name: "風景"})
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 1800)
+	tt := ui.NewTester(a.View, 1000, 2100)
 	if !tt.HasText(a.tf("block.tagCount", 2)) {
 		t.Fatalf("count missing: %q", tt.Texts())
 	}
@@ -316,7 +316,7 @@ func TestSettingsPageClearButtons(t *testing.T) {
 	a.searchHistory.Add("猫")
 	a.novelProgress.Set(7, 0.5)
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 2100)
+	tt := ui.NewTester(a.View, 1000, 2400)
 	click := func(key string) {
 		t.Helper()
 		if err := tt.Click(a.t(key)); err != nil {
@@ -403,7 +403,7 @@ func TestSettingsPageCopiesMCPToken(t *testing.T) {
 		return nil
 	}
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 2000)
+	tt := ui.NewTester(a.View, 1000, 2400)
 	if err := tt.Click(a.t("settings.mcpCopy")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -423,7 +423,7 @@ func TestSettingsPageRegeneratesMCPToken(t *testing.T) {
 	a := New()
 	a.settings.MCPToken = "old-token"
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 2000)
+	tt := ui.NewTester(a.View, 1000, 2400)
 	if err := tt.Click(a.t("settings.mcpRegenerate")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestSettingsPageResetsSettings(t *testing.T) {
 	a.downloads.Add([]download.Task{{ID: "1_0", IllustID: 1, Title: "排队中"}})
 	a.history.Add(HistoryEntry{ID: 1, Title: "作品"})
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 2100)
+	tt := ui.NewTester(a.View, 1000, 2600)
 	if err := tt.Click(a.t("settings.resetSettings")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -520,5 +520,54 @@ func waitSettingsSaved(t *testing.T, a *App, tt *ui.Tester) {
 		}
 		tt.Frame()
 		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestSettingsPageFitsNarrowWindow checks the settings page in a 1024 by 720
+// window: its rows stay inside the width, Save stays pinned at the bottom,
+// and a scroll over the cards brings the last card into view.
+func TestSettingsPageFitsNarrowWindow(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	const width, height = 1024, 720
+	tt := ui.NewTester(a.View, width, height)
+	tt.Frame()
+
+	save, ok := tt.Find(a.t("common.save"))
+	if !ok {
+		t.Fatalf("save missing: %q", tt.Texts())
+	}
+	if save.W == 0 || save.H == 0 || save.Y < 0 || save.Y+save.H > height {
+		t.Fatalf("save %v is not in the window", save)
+	}
+	for _, label := range []string{
+		a.t("settings.theme"),
+		a.t("settings.downloadDir"),
+		a.t("settings.groupNetwork"),
+		a.t("settings.networkAdvanced"),
+	} {
+		r, ok := tt.Find(label)
+		if !ok || r.W == 0 {
+			t.Fatalf("%q is not laid out: %q", label, tt.Texts())
+		}
+		if r.X < 0 || r.X+r.W > width {
+			t.Errorf("%q at %v overflows the %d wide window", label, r, width)
+		}
+	}
+
+	// The page is taller than the window: scrolling the cards, rather than
+	// squeezing them, brings the last card into view, and Save stays put.
+	tt.Scroll(width/2, height/2, 0, 2000)
+	tt.Frame()
+	data, ok := tt.Find(a.t("settings.groupData"))
+	if !ok || data.W == 0 {
+		t.Fatalf("the data card did not come into view: %q", tt.Texts())
+	}
+	if data.Y < 0 || data.Y+data.H > height || data.X+data.W > width {
+		t.Errorf("the data card at %v is outside the window after scrolling", data)
+	}
+	if after, ok := tt.Find(a.t("common.save")); !ok || after.Y != save.Y {
+		t.Errorf("save moved from y=%v to %v while scrolling", save.Y, after.Y)
 	}
 }
