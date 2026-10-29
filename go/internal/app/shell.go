@@ -215,8 +215,8 @@ func (a *App) navItem(c *ui.Context, r route) {
 		fg = t.Text
 	}
 	b.Children(func() {
-		ui.Icon(c, navGlyph(r)).Size(18, 18).TextColor(fg)
-		ui.Text(c, label).FontSize(t.TextMicro).FontWeight(500).TextColor(fg).MaxLines(1)
+		ui.Icon(c, navGlyph(r)).Size(20, 20).TextColor(fg)
+		ui.Text(c, label).FontSize(t.TextTiny).FontWeight(500).TextColor(fg).MaxLines(1)
 		bar := t.Accent
 		if !selected {
 			bar = ui.Transparent
@@ -236,6 +236,7 @@ func (a *App) navGroupItem(c *ui.Context, g navGroup) {
 	label := a.t("nav." + g.id)
 	active := a.navGroupRoute(g)
 	selected := active != ""
+	wasOpen := navMenuState.open == g.id
 	tip := label
 	if selected {
 		tip += " · " + a.routeLabel(active)
@@ -243,21 +244,25 @@ func (a *App) navGroupItem(c *ui.Context, g navGroup) {
 	b := ui.ButtonBase(c).Key("nav.group."+g.id).Width(80).Height(52).
 		Radius(t.RadiusS).Padding(6, 0, t.SpaceXS, 0).Gap(1).
 		Column().AlignItems(ui.Center).Justify(ui.Center).
-		Label(label).Tooltip(tip)
-	if b.Hovered() {
+		Label(label).Tooltip(tip).Expanded(wasOpen)
+	if b.Hovered() || wasOpen {
 		b = b.Background(t.SurfaceAlt)
 	}
 	fg := t.TextMuted
-	if selected {
+	if selected || wasOpen {
 		fg = t.Text
 	} else if b.Hovered() {
 		fg = t.Text
 	}
 	b.Children(func() {
-		ui.Icon(c, g.glyph).Size(18, 18).TextColor(fg)
+		ui.Icon(c, g.glyph).Size(20, 20).TextColor(fg)
 		ui.Row(c).Gap(2).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, label).FontSize(t.TextMicro).FontWeight(500).TextColor(fg).MaxLines(1)
-			ui.Icon(c, iconRight).Size(9, 9).TextColor(fg)
+			ui.Text(c, label).FontSize(t.TextTiny).FontWeight(500).TextColor(fg).MaxLines(1)
+			caret := iconRight
+			if wasOpen {
+				caret = iconDown
+			}
+			ui.Icon(c, caret).Size(9, 9).TextColor(fg)
 		})
 		bar := t.Accent
 		if !selected {
@@ -274,9 +279,9 @@ func (a *App) navGroupItem(c *ui.Context, g navGroup) {
 	}
 	open := navMenuState.open == g.id
 	ui.PopoverBase(c, b, &open, func(panel ui.Element) {
-		panel.AttachTo(b, ui.AnchorEnd, ui.AnchorStart).MarginStart(t.SpaceS).
+		panel.AttachTo(b, ui.AnchorEnd, ui.AnchorStart).MarginStart(t.SpaceM).
 			Background(t.Surface).Border(1, t.Border).Radius(t.RadiusS).
-			Padding(t.SpaceXS).MinWidth(190)
+			Padding(t.SpaceXS).MinWidth(160)
 		panel.Children(func() {
 			ui.Column(c).Gap(2).Children(func() {
 				for _, r := range g.routes {
