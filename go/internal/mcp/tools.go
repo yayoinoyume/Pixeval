@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
@@ -67,6 +69,14 @@ type SubscriptionInfo struct {
 	TargetID    int64
 	TargetName  string
 	LastChecked time.Time
+}
+
+// HistoryWork is one work the user opened, and when.
+type HistoryWork struct {
+	ID       int64
+	Title    string
+	Artist   string
+	OpenedAt time.Time
 }
 
 var limitProperty = property{
@@ -412,6 +422,79 @@ var toolDefs = []tool{
 		Name:        "settings_summary",
 		Description: "Read the app's saved preferences, without secrets such as the MCP token or API key.",
 		InputSchema: schema{Type: "object", Properties: map[string]property{}},
+	},
+	{
+		Name:        "capabilities",
+		Description: "List this server's protocol, authentication and tool capabilities.",
+		InputSchema: schema{Type: "object", Properties: map[string]property{}},
+	},
+	{
+		Name:        "help",
+		Description: "Read the MCP help: every tool, or one tool's arguments and description.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"tool": {Type: "string", Description: "Optional tool name; omit to list every tool."},
+			},
+		},
+	},
+	{
+		Name:        "download_macro",
+		Description: "Read the download path macro the app currently uses.",
+		InputSchema: schema{Type: "object", Properties: map[string]property{}},
+	},
+	{
+		Name:        "analyze_download_macro",
+		Description: "Parse a download path macro and report whether it is valid, with a rendered sample.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"text": {Type: "string", Description: "The download macro text to analyze."},
+			},
+			Required: []string{"text"},
+		},
+	},
+	{
+		Name:        "history",
+		Description: "List the works opened in Pixeval, newest first.",
+		InputSchema: schema{
+			Type:       "object",
+			Properties: map[string]property{"limit": listLimitProperty},
+		},
+	},
+	{
+		Name:        "extensions",
+		Description: "Report the extension host state; the Go version has no extension host.",
+		InputSchema: schema{Type: "object", Properties: map[string]property{}},
+	},
+	{
+		Name:        "novel_content",
+		Description: "Read a novel's body text.",
+		InputSchema: schema{
+			Type:       "object",
+			Properties: map[string]property{"id": novelIDProperty},
+			Required:   []string{"id"},
+		},
+	},
+	{
+		Name:        "recommended_users",
+		Description: "List the users Pixiv recommends to the signed-in account.",
+		InputSchema: schema{
+			Type:       "object",
+			Properties: map[string]property{"limit": listLimitProperty},
+		},
+	},
+	{
+		Name:        "comments",
+		Description: "Read the comments on one illustration, newest first.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":    idProperty,
+				"limit": listLimitProperty,
+			},
+			Required: []string{"id"},
+		},
 	},
 }
 
@@ -818,6 +901,117 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 			return failure(err), nil
 		}
 		return textResult(summary), nil
+	case "capabilities":
+		var args struct{}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		return textResult(capabilitiesText()), nil
+	case "help":
+		var args struct {
+			Tool string `json:"tool"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		return helpResult(strings.TrimSpace(args.Tool))
+	case "download_macro":
+		var args struct{}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		macro, err := b.DownloadMacro(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		if strings.TrimSpace(macro) == "" {
+			return textResult("no download macro set"), nil
+		}
+		return textResult(macro), nil
+	case "analyze_download_macro":
+		var args struct {
+			Text string `json:"text"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if strings.TrimSpace(args.Text) == "" {
+			return callResult{}, errors.New("text is required")
+		}
+		tmpl, err := download.Parse(args.Text)
+		if err != nil {
+			return failure(err), nil
+		}
+		// Render with a sample work so invalid format specifiers show up too.
+		sample, err := tmpl.Render(download.Context{
+			ID: 123456, Title: "Title", ArtistID: 1, ArtistName: "Artist",
+			PublishTime: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC), Ext: "jpg",
+		})
+		if err != nil {
+			return failure(err), nil
+		}
+		return textResult("download macro is valid\nsample: " + sample), nil
+	case "history":
+		var args struct {
+			Limit int `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		entries, err := b.History(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return historyResult(limitItems(entries, clampListLimit(args.Limit))), nil
+	case "extensions":
+		var args struct{}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		return textResult("extensions: none\nPixeval Go has no extension host, so no extensions are loaded."), nil
+	case "novel_content":
+		var args struct {
+			ID int64 `json:"id"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID <= 0 {
+			return callResult{}, errors.New("id is required")
+		}
+		body, err := b.NovelContent(ctx, args.ID)
+		if err != nil {
+			return failure(err), nil
+		}
+		return textResult(body), nil
+	case "recommended_users":
+		var args struct {
+			Limit int `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		users, err := b.RecommendedUsers(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+	case "comments":
+		var args struct {
+			ID    int64 `json:"id"`
+			Limit int   `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID <= 0 {
+			return callResult{}, errors.New("id is required")
+		}
+		comments, err := b.Comments(ctx, args.ID)
+		if err != nil {
+			return failure(err), nil
+		}
+		return commentsResult(limitItems(comments, clampListLimit(args.Limit))), nil
 	default:
 		return callResult{}, fmt.Errorf("unknown tool: %q", name)
 	}
@@ -962,6 +1156,59 @@ func tagsResult(tags []pixiv.TrendingTag) callResult {
 	return listResult(tags, "no trending tags found", tagText)
 }
 
+func historyResult(entries []HistoryWork) callResult {
+	return listResult(entries, "no history recorded", historyText)
+}
+
+// capabilitiesText describes the server and the tools it serves.
+func capabilitiesText() string {
+	names := make([]string, 0, len(toolDefs))
+	for _, def := range toolDefs {
+		names = append(names, def.Name)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "server: pixeval-go 0.1.0\nprotocol: %s\nauth: bearer token on every request\n", protocolVersion)
+	fmt.Fprintf(&b, "tools: %d\n%s\n", len(toolDefs), strings.Join(names, ", "))
+	fmt.Fprintf(&b, "list limit: %d by default, %d at most", defaultListLimit, maxLimit)
+	return b.String()
+}
+
+// helpResult lists every tool, or describes the one named.
+func helpResult(name string) (callResult, error) {
+	if name == "" {
+		lines := make([]string, 0, len(toolDefs))
+		for _, def := range toolDefs {
+			lines = append(lines, def.Name+": "+def.Description)
+		}
+		return textResult(strings.Join(lines, "\n")), nil
+	}
+	for _, def := range toolDefs {
+		if def.Name != name {
+			continue
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "%s: %s\n", def.Name, def.Description)
+		keys := make([]string, 0, len(def.InputSchema.Properties))
+		for key := range def.InputSchema.Properties {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			p := def.InputSchema.Properties[key]
+			fmt.Fprintf(&b, "- %s (%s): %s", key, p.Type, p.Description)
+			if p.Default != nil {
+				fmt.Fprintf(&b, " default %v", p.Default)
+			}
+			b.WriteString("\n")
+		}
+		if len(def.InputSchema.Required) > 0 {
+			fmt.Fprintf(&b, "required: %s", strings.Join(def.InputSchema.Required, ", "))
+		}
+		return textResult(strings.TrimRight(b.String(), "\n")), nil
+	}
+	return callResult{}, fmt.Errorf("unknown tool: %q", name)
+}
+
 // userText is one user a client can read and open: the profile line and its
 // page URL.
 func userText(u *pixiv.User) string {
@@ -1049,6 +1296,20 @@ func downloadText(d *DownloadedWork) string {
 		fmt.Fprintf(&b, "completed %s\n", d.CompletedAt.Format(time.RFC3339))
 	}
 	fmt.Fprintf(&b, "https://www.pixiv.net/artworks/%d", d.IllustID)
+	return b.String()
+}
+
+// historyText is one work in the local history, with when it was opened.
+func historyText(h *HistoryWork) string {
+	if h == nil {
+		return "no history entry found"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "#%d %s — %s\n", h.ID, h.Title, h.Artist)
+	if !h.OpenedAt.IsZero() {
+		fmt.Fprintf(&b, "opened %s\n", h.OpenedAt.Format(time.RFC3339))
+	}
+	fmt.Fprintf(&b, "https://www.pixiv.net/artworks/%d", h.ID)
 	return b.String()
 }
 

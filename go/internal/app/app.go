@@ -1084,6 +1084,60 @@ func (a *App) SettingsSummary(context.Context) (string, error) {
 	return b.String(), nil
 }
 
+// DownloadMacro returns the naming template the settings ask for; the MCP
+// download macro tool.
+func (a *App) DownloadMacro(context.Context) (string, error) {
+	if a.settings == nil {
+		return "", errors.New("settings are unavailable")
+	}
+	return a.downloadMacro(), nil
+}
+
+// History returns the works the user opened, newest first; the MCP history
+// tool.
+func (a *App) History(context.Context) ([]mcp.HistoryWork, error) {
+	if a.history == nil {
+		return nil, nil
+	}
+	entries := a.history.Snapshot()
+	out := make([]mcp.HistoryWork, len(entries))
+	for i, e := range entries {
+		out[i] = mcp.HistoryWork{ID: e.ID, Title: e.Title, Artist: e.Artist, OpenedAt: e.At}
+	}
+	return out, nil
+}
+
+// NovelContent returns a novel's body text; the MCP novel content tool.
+func (a *App) NovelContent(ctx context.Context, id int64) (string, error) {
+	if a.novelContent == nil {
+		return "", errors.New("novel content is unavailable")
+	}
+	return a.novelContent(ctx, id)
+}
+
+// RecommendedUsers returns the users Pixiv recommends; the MCP recommended
+// users tool.
+func (a *App) RecommendedUsers(ctx context.Context) ([]pixiv.UserPreview, error) {
+	page, err := a.client.RecommendedUsers(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// Comments returns the first page of comments on an illustration; the MCP
+// comments tool.
+func (a *App) Comments(ctx context.Context, illustID int64) ([]pixiv.Comment, error) {
+	if a.fetchCommentPage == nil {
+		return nil, errors.New("comments are unavailable")
+	}
+	page, err := a.fetchCommentPage(ctx, illustID, 0)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
 // update runs fn on the main thread, or at once before the window exists.
 func (a *App) update(fn func()) {
 	if a.win == nil {

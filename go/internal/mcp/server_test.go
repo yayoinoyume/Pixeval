@@ -28,6 +28,11 @@ type fakeBackend struct {
 	series    []pixiv.SeriesSummary
 	tags      []pixiv.TrendingTag
 	summary   string
+	macro     string
+	history   []HistoryWork
+	novelBody string
+	recommend []pixiv.UserPreview
+	illustCmt []pixiv.Comment
 	err       error
 
 	searchQuery string
@@ -57,6 +62,8 @@ type fakeBackend struct {
 	myPixivUsersID   int64
 	relatedUsersID   int64
 	seriesKind       string
+	novelContentID   int64
+	commentsID       int64
 }
 
 func (f *fakeBackend) Search(_ context.Context, query string, limit int) ([]pixiv.Illustration, error) {
@@ -202,6 +209,28 @@ func (f *fakeBackend) SettingsSummary(_ context.Context) (string, error) {
 	return f.summary, f.err
 }
 
+func (f *fakeBackend) DownloadMacro(_ context.Context) (string, error) {
+	return f.macro, f.err
+}
+
+func (f *fakeBackend) History(_ context.Context) ([]HistoryWork, error) {
+	return f.history, f.err
+}
+
+func (f *fakeBackend) NovelContent(_ context.Context, id int64) (string, error) {
+	f.novelContentID = id
+	return f.novelBody, f.err
+}
+
+func (f *fakeBackend) RecommendedUsers(_ context.Context) ([]pixiv.UserPreview, error) {
+	return f.recommend, f.err
+}
+
+func (f *fakeBackend) Comments(_ context.Context, illustID int64) ([]pixiv.Comment, error) {
+	f.commentsID = illustID
+	return f.illustCmt, f.err
+}
+
 // reply is a response with the fields a test checks left raw.
 type reply struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -316,6 +345,8 @@ func TestToolsList(t *testing.T) {
 		"new_works", "following_works", "my_pixiv_works",
 		"following_users", "followers", "my_pixiv_users", "related_users",
 		"series_watchlist", "trending_tags", "settings_summary",
+		"capabilities", "help", "download_macro", "analyze_download_macro",
+		"history", "extensions", "novel_content", "recommended_users", "comments",
 	}
 	if len(got.Tools) != len(want) {
 		t.Fatalf("%d tools, want %d", len(got.Tools), len(want))
@@ -728,5 +759,208 @@ func TestEmptyTokenRefusesEveryone(t *testing.T) {
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("header %q: status %d, want %d", header, rec.Code, http.StatusUnauthorized)
 		}
+	}
+}
+
+func TestCapabilitiesCall(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"capabilities","arguments":{}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || len(got.Content) != 1 {
+		t.Fatalf("result %+v", got)
+	}
+	for _, want := range []string{"pixeval-go", "2025-06-18", "bearer", "capabilities", "history"} {
+		if !strings.Contains(got.Content[0].Text, want) {
+			t.Errorf("text misses %q: %s", want, got.Content[0].Text)
+		}
+	}
+}
+
+func TestHelpCall(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"help","arguments":{"tool":"history"}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || len(got.Content) != 1 {
+		t.Fatalf("result %+v", got)
+	}
+	for _, want := range []string{"history", "limit"} {
+		if !strings.Contains(got.Content[0].Text, want) {
+			t.Errorf("text misses %q: %s", want, got.Content[0].Text)
+		}
+	}
+}
+
+func TestHelpListsEveryTool(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":22,"method":"tools/call","params":{"name":"help","arguments":{}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || !strings.Contains(got.Content[0].Text, "comments") {
+		t.Fatalf("result %+v", got)
+	}
+}
+
+func TestHelpRejectsUnknownTool(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":23,"method":"tools/call","params":{"name":"help","arguments":{"tool":"nope"}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestDownloadMacroCall(t *testing.T) {
+	b := &fakeBackend{macro: "test/@{id}"}
+	r := call(t, newTestServer(b),
+		`{"jsonrpc":"2.0","id":24,"method":"tools/call","params":{"name":"download_macro","arguments":{}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || got.Content[0].Text != "test/@{id}" {
+		t.Fatalf("result %+v", got)
+	}
+}
+
+func TestDownloadMacroRejectsBadArguments(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":25,"method":"tools/call","params":{"name":"download_macro","arguments":"x"}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestAnalyzeDownloadMacroCall(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":26,"method":"tools/call","params":{"name":"analyze_download_macro","arguments":{"text":"@{is_pic_set?set:one}/@{id}.@{ext}"}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || !strings.Contains(got.Content[0].Text, "valid") {
+		t.Fatalf("result %+v", got)
+	}
+	if !strings.Contains(got.Content[0].Text, "123456.jpg") {
+		t.Errorf("sample missing: %s", got.Content[0].Text)
+	}
+}
+
+func TestAnalyzeDownloadMacroRejectsEmptyText(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":27,"method":"tools/call","params":{"name":"analyze_download_macro","arguments":{"text":" "}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestAnalyzeDownloadMacroReportsSyntaxError(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":28,"method":"tools/call","params":{"name":"analyze_download_macro","arguments":{"text":"@{nope}"}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if !got.IsError || !strings.Contains(got.Content[0].Text, "unknown macro") {
+		t.Fatalf("result %+v", got)
+	}
+}
+
+func TestHistoryCall(t *testing.T) {
+	b := &fakeBackend{history: []HistoryWork{{ID: 9, Title: "Rain", Artist: "Ame", OpenedAt: time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)}}}
+	r := call(t, newTestServer(b),
+		`{"jsonrpc":"2.0","id":29,"method":"tools/call","params":{"name":"history","arguments":{"limit":5}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError {
+		t.Fatalf("result %+v", got)
+	}
+	for _, want := range []string{"#9", "Rain", "Ame", "opened 2024-01-02T00:00:00Z"} {
+		if !strings.Contains(got.Content[0].Text, want) {
+			t.Errorf("text misses %q: %s", want, got.Content[0].Text)
+		}
+	}
+}
+
+func TestHistoryRejectsBadLimit(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":30,"method":"tools/call","params":{"name":"history","arguments":{"limit":"x"}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestExtensionsCall(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":31,"method":"tools/call","params":{"name":"extensions","arguments":{}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || !strings.Contains(got.Content[0].Text, "no extension host") {
+		t.Fatalf("result %+v", got)
+	}
+}
+
+func TestExtensionsRejectsBadArguments(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":32,"method":"tools/call","params":{"name":"extensions","arguments":"x"}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestNovelContentCall(t *testing.T) {
+	b := &fakeBackend{novelBody: "Once upon a time."}
+	r := call(t, newTestServer(b),
+		`{"jsonrpc":"2.0","id":33,"method":"tools/call","params":{"name":"novel_content","arguments":{"id":77}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || got.Content[0].Text != "Once upon a time." {
+		t.Fatalf("result %+v", got)
+	}
+	if b.novelContentID != 77 {
+		t.Errorf("id %d, want 77", b.novelContentID)
+	}
+}
+
+func TestNovelContentRejectsMissingID(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":34,"method":"tools/call","params":{"name":"novel_content","arguments":{}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestRecommendedUsersCall(t *testing.T) {
+	b := &fakeBackend{recommend: []pixiv.UserPreview{{User: pixiv.User{ID: 5, Name: "Cat"}}}}
+	r := call(t, newTestServer(b),
+		`{"jsonrpc":"2.0","id":35,"method":"tools/call","params":{"name":"recommended_users","arguments":{}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || !strings.Contains(got.Content[0].Text, "#5 Cat") {
+		t.Fatalf("result %+v", got)
+	}
+}
+
+func TestRecommendedUsersRejectsBadLimit(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":36,"method":"tools/call","params":{"name":"recommended_users","arguments":{"limit":"x"}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestCommentsCall(t *testing.T) {
+	b := &fakeBackend{illustCmt: []pixiv.Comment{{ID: 3, Comment: "nice", User: pixiv.User{Name: "Ame"}}}}
+	r := call(t, newTestServer(b),
+		`{"jsonrpc":"2.0","id":37,"method":"tools/call","params":{"name":"comments","arguments":{"id":101}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if got.IsError || !strings.Contains(got.Content[0].Text, "nice") {
+		t.Fatalf("result %+v", got)
+	}
+	if b.commentsID != 101 {
+		t.Errorf("id %d, want 101", b.commentsID)
+	}
+}
+
+func TestCommentsRejectsMissingID(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":38,"method":"tools/call","params":{"name":"comments","arguments":{}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
 	}
 }
