@@ -40,6 +40,11 @@ type viewerState struct {
 	page       int
 	zoom       float32
 	panX, panY float32
+	// rotation is the clockwise turn in degrees, always 0, 90, 180 or 270,
+	// and mirror flips the picture horizontally. Both apply to a still and
+	// to an animation's frames alike.
+	rotation int
+	mirror   bool
 	// The page's colors are cached for the seed, appearance and text scale
 	// they were made from. The view runs on the main thread, so the fields
 	// need no lock.
@@ -468,10 +473,55 @@ func (a *App) viewerReload(v *viewerState) {
 	a.update(func() {})
 }
 
-// resetView puts the image back at its size, centered.
+// resetView puts the image back at its size and orientation, centered.
 func (v *viewerState) resetView() {
 	v.zoom = 1
 	v.panX, v.panY = 0, 0
+	v.rotation = 0
+	v.mirror = false
+}
+
+// rotateBy turns the image by delta degrees, keeping the zoom and the pan
+// where they are.
+func (v *viewerState) rotateBy(delta int) {
+	v.rotation = ((v.rotation+delta)%360 + 360) % 360
+	v.clampPan()
+}
+
+// toggleMirror flips the image horizontally.
+func (v *viewerState) toggleMirror() {
+	v.mirror = !v.mirror
+}
+
+// transformed applies the viewer's rotation, mirror, zoom and pan to an
+// image. The turn and the mirror go first, so zooming and dragging stay on
+// the screen's axes whatever the picture's orientation, and a turned
+// picture is shrunk when its long side would not fit the stage.
+func (v *viewerState) transformed(e ui.Element, bmp *ui.Bitmap) ui.Element {
+	bw, bh := bmp.Size()
+	if k := v.turnFit(bw, bh); k < 1 {
+		e = e.Scale(k, k)
+	}
+	if v.rotation != 0 {
+		e = e.Rotate(float32(v.rotation))
+	}
+	if v.mirror {
+		e = e.Scale(-1, 1)
+	}
+	return e.Scale(v.zoom, v.zoom).Translate(v.panX, v.panY)
+}
+
+// turnFit is the scale a quarter turn needs for the turned picture to fit
+// the stage, and 1 otherwise. The picture is contained before the turn, so
+// a wide one turned upright would otherwise be clipped top and bottom.
+func (v *viewerState) turnFit(bw, bh int) float32 {
+	if (v.rotation != 90 && v.rotation != 270) || bw <= 0 || bh <= 0 ||
+		v.viewW <= 0 || v.viewH <= 0 {
+		return 1
+	}
+	contained := min(v.viewW/float32(bw), v.viewH/float32(bh))
+	w, h := float32(bw)*contained, float32(bh)*contained
+	return min(v.viewW/h, v.viewH/w, 1)
 }
 
 // zoomAt multiplies the zoom around the point at px, py, measured from the
@@ -510,10 +560,15 @@ func (v *viewerState) clampPan() {
 		v.panX, v.panY = 0, 0
 		return
 	}
-	// The image is contained in the view, then scaled about its middle.
+	// The image is contained in the view, then scaled about its middle. A
+	// quarter turn swaps the sides the pan can reach.
 	contained := min(v.viewW/float32(bw), v.viewH/float32(bh))
-	halfW := float32(bw) * contained * v.zoom / 2
-	halfH := float32(bh) * contained * v.zoom / 2
+	k := v.turnFit(bw, bh)
+	halfW := float32(bw) * contained * k * v.zoom / 2
+	halfH := float32(bh) * contained * k * v.zoom / 2
+	if v.rotation == 90 || v.rotation == 270 {
+		halfW, halfH = halfH, halfW
+	}
 	maxX := max(halfW-v.viewW/2, 0)
 	maxY := max(halfH-v.viewH/2, 0)
 	v.panX = min(max(v.panX, -maxX), maxX)
@@ -531,6 +586,14 @@ func (a *App) viewerInput(v *viewerState, ev ui.InputEvent) bool {
 			v.zoomAt(1/viewerZoomStep, 0, 0)
 		case ui.Key0:
 			v.resetView()
+		case ui.KeyR:
+			if ev.Mods&ui.Shift != 0 {
+				v.rotateBy(-90)
+			} else {
+				v.rotateBy(90)
+			}
+		case ui.KeyM:
+			v.toggleMirror()
 		default:
 			return false
 		}
@@ -593,7 +656,7 @@ func (a *App) viewerPage(c *ui.Context) {
 	ui.Column(c).Fill().FillHeight().
 		LinearGradient(ui.LinearGradient{From: t.WashTop, To: t.WashBottom, Angle: 180, Oklab: true}).
 		Children(func() {
-			a.viewerTop(c, t)
+			a.viewerTop(c, t, v)
 			ui.Row(c).Grow(1).FillWidth().MinHeight(0).
 				Padding(0, contentPadding, 0, contentPadding).
 				Gap(t.Space2XL).AlignItems(ui.Stretch).Children(func() {
@@ -682,9 +745,10 @@ func (a *App) viewerArtState(v *viewerState) (*ui.Bitmap, bool) {
 	return a.viewerImage(v)
 }
 
-// viewerTop is the page's first line: a quiet close control and the zoom
-// hint. It has no bar of its own; the room's wash runs behind it.
-func (a *App) viewerTop(c *ui.Context, t tokens) {
+// viewerTop is the page's first line: a quiet close control, the picture's
+// orientation controls and the key hint. It has no bar of its own; the
+// room's wash runs behind it.
+func (a *App) viewerTop(c *ui.Context, t tokens, v *viewerState) {
 	ui.Row(c).Height(64).FillWidth().AlignItems(ui.Center).
 		Padding(0, contentPadding).KeepFocus().Children(func() {
 		b := ui.ButtonBase(c).Height(32).Radius(t.RadiusS).Padding(0, t.SpaceS).
@@ -700,8 +764,21 @@ func (a *App) viewerTop(c *ui.Context, t tokens) {
 			ui.Text(c, a.t("viewer.close")).FontSize(t.TextSmall).FontWeight(500).
 				LetterSpacing(0.3).TextColor(t.Text)
 		})
+		if b := a.viewerAction(c, t, nil, a.t("viewer.rotateLeft"), false); b.Clicked() {
+			v.rotateBy(-90)
+		}
+		if b := a.viewerAction(c, t, nil, a.t("viewer.rotateRight"), false); b.Clicked() {
+			v.rotateBy(90)
+		}
+		if b := a.viewerAction(c, t, nil, a.t("viewer.mirror"), v.mirror); b.Clicked() {
+			v.toggleMirror()
+		}
+		if b := a.viewerAction(c, t, iconRefresh, a.t("viewer.resetView"), false); b.Clicked() {
+			v.resetView()
+		}
 		ui.Spacer(c)
-		ui.Text(c, a.t("viewer.zoomHint")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+		ui.Text(c, a.t("viewer.zoomHint")+" · "+a.t("viewer.shortcutsHint")).
+			FontSize(t.TextTiny).TextColor(t.TextMuted)
 	})
 }
 
@@ -733,8 +810,7 @@ func (a *App) viewerArt(c *ui.Context, t tokens, v *viewerState, bmp *ui.Bitmap,
 			}
 			switch {
 			case bmp != nil:
-				img := ui.Image(c, bmp).Fill().Fit(ui.Contain).
-					Scale(v.zoom, v.zoom).Translate(v.panX, v.panY).
+				img := v.transformed(ui.Image(c, bmp).Fill().Fit(ui.Contain), bmp).
 					Label(a.tf("viewer.image", v.work.Title, v.page+1, pageCount(v.work)))
 				img.HandleInput(func(ev ui.InputEvent) bool {
 					switch ev.Kind {
@@ -778,8 +854,7 @@ func (a *App) viewerUgoiraArt(c *ui.Context, t tokens, v *viewerState) {
 		return
 	}
 	bmp := v.ugoiraBitmap(frame, frames.Images[frame])
-	img := ui.Image(c, bmp).Fill().Fit(ui.Contain).
-		Scale(v.zoom, v.zoom).Translate(v.panX, v.panY).
+	img := v.transformed(ui.Image(c, bmp).Fill().Fit(ui.Contain), bmp).
 		Label(a.tf("viewer.animated", v.work.Title))
 	img.HandleInput(func(ev ui.InputEvent) bool {
 		switch ev.Kind {
