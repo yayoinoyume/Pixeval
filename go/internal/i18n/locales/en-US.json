@@ -1,6 +1,8 @@
 {
   "nav": {
     "home": "Home",
+    "new": "New",
+    "mypixiv": "MyPixiv",
     "search": "Search",
     "subscriptions": "Updates",
     "downloads": "Downloads",

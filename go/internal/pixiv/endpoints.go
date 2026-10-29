@@ -18,6 +18,22 @@ func (c *Client) Recommended(ctx context.Context) (*Page[Illustration], error) {
 	return c.illustPage(ctx, c.pageURL("/v1/illust/recommended", q))
 }
 
+// NewIllustrations is the site-wide feed of works just posted.
+func (c *Client) NewIllustrations(ctx context.Context) (*Page[Illustration], error) {
+	q := url.Values{}
+	q.Set("content_type", "illust")
+	c.setFilter(q)
+	return c.illustPage(ctx, c.pageURL("/v1/illust/new", q))
+}
+
+// MyPixivIllustrations is the feed of works by the users the signed-in user
+// follows.
+func (c *Client) MyPixivIllustrations(ctx context.Context) (*Page[Illustration], error) {
+	q := url.Values{}
+	c.setFilter(q)
+	return c.illustPage(ctx, c.pageURL("/v1/illust/mypixiv", q))
+}
+
 // SearchOptions are the filters of an illustration search.
 type SearchOptions struct {
 	Word      string

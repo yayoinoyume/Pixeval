@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -537,6 +538,187 @@ func TestBrowseCardMetrics(t *testing.T) {
 	}
 	if contentPadding != 40 {
 		t.Errorf("content padding %v, want 40", contentPadding)
+	}
+}
+
+// feedPixiv is a fake app API that records the feed requests it receives and
+// answers each path with the body its body func makes, by 0-based call count.
+type feedPixiv struct {
+	mu    sync.Mutex
+	paths []string
+	query []url.Values
+	body  func(n int, path, host string) string
+}
+
+func (p *feedPixiv) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p.mu.Lock()
+		n := 0
+		for _, path := range p.paths {
+			if path == r.URL.Path {
+				n++
+			}
+		}
+		p.paths = append(p.paths, r.URL.Path)
+		p.query = append(p.query, r.URL.Query())
+		p.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, p.body(n, r.URL.Path, r.Host))
+	})
+}
+
+func (p *feedPixiv) requests() (paths []string, query []url.Values) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.paths...), append([]url.Values(nil), p.query...)
+}
+
+// worksJSON is n works numbered from first, with next as the next page's URL.
+func worksJSON(first, n int, next string) string {
+	var b strings.Builder
+	b.WriteString(`{"illusts":[`)
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		fmt.Fprintf(&b, `{"id":%d,"title":"作品 %d","user":{"id":9,"name":"作者"},"width":480,"height":720}`,
+			first+i, first+i)
+	}
+	fmt.Fprintf(&b, `],"next_url":%q}`, next)
+	return b.String()
+}
+
+// newFeedTestApp is a signed-in app whose feeds load from fake, at the design
+// window's narrow width.
+func newFeedTestApp(t *testing.T, fake *feedPixiv) (*App, *ui.Tester) {
+	t.Helper()
+	srv := httptest.NewServer(fake.handler())
+	t.Cleanup(srv.Close)
+	target, err := url.Parse(srv.URL)
+	if err != nil {
+		t.Fatalf("parse the test server URL: %v", err)
+	}
+	a := New()
+	a.client.HTTP().Transport = e2eTransport{target: target}
+	a.client.SetCooldown(0)
+	a.images = imagex.New(nil, "")
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	a.client.SetToken(a.session)
+	return a, ui.NewTester(a.View, 1024, 768)
+}
+
+// TestNewPageLoadsNewFeed checks the new works destination asks the app API
+// for the site-wide feed and opens a work.
+func TestNewPageLoadsNewFeed(t *testing.T) {
+	fake := &feedPixiv{body: func(int, string, string) string { return worksJSON(1, 2, "") }}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.route != routeNew {
+		t.Fatalf("route %q, want %q", a.route, routeNew)
+	}
+	waitBrowse(t, a.newFeed, "load the new works",
+		func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("作品 1") {
+		t.Fatalf("the feed is not shown: %q", tt.Texts())
+	}
+	paths, query := fake.requests()
+	if len(paths) != 1 || paths[0] != "/v1/illust/new" {
+		t.Fatalf("requests %v, want /v1/illust/new", paths)
+	}
+	if q := query[0]; q.Get("filter") != "for_android" || q.Get("offset") != "" {
+		t.Errorf("query = %v, want the first page's R18 filter", q)
+	}
+	if err := tt.Click("作品 1"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.viewer == nil || a.viewer.work.ID != 1 {
+		t.Fatalf("the tile did not open work 1: %+v", a.viewer)
+	}
+}
+
+// TestMyPixivPageLoadsFollowedUsersWorks checks the MyPixiv destination asks
+// the app API for the followed users' feed.
+func TestMyPixivPageLoadsFollowedUsersWorks(t *testing.T) {
+	fake := &feedPixiv{body: func(int, string, string) string { return worksJSON(5, 2, "") }}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("MyPixiv"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.route != routeMyPixiv {
+		t.Fatalf("route %q, want %q", a.route, routeMyPixiv)
+	}
+	waitBrowse(t, a.myPixivFeed, "load the followed users' works",
+		func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("作品 5") {
+		t.Fatalf("the feed is not shown: %q", tt.Texts())
+	}
+	paths, query := fake.requests()
+	if len(paths) != 1 || paths[0] != "/v1/illust/mypixiv" {
+		t.Fatalf("requests %v, want /v1/illust/mypixiv", paths)
+	}
+	if q := query[0]; q.Get("filter") != "for_android" || q.Get("offset") != "" {
+		t.Errorf("query = %v, want the first page's R18 filter", q)
+	}
+}
+
+// TestNewFeedPagesWithCursor checks the new works feed loads its next page
+// from the cursor the previous page returned.
+func TestNewFeedPagesWithCursor(t *testing.T) {
+	fake := &feedPixiv{body: func(n int, path, host string) string {
+		if n == 0 {
+			return worksJSON(0, 20, "http://"+host+"/v1/illust/new?filter=for_android&offset=30")
+		}
+		return worksJSON(20, 20, "")
+	}}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the first page",
+		func(v browseView) bool { return len(v.items) == 20 })
+	tt.Frame()
+	tt.Scroll(500, 400, 0, 4000)
+	tt.Frame()
+	waitBrowse(t, a.newFeed, "load the next page",
+		func(v browseView) bool { return len(v.items) == 40 })
+	paths, query := fake.requests()
+	if len(paths) != 2 {
+		t.Fatalf("requests %v, want 2", paths)
+	}
+	if q := query[1]; q.Get("offset") != "30" || q.Get("filter") != "for_android" {
+		t.Errorf("next page query = %v, want the cursor's offset", q)
+	}
+}
+
+// TestMyPixivEmptyFeed checks an empty feed shows the empty state instead of
+// an error.
+func TestMyPixivEmptyFeed(t *testing.T) {
+	fake := &feedPixiv{body: func(int, string, string) string {
+		return `{"illusts":[],"next_url":""}`
+	}}
+	_, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("MyPixiv"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	// The empty state draws once a page settled; wait for it on the frame.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		tt.Frame()
+		if tt.HasText("没有作品") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("empty state missing: %q", tt.Texts())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

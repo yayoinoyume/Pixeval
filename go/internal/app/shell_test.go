@@ -118,7 +118,7 @@ func TestShellRail(t *testing.T) {
 	a := New()
 	tt := ui.NewTester(a.View, 1024, 768)
 	tt.Frame()
-	for _, label := range []string{"首页", "搜索", "追更", "下载", "历史", "设置"} {
+	for _, label := range []string{"首页", "新作", "MyPixiv", "搜索", "追更", "下载", "历史", "设置"} {
 		r, ok := tt.Find(label)
 		if !ok {
 			t.Fatalf("%s missing: %q", label, tt.Texts())

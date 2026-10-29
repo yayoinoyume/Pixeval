@@ -16,6 +16,8 @@ type route string
 
 const (
 	routeHome      route = "home"
+	routeNew       route = "new"
+	routeMyPixiv   route = "mypixiv"
 	routeSearch    route = "search"
 	routeSubs      route = "subscriptions"
 	routeDownloads route = "downloads"
@@ -33,7 +35,7 @@ func (a *App) routeLabel(r route) string {
 }
 
 var (
-	browseRoutes  = []route{routeHome, routeSearch, routeSubs}
+	browseRoutes  = []route{routeHome, routeNew, routeMyPixiv, routeSearch, routeSubs}
 	libraryRoutes = []route{routeDownloads, routeHistory, routeBookmarks}
 )
 
@@ -147,13 +149,7 @@ func (a *App) navItem(c *ui.Context, r route) {
 		fg = t.Text
 	}
 	b.Children(func() {
-		glyph := navIcon(r)
-		if r == routeBookmarks {
-			// shortcut: navIcon has no bookmarks case yet; icons.go is out of
-			// this batch, so add it there when that file is next touched.
-			glyph = iconHeart
-		}
-		ui.Icon(c, glyph).Size(20, 20).TextColor(fg)
+		ui.Icon(c, navGlyph(r)).Size(20, 20).TextColor(fg)
 		ui.Text(c, label).FontSize(t.TextMicro).FontWeight(500).TextColor(fg).MaxLines(1)
 		bar := t.Accent
 		if !selected {
@@ -163,6 +159,21 @@ func (a *App) navItem(c *ui.Context, r route) {
 	})
 	if b.Clicked() {
 		a.goRoute(r)
+	}
+}
+
+// navGlyph is the rail's glyph for a destination. icons.go is out of this
+// batch, so the ones navIcon does not know are mapped here.
+func navGlyph(r route) *ui.SVG {
+	switch r {
+	case routeNew:
+		return iconImage
+	case routeMyPixiv:
+		return iconUser
+	case routeBookmarks:
+		return iconHeart
+	default:
+		return navIcon(r)
 	}
 }
 
@@ -211,6 +222,10 @@ func (a *App) page(c *ui.Context) {
 	switch a.route {
 	case routeHome:
 		a.homePage(c)
+	case routeNew:
+		a.newPage(c)
+	case routeMyPixiv:
+		a.myPixivPage(c)
 	case routeSearch:
 		a.searchPage(c)
 	case routeSubs:

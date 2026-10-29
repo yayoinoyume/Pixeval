@@ -49,7 +49,7 @@ func TestShellTabOrder(t *testing.T) {
 	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
 	a.client.SetToken(a.session)
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, want := range []string{"首页", "搜索", "追更", "下载", "历史", "收藏", "设置", "退出"} {
+	for _, want := range []string{"首页", "新作", "MyPixiv", "搜索", "追更", "下载", "历史", "收藏", "设置", "退出"} {
 		tt.Key(0, ui.KeyTab)
 		if !tt.Focused(want) {
 			t.Fatalf("tab did not land on %q", want)
@@ -104,7 +104,7 @@ func TestHomeTabsKeyboard(t *testing.T) {
 	// The navigation and the sign-in button come first; the tab line is one
 	// stop, on the tab chosen.
 	reached := false
-	for i := 0; i < 10 && !reached; i++ {
+	for i := 0; i < 16 && !reached; i++ {
 		tt.Key(0, ui.KeyTab)
 		reached = tt.Focused("推荐")
 	}

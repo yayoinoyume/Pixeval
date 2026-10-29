@@ -1,6 +1,8 @@
 {
   "nav": {
     "home": "首页",
+    "new": "新作",
+    "mypixiv": "MyPixiv",
     "search": "搜索",
     "subscriptions": "追更",
     "downloads": "下载",

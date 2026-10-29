@@ -134,6 +134,21 @@ func (a *App) homeFetch(st *browseState, tab int) func(context.Context) (*pixiv.
 	}
 }
 
+// armClientFeed gives a feed its page fetcher, once: the client's first page,
+// then the cursor each later page returns.
+func (a *App) armClientFeed(st *browseState, first func(context.Context) (*pixiv.Page[pixiv.Illustration], error)) {
+	if st.isArmed() {
+		return
+	}
+	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		if next := st.cursor(); next != "" {
+			return a.client.NextIllustrations(ctx, next)
+		}
+		return first(ctx)
+	})
+	st.arm()
+}
+
 // rankModes are the ranking modes the home tab offers, in the order it shows
 // them.
 var rankModes = []pixiv.RankMode{
@@ -311,6 +326,26 @@ func (st *browseState) restart() {
 	st.loading = false
 	st.armed = true
 	st.mu.Unlock()
+}
+
+// newPage draws the site-wide feed of works just posted.
+func (a *App) newPage(c *ui.Context) {
+	if a.session == nil {
+		a.loginPrompt(c)
+		return
+	}
+	a.armClientFeed(a.newFeed, a.client.NewIllustrations)
+	a.browsePage(c, a.newFeed)
+}
+
+// myPixivPage draws the feed of works by the users the signed-in user follows.
+func (a *App) myPixivPage(c *ui.Context) {
+	if a.session == nil {
+		a.loginPrompt(c)
+		return
+	}
+	a.armClientFeed(a.myPixivFeed, a.client.MyPixivIllustrations)
+	a.browsePage(c, a.myPixivFeed)
 }
 
 // cardAspect is a cover's aspect with the title and author under it, so the
