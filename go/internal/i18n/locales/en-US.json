@@ -4,6 +4,7 @@
     "new": "New",
     "mypixiv": "MyPixiv",
     "search": "Search",
+    "spotlight": "Spotlight",
     "subscriptions": "Updates",
     "downloads": "Downloads",
     "history": "History",
@@ -69,6 +70,11 @@
     "targetPartial": "Partial tag match",
     "targetExact": "Exact tag match",
     "targetTitleCaption": "Title and caption"
+  },
+  "spotlight": {
+    "empty": "No spotlight articles",
+    "loadFailed": "Failed to load spotlight: %s",
+    "openFailed": "Failed to open the article: %s"
   },
   "viewer": {
     "imageFailed": "Image failed to load",

@@ -78,6 +78,8 @@ type App struct {
 	searchNovels *novelFeedState
 	searchUsers  *userListState
 	searchKind   int
+	// spotlight is the Pixivision article list the spotlight page shows.
+	spotlight *spotlightState
 	// searchSort and searchTarget are the illustration search's order and
 	// match, chosen on the search page.
 	searchSort   string
@@ -137,6 +139,12 @@ type App struct {
 	// relatedFn fetches one page of a work's related list off the main thread;
 	// tests replace it to avoid the network.
 	relatedFn func(ctx context.Context, illustID int64) (*pixiv.Page[pixiv.Illustration], error)
+	// spotlightFn fetches one page of Pixivision articles off the main thread;
+	// tests replace it to avoid the network.
+	spotlightFn func(ctx context.Context, next string) (*pixiv.Page[pixiv.SpotlightArticle], error)
+	// openExternalFn opens a URL in the default browser; tests replace it so a
+	// click does not leave the app.
+	openExternalFn func(url string) error
 	// subsStore holds the followed users and series, loaded at start, and subs
 	// checks them on demand and every subscriptionInterval.
 	subsStore *subscription.Store
@@ -241,6 +249,13 @@ func New() *App {
 		},
 		illustrationFn: client.Illustration,
 		relatedFn:      client.RelatedIllustrations,
+		spotlightFn: func(ctx context.Context, next string) (*pixiv.Page[pixiv.SpotlightArticle], error) {
+			if next != "" {
+				return client.NextSpotlightArticles(ctx, next)
+			}
+			return client.SpotlightArticles(ctx)
+		},
+		openExternalFn: mygo.Shell.OpenExternal,
 		route:          routeHome,
 		cardText:       60,
 		homeFeeds:      newHomeFeeds(),
@@ -250,6 +265,7 @@ func New() *App {
 		search:         &browseState{},
 		searchNovels:   &novelFeedState{},
 		searchUsers:    &userListState{},
+		spotlight:      &spotlightState{},
 		searchSort:     searchSortDateDesc,
 		searchTarget:   searchTargetPartial,
 		updater:        mygoUpdater{},

@@ -19,6 +19,7 @@ const (
 	routeNew        route = "new"
 	routeMyPixiv    route = "mypixiv"
 	routeSearch     route = "search"
+	routeSpotlight  route = "spotlight"
 	routeSubs       route = "subscriptions"
 	routeDownloads  route = "downloads"
 	routeHistory    route = "history"
@@ -40,7 +41,7 @@ func (a *App) routeLabel(r route) string {
 }
 
 var (
-	browseRoutes  = []route{routeHome, routeNew, routeMyPixiv, routeSearch, routeSubs}
+	browseRoutes  = []route{routeHome, routeNew, routeMyPixiv, routeSearch, routeSpotlight, routeSubs}
 	libraryRoutes = []route{routeDownloads, routeHistory, routeBookmarks, routeWatchLater}
 )
 
@@ -171,7 +172,7 @@ func (a *App) navItem(c *ui.Context, r route) {
 // batch, so the ones navIcon does not know are mapped here.
 func navGlyph(r route) *ui.SVG {
 	switch r {
-	case routeNew:
+	case routeNew, routeSpotlight:
 		return iconImage
 	case routeMyPixiv:
 		return iconUser
@@ -235,6 +236,8 @@ func (a *App) page(c *ui.Context) {
 		a.myPixivPage(c)
 	case routeSearch:
 		a.searchPage(c)
+	case routeSpotlight:
+		a.spotlightPage(c)
 	case routeSubs:
 		a.subscriptionsPage(c)
 	case routeDownloads:
