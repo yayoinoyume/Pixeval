@@ -239,7 +239,11 @@ func (a *App) watchLaterPage(c *ui.Context) {
 		entries = a.watchLater.Snapshot()
 	}
 	if len(entries) == 0 {
-		emptyState(c, iconHistory, a.t("watchLater.empty"), a.t("watchLater.emptyHint"), nil)
+		emptyState(c, iconHistory, a.t("watchLater.empty"), a.t("watchLater.emptyHint"), func() {
+			if ui.Button(c, a.t("nav.groupBrowse")).Radius(t.RadiusS).Clicked() {
+				a.goRoute(routeHome)
+			}
+		})
 		return
 	}
 	// The list is a grid of the same cards the history page draws, so it uses

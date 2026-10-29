@@ -50,6 +50,15 @@ func TestDownloadsEmpty(t *testing.T) {
 	if !tt.HasText("还没有下载任务") {
 		t.Errorf("empty state not shown: %q", tt.Texts())
 	}
+	if !tt.HasText(a.t("nav.groupBrowse")) {
+		t.Errorf("browse button missing: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("nav.groupBrowse")); err != nil {
+		t.Fatalf("Click the empty state's action: %v", err)
+	}
+	if a.route != routeHome {
+		t.Errorf("route %q after the action, want %q", a.route, routeHome)
+	}
 }
 
 // TestDownloadsList checks the queue lists each task's title and page, and

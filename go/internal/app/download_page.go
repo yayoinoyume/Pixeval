@@ -408,7 +408,11 @@ func (a *App) downloadsPage(c *ui.Context) {
 	tasks := a.downloads.Snapshot()
 	history := a.downloadHistoryEntries()
 	if len(tasks) == 0 && len(history) == 0 {
-		emptyState(c, iconDownload, a.t("download.empty"), a.t("download.emptyHint"), nil)
+		emptyState(c, iconDownload, a.t("download.empty"), a.t("download.emptyHint"), func() {
+			if ui.Button(c, a.t("nav.groupBrowse")).Radius(t.RadiusS).Clicked() {
+				a.goRoute(routeHome)
+			}
+		})
 		return
 	}
 	shown := downloadFilterTasks(tasks, a.downloadFilter)
