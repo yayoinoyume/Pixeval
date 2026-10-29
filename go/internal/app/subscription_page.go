@@ -302,7 +302,11 @@ func (a *App) subscriptionsPage(c *ui.Context) {
 			}
 		})
 		if len(subs) == 0 && len(fetched) == 0 {
-			emptyState(c, iconBell, a.t("subs.empty"), a.t("subs.emptyHint"), nil)
+			emptyState(c, iconBell, a.t("subs.empty"), a.t("subs.emptyHint"), func() {
+				if ui.Button(c, a.t("user.recommendedEmptyAction")).Radius(t.RadiusS).Clicked() {
+					a.goRoute(routeSearch)
+				}
+			})
 			return
 		}
 		ui.Scroll(c).Grow(1).Children(func() {

@@ -225,6 +225,15 @@ func TestWatchLaterPageEmpty(t *testing.T) {
 	if tt.HasText("清空列表") {
 		t.Errorf("clear button shown with nothing saved: %q", tt.Texts())
 	}
+	if !tt.HasText(a.t("nav.groupBrowse")) {
+		t.Errorf("browse button missing: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("nav.groupBrowse")); err != nil {
+		t.Fatalf("Click the empty state's action: %v", err)
+	}
+	if a.route != routeHome {
+		t.Errorf("route %q after the action, want %q", a.route, routeHome)
+	}
 }
 
 // savedWorks is a list of two works, as the page shows them.

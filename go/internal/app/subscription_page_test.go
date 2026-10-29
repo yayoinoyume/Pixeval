@@ -56,12 +56,21 @@ func waitNewWorks(t *testing.T, a *App, want int) {
 // TestSubscriptionsPageEmpty checks an app with no subscriptions says so
 // instead of drawing an empty list.
 func TestSubscriptionsPageEmpty(t *testing.T) {
-	_, tt := newSubsTest(t, stubFetcher{})
+	a, tt := newSubsTest(t, stubFetcher{})
 	if !tt.HasText("还没有追更订阅") {
 		t.Errorf("texts %q", tt.Texts())
 	}
 	if !tt.HasText("立即检查") {
 		t.Errorf("check button missing: %q", tt.Texts())
+	}
+	if !tt.HasText(a.t("user.recommendedEmptyAction")) {
+		t.Errorf("search button missing: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("user.recommendedEmptyAction")); err != nil {
+		t.Fatalf("Click the empty state's action: %v", err)
+	}
+	if a.route != routeSearch {
+		t.Errorf("route %q after the action, want %q", a.route, routeSearch)
 	}
 }
 

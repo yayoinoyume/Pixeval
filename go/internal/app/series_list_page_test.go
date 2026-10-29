@@ -115,10 +115,16 @@ func TestSeriesListEmpty(t *testing.T) {
 		return v.started && len(v.items) == 0
 	})
 	tt.Frame()
-	for _, want := range []string{a.t("series.watchlistEmpty"), a.t("series.watchlistEmptyHint")} {
+	for _, want := range []string{a.t("series.watchlistEmpty"), a.t("series.watchlistEmptyHint"), a.t("user.myPixivEmptyAction")} {
 		if !tt.HasText(want) {
 			t.Errorf("%q missing: %q", want, tt.Texts())
 		}
+	}
+	if err := tt.Click(a.t("user.myPixivEmptyAction")); err != nil {
+		t.Fatalf("Click the empty state's action: %v", err)
+	}
+	if a.route != routeSearch {
+		t.Errorf("route %q after the action, want %q", a.route, routeSearch)
 	}
 }
 

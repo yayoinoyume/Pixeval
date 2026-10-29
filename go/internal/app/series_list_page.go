@@ -274,7 +274,11 @@ func (a *App) seriesFeedPage(c *ui.Context, st *seriesListState) {
 	case !v.started:
 		skeletonFeed(c, width)
 	default:
-		emptyState(c, iconSeries, a.t("series.watchlistEmpty"), a.t("series.watchlistEmptyHint"), nil)
+		emptyState(c, iconSeries, a.t("series.watchlistEmpty"), a.t("series.watchlistEmptyHint"), func() {
+			if ui.Button(c, a.t("user.myPixivEmptyAction")).Radius(t.RadiusS).Clicked() {
+				a.goRoute(routeSearch)
+			}
+		})
 	}
 	if st.canLoad() && (len(v.items) == 0 || st.masonry.AtEnd()) {
 		a.loadMoreSeries(st)
