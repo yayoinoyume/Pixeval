@@ -182,6 +182,16 @@ func (a *App) settingsPage(c *ui.Context) {
 						})
 						a.updateStatus(c)
 					})
+
+					a.settingsGroup(c, a.t("settings.groupSubscriptions"), func(row settingsRow) {
+						row(a.t("subs.autoDownload"), a.t("subs.autoDownloadHint"), func() {
+							switchControl(c, &s.AutoDownloadSubscriptions, a.t("subs.autoDownload"))
+						})
+						row(a.t("subs.interval"), a.t("subs.intervalHint"), func() {
+							a.numberStepper(c, &s.SubscriptionIntervalMinutes,
+								subscriptionIntervalMin, subscriptionIntervalMax, 5, a.t("subs.interval"))
+						})
+					})
 				})
 			})
 		})
@@ -441,6 +451,7 @@ func (a *App) applySavedSettings(c *ui.Context) {
 		if a.downloads != nil {
 			a.downloads.SetConcurrency(a.settings.DownloadConcurrency)
 		}
+		a.restartSubscriptions()
 		c.Toast(a.t("settings.saved"))
 		// The masonry keeps its last layout until the next frame; ask for it
 		// so a new column width shows at once.

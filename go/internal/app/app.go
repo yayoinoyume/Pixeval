@@ -107,6 +107,10 @@ type App struct {
 	// checks them on demand and every subscriptionInterval.
 	subsStore *subscription.Store
 	subs      *subscription.Service
+	// subsRunning marks the check loop as started, so a settings save restarts
+	// only a running one. subsRestartMu keeps two restarts from overlapping.
+	subsRunning   bool
+	subsRestartMu sync.Mutex
 	// subsMu guards newWorks, subsChecking and subsMsg, which a check fills in
 	// off the main thread for the subscription page.
 	subsMu       sync.Mutex
@@ -193,14 +197,7 @@ func New() *App {
 	a.updateSt.off = !a.updater.Enabled()
 	// The check runs on the timer goroutine, so it hands the works to the main
 	// thread; the subscription page toasts the result when it next draws.
-	subs.OnNew = func(works []pixiv.Illustration) {
-		a.update(func() {
-			a.subsMu.Lock()
-			a.newWorks = append(a.newWorks, works...)
-			a.subsMsg = a.tf("subs.newFound", len(works))
-			a.subsMu.Unlock()
-		})
-	}
+	subs.OnNew = a.onNewSubscriptions
 	a.loadLanguage()
 	return a
 }
@@ -279,7 +276,8 @@ func (a *App) Start() {
 		}
 	}()
 	// The subscription check looks for new works every subscriptionInterval.
-	a.subs.Start(context.Background(), subscriptionInterval)
+	a.subsRunning = true
+	a.subs.Start(context.Background(), a.subscriptionInterval())
 }
 
 // restoreSession adopts the saved token, refreshing it when expired. It runs

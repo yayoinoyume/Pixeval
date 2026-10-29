@@ -15,8 +15,34 @@ import (
 	"github.com/yayoinoyume/pixeval-go/internal/subscription"
 )
 
-// subscriptionInterval is how often the background check looks for new works.
-const subscriptionInterval = 6 * time.Hour
+// subscriptionInterval is how often the background check looks for new works,
+// from the settings. A value outside the page's range falls back to the
+// default rather than a zero ticker.
+func (a *App) subscriptionInterval() time.Duration {
+	minutes := subscriptionIntervalDefault
+	if a.settings != nil &&
+		a.settings.SubscriptionIntervalMinutes >= subscriptionIntervalMin &&
+		a.settings.SubscriptionIntervalMinutes <= subscriptionIntervalMax {
+		minutes = a.settings.SubscriptionIntervalMinutes
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
+// restartSubscriptions gives a running check its saved interval: the loop
+// keeps the ticker it started with, so it stops and starts again. It runs off
+// the main thread because Stop waits for a check in flight.
+func (a *App) restartSubscriptions() {
+	if a.subs == nil || !a.subsRunning {
+		return
+	}
+	interval := a.subscriptionInterval()
+	go func() {
+		a.subsRestartMu.Lock()
+		defer a.subsRestartMu.Unlock()
+		a.subs.Stop()
+		a.subs.Start(context.Background(), interval)
+	}()
+}
 
 // pixivFetcher answers a subscription with the newest page of its works.
 type pixivFetcher struct{ client *pixiv.Client }
@@ -201,6 +227,35 @@ func (a *App) downloadNewWorks(works []pixiv.Illustration) {
 	}
 	a.notice = a.tf("subs.queued", pages)
 	a.update(func() {})
+}
+
+// showNewWorks records the works a check found and, when the setting is on,
+// queues their pages. It runs on the main thread, so the download directory is
+// read where a settings save writes it.
+func (a *App) showNewWorks(works []pixiv.Illustration) {
+	a.subsMu.Lock()
+	a.newWorks = append(a.newWorks, works...)
+	a.subsMsg = a.tf("subs.newFound", len(works))
+	a.subsMu.Unlock()
+	if a.settings == nil || !a.settings.AutoDownloadSubscriptions {
+		return
+	}
+	pages := 0
+	for _, w := range works {
+		n, ok := a.downloadWork(w)
+		if !ok {
+			a.notice = a.t("subs.autoNoDir")
+			return
+		}
+		pages += n
+	}
+	a.notice = a.tf("subs.autoQueued", pages)
+}
+
+// onNewSubscriptions is the background check's callback: it hands the works to
+// the main thread, which shows them and may queue them.
+func (a *App) onNewSubscriptions(works []pixiv.Illustration) {
+	a.update(func() { a.showNewWorks(works) })
 }
 
 // subscriptionsPage draws the followed targets and the works the last check

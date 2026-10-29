@@ -141,6 +141,7 @@
     "updateInstallFailed": "Impossible d'installer la mise à jour : %s",
     "groupAppearance": "Apparence",
     "groupDownloads": "Téléchargements",
+    "groupSubscriptions": "Abonnements",
     "groupShortcuts": "Raccourcis",
     "decrease": "Diminuer",
     "increase": "Augmenter",
@@ -195,7 +196,13 @@
     "queued": "%d pages ajoutées à la file de téléchargement",
     "add": "S'abonner",
     "added": "Abonné",
-    "addFailed": "La liste d'abonnements est pleine"
+    "addFailed": "La liste d'abonnements est pleine",
+    "autoDownload": "Télécharger automatiquement les nouvelles œuvres",
+    "autoDownloadHint": "Ajouter les nouvelles œuvres à la file dès qu'une vérification les trouve",
+    "interval": "Intervalle de vérification (minutes)",
+    "intervalHint": "De 5 à 1440 minutes, 15 par défaut",
+    "autoQueued": "%d pages ajoutées automatiquement à la file",
+    "autoNoDir": "Aucun dossier de téléchargement : les nouvelles œuvres n'ont pas été ajoutées"
   },
   "novel": {
     "loadFailed": "Impossible de charger le roman : %s",
