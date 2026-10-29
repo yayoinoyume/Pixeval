@@ -189,6 +189,8 @@
     "completedAt": "Завершено %s",
     "ordinaryEmpty": "Обычных загрузок нет",
     "subscriptionEmpty": "Загрузок по подпискам нет",
+    "sourceUnknown": "Обновление подписки",
+    "sourceLabel": "Источник: %s",
     "count": "%d задач",
     "clearDone": "Очистить завершённые",
     "page": "Страница %d",

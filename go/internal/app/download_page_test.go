@@ -120,6 +120,36 @@ func TestDownloadsEmptyGroup(t *testing.T) {
 	}
 }
 
+// TestDownloadsSubscriptionGroupsBySourceName checks the subscription tab
+// splits the queue by followed target, and a task without a name falls back to
+// the generic update group.
+func TestDownloadsSubscriptionGroupsBySourceName(t *testing.T) {
+	a := newDownloadApp(t)
+	a.downloads.Add([]download.Task{
+		{ID: "1_0", IllustID: 1, Title: "甲一", Source: download.SourceSubscription, SourceID: 1, SourceName: "画师甲"},
+		{ID: "2_0", IllustID: 2, Title: "乙一", Source: download.SourceSubscription, SourceID: 2, SourceName: "画师乙"},
+		{ID: "3_0", IllustID: 3, Title: "甲二", Source: download.SourceSubscription, SourceID: 1, SourceName: "画师甲"},
+		{ID: "4_0", IllustID: 4, Title: "旧任务", Source: download.SourceSubscription},
+		{ID: "5_0", IllustID: 5, Title: "普通作品", Source: download.SourceOrdinary},
+	})
+	a.downloadFilter = downloadFilterSubscription
+	tt := ui.NewTester(a.View, 1000, 900)
+	for _, want := range []string{"画师甲", "画师乙", "订阅更新", "甲一", "甲二", "乙一", "旧任务"} {
+		if !tt.HasText(want) {
+			t.Errorf("%q not shown: %q", want, tt.Texts())
+		}
+	}
+	if tt.HasText("普通作品") {
+		t.Errorf("ordinary task shown in the subscription group: %q", tt.Texts())
+	}
+
+	groups := a.downloadSubscriptionGroups(downloadFilterTasks(a.downloads.Snapshot(), downloadFilterSubscription))
+	if len(groups) != 3 || groups[0].Name != "画师甲" || len(groups[0].Tasks) != 2 ||
+		groups[1].Name != "画师乙" || groups[2].Name != "订阅更新" {
+		t.Errorf("groups %+v, want 画师甲 x2, 画师乙, 订阅更新", groups)
+	}
+}
+
 // TestDownloadWorkMarksOrdinarySource checks a manual download is grouped as
 // an ordinary one.
 func TestDownloadWorkMarksOrdinarySource(t *testing.T) {
@@ -130,6 +160,9 @@ func TestDownloadWorkMarksOrdinarySource(t *testing.T) {
 	for _, task := range a.downloads.Snapshot() {
 		if task.Source != download.SourceOrdinary {
 			t.Errorf("task %q source %q, want ordinary", task.ID, task.Source)
+		}
+		if task.SourceID != 0 || task.SourceName != "" {
+			t.Errorf("task %q source %d/%q, want no subscription", task.ID, task.SourceID, task.SourceName)
 		}
 	}
 }
@@ -751,7 +784,7 @@ func TestDownloadWorkSkipsUgoira(t *testing.T) {
 	a.settings = Default()
 
 	for _, source := range []string{download.SourceOrdinary, download.SourceSubscription} {
-		queued, ok := a.downloadWorkSource(ugoiraWork(), source)
+		queued, ok := a.downloadWorkSource(ugoiraWork(), source, 0, "")
 		if !ok {
 			t.Fatalf("%s: saving reported off", source)
 		}

@@ -189,6 +189,8 @@
     "completedAt": "完成于 %s",
     "ordinaryEmpty": "还没有普通下载",
     "subscriptionEmpty": "还没有订阅下载",
+    "sourceUnknown": "订阅更新",
+    "sourceLabel": "来源：%s",
     "count": "%d 个任务",
     "clearDone": "清空已完成",
     "page": "第 %d 页",

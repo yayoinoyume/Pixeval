@@ -42,14 +42,16 @@ func downloadDir() string {
 // took, and whether saving is on at all; the queue skips a page it already
 // holds.
 func (a *App) downloadWork(w pixiv.Illustration) (queued int, ok bool) {
-	return a.downloadWorkSource(w, download.SourceOrdinary)
+	return a.downloadWorkSource(w, download.SourceOrdinary, 0, "")
 }
 
 // downloadWorkSource queues w's pages tagged with the source they came from,
 // so the download page can group subscription updates apart from the user's
-// own downloads. An animation is skipped: its zip needs a metadata request,
-// which this synchronous path must not make on the calling thread.
-func (a *App) downloadWorkSource(w pixiv.Illustration, source string) (queued int, ok bool) {
+// own downloads. A subscription update also carries the followed target, so
+// its tasks can be grouped by that subscription. An animation is skipped: its
+// zip needs a metadata request, which this synchronous path must not make on
+// the calling thread.
+func (a *App) downloadWorkSource(w pixiv.Illustration, source string, sourceID int64, sourceName string) (queued int, ok bool) {
 	if a.downloads == nil || a.downloadsDir == "" {
 		return 0, false
 	}
@@ -62,14 +64,16 @@ func (a *App) downloadWorkSource(w pixiv.Illustration, source string) (queued in
 	for i := 0; i < n; i++ {
 		ctx := downloadContext(w, i, downloadExt(w, i))
 		tasks = append(tasks, download.Task{
-			ID:       fmt.Sprintf("%d_%d", w.ID, i),
-			IllustID: w.ID,
-			Title:    w.Title,
-			Artist:   w.User.Name,
-			URL:      w.PageURL(i),
-			Dest:     downloadDest(a.downloadsDir, tmpl, ctx),
-			Page:     i,
-			Source:   source,
+			ID:         fmt.Sprintf("%d_%d", w.ID, i),
+			IllustID:   w.ID,
+			Title:      w.Title,
+			Artist:     w.User.Name,
+			URL:        w.PageURL(i),
+			Dest:       downloadDest(a.downloadsDir, tmpl, ctx),
+			Page:       i,
+			Source:     source,
+			SourceID:   sourceID,
+			SourceName: sourceName,
 		})
 	}
 	return a.downloads.Add(tasks), true
@@ -335,6 +339,39 @@ func downloadFilterTasks(tasks []download.Task, filter int) []download.Task {
 	return out
 }
 
+// downloadTaskGroup is the subscription tasks of one followed target.
+type downloadTaskGroup struct {
+	Name  string
+	Tasks []download.Task
+}
+
+// downloadSourceName is the name a subscription task shows; a task saved
+// before names were stored falls back to the generic update label.
+func (a *App) downloadSourceName(task download.Task) string {
+	if task.SourceName != "" {
+		return task.SourceName
+	}
+	return a.t("download.sourceUnknown")
+}
+
+// downloadSubscriptionGroups splits subscription tasks by the followed target
+// they came from, keeping the order each name first appears in the queue.
+func (a *App) downloadSubscriptionGroups(tasks []download.Task) []downloadTaskGroup {
+	var groups []downloadTaskGroup
+	index := map[string]int{}
+	for _, task := range tasks {
+		name := a.downloadSourceName(task)
+		i, ok := index[name]
+		if !ok {
+			i = len(groups)
+			index[name] = i
+			groups = append(groups, downloadTaskGroup{Name: name})
+		}
+		groups[i].Tasks = append(groups[i].Tasks, task)
+	}
+	return groups
+}
+
 func (a *App) downloadStateLabel(s download.State) string {
 	switch s {
 	case download.Running:
@@ -408,12 +445,29 @@ func (a *App) downloadsPage(c *ui.Context) {
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Padding(0, contentPadding, contentPadding, contentPadding).
 				Gap(t.SpaceS).Children(func() {
-				for _, task := range shown {
-					a.downloadRow(c, task)
-				}
+				a.downloadTaskList(c, shown)
 			})
 		})
 	})
+}
+
+// downloadTaskList draws the chosen group's tasks. The subscription group is
+// split by followed target; the other groups stay a flat queue.
+func (a *App) downloadTaskList(c *ui.Context, tasks []download.Task) {
+	if a.downloadFilter != downloadFilterSubscription {
+		for _, task := range tasks {
+			a.downloadRow(c, task)
+		}
+		return
+	}
+	t := themeOf(c)
+	for _, group := range a.downloadSubscriptionGroups(tasks) {
+		ui.Text(c, group.Name).FontSize(t.TextSmall).TextColor(t.TextMuted).
+			Padding(t.SpaceL, 0, t.SpaceXS, 0)
+		for _, task := range group.Tasks {
+			a.downloadRow(c, task)
+		}
+	}
 }
 
 // downloadHistoryEntries is the completed downloads, newest first, or none
@@ -575,6 +629,10 @@ func (a *App) downloadRow(c *ui.Context, task download.Task) {
 		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
 			ui.Text(c, task.Title).FontSize(t.TextBody).TextColor(t.Text).MaxLines(1)
 			ui.Text(c, a.tf("download.page", task.Page+1)).FontSize(t.TextTiny).TextColor(t.TextMuted)
+			if task.Source == download.SourceSubscription {
+				ui.Text(c, a.tf("download.sourceLabel", a.downloadSourceName(task))).
+					FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
+			}
 			if task.State == download.Failed && task.Err != "" {
 				ui.Text(c, task.Err).FontSize(t.TextTiny).TextColor(t.Danger).MaxLines(1)
 			}

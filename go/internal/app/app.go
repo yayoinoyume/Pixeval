@@ -247,7 +247,7 @@ type App struct {
 	// subsMu guards newWorks, subsChecking and subsMsg, which a check fills in
 	// off the main thread for the subscription page.
 	subsMu       sync.Mutex
-	newWorks     []pixiv.Illustration
+	newWorks     []subscription.Fetched
 	subsChecking bool
 	// subsMsg is a check's result, which the subscription page toasts once.
 	subsMsg string
@@ -403,7 +403,7 @@ func New() *App {
 	a.images.SetDiskLimit(imageCacheLimitBytes(settings))
 	// The check runs on the timer goroutine, so it hands the works to the main
 	// thread; the subscription page toasts the result when it next draws.
-	subs.OnNew = a.onNewSubscriptions
+	subs.OnNewFetched = a.onNewSubscriptions
 	a.loadLanguage()
 	return a
 }

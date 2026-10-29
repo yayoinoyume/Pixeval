@@ -11,15 +11,17 @@ import (
 // persistedTask is the part of a Task that survives a restart. Progress and
 // the terminal states are not saved: an unfinished task starts over.
 type persistedTask struct {
-	ID        string `json:"id"`
-	IllustID  int64  `json:"illustId"`
-	Title     string `json:"title"`
-	Artist    string `json:"artist"`
-	URL       string `json:"url"`
-	Dest      string `json:"dest"`
-	Page      int    `json:"page"`
-	Overwrite bool   `json:"overwrite"`
-	Source    string `json:"source,omitempty"`
+	ID         string `json:"id"`
+	IllustID   int64  `json:"illustId"`
+	Title      string `json:"title"`
+	Artist     string `json:"artist"`
+	URL        string `json:"url"`
+	Dest       string `json:"dest"`
+	Page       int    `json:"page"`
+	Overwrite  bool   `json:"overwrite"`
+	Source     string `json:"source,omitempty"`
+	SourceID   int64  `json:"sourceId,omitempty"`
+	SourceName string `json:"sourceName,omitempty"`
 }
 
 // downloadsFile is the on-disk queue.
@@ -44,16 +46,18 @@ func Load(path string) ([]Task, error) {
 	tasks := make([]Task, 0, len(file.Tasks))
 	for _, p := range file.Tasks {
 		tasks = append(tasks, Task{
-			ID:        p.ID,
-			IllustID:  p.IllustID,
-			Title:     p.Title,
-			Artist:    p.Artist,
-			URL:       p.URL,
-			Dest:      p.Dest,
-			Page:      p.Page,
-			Overwrite: p.Overwrite,
-			Source:    p.Source,
-			State:     Queued,
+			ID:         p.ID,
+			IllustID:   p.IllustID,
+			Title:      p.Title,
+			Artist:     p.Artist,
+			URL:        p.URL,
+			Dest:       p.Dest,
+			Page:       p.Page,
+			Overwrite:  p.Overwrite,
+			Source:     p.Source,
+			SourceID:   p.SourceID,
+			SourceName: p.SourceName,
+			State:      Queued,
 		})
 	}
 	return tasks, nil
@@ -98,15 +102,17 @@ func encodeTasks(tasks []Task) ([]byte, error) {
 			continue
 		}
 		out = append(out, persistedTask{
-			ID:        t.ID,
-			IllustID:  t.IllustID,
-			Title:     t.Title,
-			Artist:    t.Artist,
-			URL:       t.URL,
-			Dest:      t.Dest,
-			Page:      t.Page,
-			Overwrite: t.Overwrite,
-			Source:    t.Source,
+			ID:         t.ID,
+			IllustID:   t.IllustID,
+			Title:      t.Title,
+			Artist:     t.Artist,
+			URL:        t.URL,
+			Dest:       t.Dest,
+			Page:       t.Page,
+			Overwrite:  t.Overwrite,
+			Source:     t.Source,
+			SourceID:   t.SourceID,
+			SourceName: t.SourceName,
 		})
 	}
 	return json.Marshal(downloadsFile{Tasks: out})

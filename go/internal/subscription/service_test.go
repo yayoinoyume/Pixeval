@@ -129,6 +129,44 @@ func TestCheckPersistsLastChecked(t *testing.T) {
 	}
 }
 
+func TestCheckDetailedReportsTheSubscriptionOfEachWork(t *testing.T) {
+	at := time.Date(2026, 5, 7, 8, 9, 10, 0, time.UTC)
+	st := &Store{Subscriptions: []Subscription{
+		{ID: "user-1", Kind: KindUser, TargetID: 1, TargetName: "画师一"},
+		{ID: "series-2", Kind: KindSeries, TargetID: 2, TargetName: "系列二"},
+	}}
+	f := &fakeFetcher{works: map[string][]pixiv.Illustration{
+		"user-1":   {work(1, at)},
+		"series-2": {work(2, at)},
+	}}
+	svc := New(f)
+	svc.Store = st
+
+	got, err := svc.CheckDetailed(context.Background())
+	if err != nil {
+		t.Fatalf("CheckDetailed: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("fetched %d works, want 2: %+v", len(got), got)
+	}
+	want := []struct {
+		workID int64
+		subID  string
+		name   string
+	}{
+		{1, "user-1", "画师一"},
+		{2, "series-2", "系列二"},
+	}
+	for i, w := range want {
+		if got[i].Work.ID != w.workID {
+			t.Errorf("work %d id %d, want %d", i, got[i].Work.ID, w.workID)
+		}
+		if got[i].Subscription.ID != w.subID || got[i].Subscription.TargetName != w.name {
+			t.Errorf("work %d subscription %+v, want %s/%s", i, got[i].Subscription, w.subID, w.name)
+		}
+	}
+}
+
 func TestCheckKeepsGoingWhenOneSubscriptionFails(t *testing.T) {
 	at := time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)
 	st := &Store{Subscriptions: []Subscription{
@@ -212,6 +250,32 @@ func TestStoreLoadBadJSONKeepsStore(t *testing.T) {
 	if subs := st.List(); len(subs) != 1 || subs[0].ID != "kept" {
 		t.Fatalf("store = %+v, want the existing entry kept", subs)
 	}
+}
+
+func TestStartReportsFetchedWorksWithSubscription(t *testing.T) {
+	at := time.Date(2026, 6, 8, 9, 10, 11, 0, time.UTC)
+	st := &Store{Subscriptions: []Subscription{{
+		ID: "user-1", Kind: KindUser, TargetID: 1, TargetName: "画师一",
+	}}}
+	f := &fakeFetcher{works: map[string][]pixiv.Illustration{"user-1": {work(9, at)}}}
+	svc := New(f)
+	svc.Store = st
+	got := make(chan []Fetched, 1)
+	svc.OnNewFetched = func(fetched []Fetched) { got <- fetched }
+
+	svc.Start(context.Background(), time.Millisecond)
+	select {
+	case fetched := <-got:
+		if len(fetched) != 1 || fetched[0].Work.ID != 9 {
+			t.Fatalf("fetched = %+v, want work 9", fetched)
+		}
+		if fetched[0].Subscription.ID != "user-1" || fetched[0].Subscription.TargetName != "画师一" {
+			t.Errorf("subscription %+v, want user-1/画师一", fetched[0].Subscription)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("OnNewFetched was never called")
+	}
+	svc.Stop()
 }
 
 func TestStartReportsNewWorksUntilStopped(t *testing.T) {

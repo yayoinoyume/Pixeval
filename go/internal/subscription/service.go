@@ -18,6 +18,12 @@ type Fetcher interface {
 	Fetch(ctx context.Context, s Subscription) ([]pixiv.Illustration, error)
 }
 
+// Fetched is one new work and the subscription that returned it.
+type Fetched struct {
+	Work         pixiv.Illustration
+	Subscription Subscription
+}
+
 // Service checks subscriptions and reports works newer than the last check.
 // Store holds the subscriptions and OnNew receives the new works.
 type Service struct {
@@ -28,6 +34,9 @@ type Service struct {
 	// goroutine, so the callback switches to the UI thread itself. Set it
 	// before Start.
 	OnNew func([]pixiv.Illustration)
+	// OnNewFetched receives the same batches with the subscription each work
+	// came from. When set, it is called instead of OnNew.
+	OnNewFetched func([]Fetched)
 
 	fetcher Fetcher
 	checkMu sync.Mutex         // one check at a time, manual or timed
@@ -48,16 +57,30 @@ func New(f Fetcher) *Service {
 // is skipped and keeps its LastChecked, so the next check retries it. The
 // error return is only for a cancelled context.
 func (s *Service) Check(ctx context.Context) ([]pixiv.Illustration, error) {
+	fetched, err := s.CheckDetailed(ctx)
+	if len(fetched) == 0 {
+		return nil, err
+	}
+	works := make([]pixiv.Illustration, len(fetched))
+	for i, f := range fetched {
+		works[i] = f.Work
+	}
+	return works, err
+}
+
+// CheckDetailed is Check with the subscription each work came from, so a
+// caller can tell which followed target an update belongs to.
+func (s *Service) CheckDetailed(ctx context.Context) ([]Fetched, error) {
 	if s.Store == nil {
 		return nil, errors.New("subscription: Check needs a Store")
 	}
 	s.checkMu.Lock()
 	defer s.checkMu.Unlock()
 
-	var works []pixiv.Illustration
+	var fetched []Fetched
 	for _, sub := range s.Store.List() {
 		if err := ctx.Err(); err != nil {
-			return works, err
+			return fetched, err
 		}
 		items, err := s.fetcher.Fetch(ctx, sub)
 		if err != nil {
@@ -75,15 +98,16 @@ func (s *Service) Check(ctx context.Context) ([]pixiv.Illustration, error) {
 				continue
 			}
 			s.seen[w.ID] = struct{}{}
-			works = append(works, w)
+			fetched = append(fetched, Fetched{Work: w, Subscription: sub})
 		}
 		s.Store.setLastChecked(sub.ID, newest)
 	}
-	return works, nil
+	return fetched, nil
 }
 
 // Start checks immediately, then every interval, until Stop or ctx is done.
-// Each batch goes to OnNew. Calling Start while it already runs does nothing.
+// Each batch goes to OnNewFetched, or to OnNew when that is the only callback.
+// Calling Start while it already runs does nothing.
 func (s *Service) Start(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = DefaultInterval
@@ -119,8 +143,8 @@ func (s *Service) loop(ctx context.Context, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
-		if works, err := s.Check(ctx); err == nil && len(works) > 0 && s.OnNew != nil {
-			s.OnNew(works)
+		if fetched, err := s.CheckDetailed(ctx); err == nil && len(fetched) > 0 {
+			s.report(fetched)
 		}
 		select {
 		case <-ctx.Done():
@@ -131,4 +155,21 @@ func (s *Service) loop(ctx context.Context, interval time.Duration) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// report hands a batch to the detailed callback, or to OnNew when only the
+// works-only callback is set.
+func (s *Service) report(fetched []Fetched) {
+	if s.OnNewFetched != nil {
+		s.OnNewFetched(fetched)
+		return
+	}
+	if s.OnNew == nil {
+		return
+	}
+	works := make([]pixiv.Illustration, len(fetched))
+	for i, f := range fetched {
+		works[i] = f.Work
+	}
+	s.OnNew(works)
 }
