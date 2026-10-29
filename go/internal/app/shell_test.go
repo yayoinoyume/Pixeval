@@ -81,8 +81,25 @@ func TestShellRailGroupsReachDestinations(t *testing.T) {
 	a := New()
 	tt := ui.NewTester(a.View, 1024, 720)
 	tt.Frame()
-	if _, ok := tt.Find("新作"); ok {
-		t.Fatalf("新作 is in the rail before its group opens: %q", tt.Texts())
+	for _, hidden := range []string{a.t("nav.new"), a.t("nav.series")} {
+		if _, ok := tt.Find(hidden); ok {
+			t.Fatalf("%s is in the rail before its group opens: %q", hidden, tt.Texts())
+		}
+	}
+	topLevel := []string{
+		a.t("nav.home"), a.t("nav.search"), a.t("nav.bookmarks"),
+		a.t("nav.works"), a.t("nav.users"), a.t("nav.library"), a.t("nav.settings"),
+	}
+	found := 0
+	for _, label := range topLevel {
+		if _, ok := tt.Find(label); ok {
+			found++
+		} else {
+			t.Errorf("the rail's top-level %q is missing: %q", label, tt.Texts())
+		}
+	}
+	if found != 7 {
+		t.Errorf("the rail has %d top-level labels, want 7", found)
 	}
 	for _, c := range []struct {
 		group string

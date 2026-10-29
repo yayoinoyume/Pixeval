@@ -16,10 +16,10 @@ import (
 func seriesWatchlistBodies() map[string]string {
 	return map[string]string{
 		"/v1/watchlist/manga": `{"series":[{"id":3,"title":"漫画系列三",` +
-			`"user":{"id":7,"name":"画师七"},"cover_url":"https://i/manga.jpg",` +
+			`"user":{"id":7,"name":"画师七"},"url":"https://i/manga.jpg",` +
 			`"published_content_count":12}],"next_url":""}`,
 		"/v1/watchlist/novel": `{"series":[{"id":4,"title":"小说系列四",` +
-			`"user":{"id":8,"name":"作者八"},"cover_url":"https://i/novel.jpg",` +
+			`"user":{"id":8,"name":"作者八"},"url":"https://i/novel.jpg",` +
 			`"published_content_count":5}],"next_url":""}`,
 	}
 }
@@ -75,6 +75,9 @@ func TestSeriesListTabsRequestEachKind(t *testing.T) {
 			t.Errorf("%q missing: %q", want, tt.Texts())
 		}
 	}
+	if got := a.seriesFeed(seriesMangaTab).snapshot().items[0].CoverURL; got != "https://i/manga.jpg" {
+		t.Errorf("manga cover = %q, want the url field", got)
+	}
 
 	if err := tt.Click(a.t("common.novel")); err != nil {
 		t.Fatalf("Click novel tab: %v", err)
@@ -87,6 +90,9 @@ func TestSeriesListTabsRequestEachKind(t *testing.T) {
 		if !tt.HasText(want) {
 			t.Errorf("%q missing: %q", want, tt.Texts())
 		}
+	}
+	if got := a.seriesFeed(seriesNovelTab).snapshot().items[0].CoverURL; got != "https://i/novel.jpg" {
+		t.Errorf("novel cover = %q, want the url field", got)
 	}
 
 	tr := a.client.HTTP().Transport.(*pageTransport)
@@ -177,4 +183,73 @@ func TestSeriesListMangaCardOpensSeries(t *testing.T) {
 		t.Fatal("the series page did not open")
 	}
 	waitSeries(t, a, func(v seriesPageView) bool { return !v.loading })
+}
+
+// TestSeriesListPages checks the next page is requested from the watchlist's
+// own next_url and its series are appended.
+func TestSeriesListPages(t *testing.T) {
+	bodies := seriesWatchlistBodies()
+	bodies["/v1/watchlist/manga"] = `{"series":[{"id":3,"title":"漫画系列三",` +
+		`"user":{"id":7,"name":"画师七"},"url":"https://i/manga.jpg",` +
+		`"published_content_count":12}],` +
+		`"next_url":"https://app-api.pixiv.net/v1/watchlist/manga?offset=1"}`
+	a, tt := newSeriesListTest(bodies)
+	tr := a.client.HTTP().Transport.(*pageTransport)
+	tr.byURL = map[string]string{
+		"/v1/watchlist/manga?offset=1": `{"series":[{"id":5,"title":"漫画系列五",` +
+			`"user":{"id":7,"name":"画师七"},"url":"https://i/manga5.jpg",` +
+			`"published_content_count":2}],"next_url":""}`,
+	}
+	tt.Frame()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(a.seriesFeed(seriesMangaTab).snapshot().items) < 2 {
+		if time.Now().After(deadline) {
+			t.Fatalf("series list has %d series, want 2",
+				len(a.seriesFeed(seriesMangaTab).snapshot().items))
+		}
+		tt.Frame()
+		time.Sleep(time.Millisecond)
+	}
+	tt.Frame()
+	if !tt.HasText("漫画系列五") {
+		t.Errorf("second page missing: %q", tt.Texts())
+	}
+	paged := false
+	for _, u := range tr.requestedURLs() {
+		if strings.Contains(u, "/v1/watchlist/manga?offset=1") {
+			paged = true
+			break
+		}
+	}
+	if !paged {
+		t.Errorf("no request for the next_url: %v", tr.requestedURLs())
+	}
+}
+
+// TestSeriesListNovelCardExplainsUnsupported checks clicking a novel series
+// leaves the list and says the novel series page is not there yet.
+func TestSeriesListNovelCardExplainsUnsupported(t *testing.T) {
+	a, tt := newSeriesListTest(seriesWatchlistBodies())
+	tt.Frame()
+	waitSeriesList(t, a.seriesFeed(seriesMangaTab), func(v seriesListView) bool {
+		return len(v.items) == 1
+	})
+	if err := tt.Click(a.t("common.novel")); err != nil {
+		t.Fatalf("Click novel tab: %v", err)
+	}
+	waitSeriesList(t, a.seriesFeed(seriesNovelTab), func(v seriesListView) bool {
+		return len(v.items) == 1
+	})
+	tt.Frame()
+	card := a.tf("a11y.card", "小说系列四", "作者八")
+	if err := tt.Click(card); err != nil {
+		t.Fatalf("Click %q: %v", card, err)
+	}
+	if a.route != routeSeriesList {
+		t.Errorf("route %q after the click, want %q", a.route, routeSeriesList)
+	}
+	want := a.t("series.novelUnsupported")
+	if a.notice != want && !tt.HasText(want) {
+		t.Errorf("notice %q neither queued nor shown: %q", want, tt.Texts())
+	}
 }
