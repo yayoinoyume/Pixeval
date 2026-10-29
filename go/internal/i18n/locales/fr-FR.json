@@ -383,7 +383,11 @@
     "myPixiv": "Utilisateurs MyPixiv",
     "noMyPixiv": "Aucun utilisateur MyPixiv",
     "myPixivLoadFailed": "Impossible de charger les utilisateurs MyPixiv : %s",
-    "noRecommendedUsers": "Aucun auteur recommandé pour le moment"
+    "noRecommendedUsers": "Aucun auteur recommandé pour le moment",
+    "myPixivEmptyHint": "Suivez des auteurs et leurs nouvelles œuvres apparaîtront ici",
+    "myPixivEmptyAction": "Rechercher des œuvres",
+    "recommendedEmptyHint": "Pixiv recommande des auteurs d'après vos abonnements et vos favoris. Recherchez ou ajoutez d'abord quelques œuvres à vos favoris.",
+    "recommendedEmptyAction": "Rechercher des auteurs"
   },
   "recommendedUsers": {
     "title": "Auteurs recommandés"

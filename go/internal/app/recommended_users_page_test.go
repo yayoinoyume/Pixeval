@@ -105,4 +105,15 @@ func TestRecommendedUsersPageEmpty(t *testing.T) {
 	if !tt.HasText(a.t("user.noRecommendedUsers")) {
 		t.Errorf("empty state missing: %q", tt.Texts())
 	}
+	for _, want := range []string{a.t("user.recommendedEmptyHint"), a.t("user.recommendedEmptyAction")} {
+		if !tt.HasText(want) {
+			t.Errorf("empty state missing %q: %q", want, tt.Texts())
+		}
+	}
+	if err := tt.Click(a.t("user.recommendedEmptyAction")); err != nil {
+		t.Fatalf("Click the empty state's action: %v", err)
+	}
+	if a.route != routeSearch {
+		t.Errorf("route %q after the action, want %q", a.route, routeSearch)
+	}
 }

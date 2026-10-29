@@ -701,7 +701,7 @@ func TestMyPixivEmptyFeed(t *testing.T) {
 	fake := &feedPixiv{body: func(int, string, string) string {
 		return `{"illusts":[],"next_url":""}`
 	}}
-	_, tt := newFeedTestApp(t, fake)
+	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
 	navGo(t, tt, "MyPixiv")
 	// The empty state draws once a page settled; wait for it on the frame.
@@ -709,12 +709,23 @@ func TestMyPixivEmptyFeed(t *testing.T) {
 	for {
 		tt.Frame()
 		if tt.HasText("没有作品") {
-			return
+			break
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("empty state missing: %q", tt.Texts())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	for _, want := range []string{a.t("user.myPixivEmptyHint"), a.t("user.myPixivEmptyAction")} {
+		if !tt.HasText(want) {
+			t.Errorf("empty state missing %q: %q", want, tt.Texts())
+		}
+	}
+	if err := tt.Click(a.t("user.myPixivEmptyAction")); err != nil {
+		t.Fatalf("Click the empty state's action: %v", err)
+	}
+	if a.route != routeSearch {
+		t.Errorf("route %q after the action, want %q", a.route, routeSearch)
 	}
 }
 

@@ -17,6 +17,7 @@ func (a *App) recommendedUsersPage(c *ui.Context) {
 		return
 	}
 	st := a.recommendedUsers
+	t := themeOf(c)
 	if !st.isArmed() {
 		st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error) {
 			if next := st.cursor(); next != "" {
@@ -25,6 +26,14 @@ func (a *App) recommendedUsersPage(c *ui.Context) {
 			return a.client.RecommendedUsers(ctx)
 		})
 		st.arm()
+	}
+	st.emptyHint = a.t("user.recommendedEmptyHint")
+	st.emptyAction = func() {
+		b := ui.PrimaryButton(c, a.t("nav.search")).
+			Label(a.t("user.recommendedEmptyAction")).Radius(t.RadiusS)
+		if b.Clicked() {
+			a.goRoute(routeSearch)
+		}
 	}
 	a.userListPage(c, st, a.t("user.noRecommendedUsers"), "common.loadFailed")
 }

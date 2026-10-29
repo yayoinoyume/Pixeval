@@ -383,7 +383,11 @@
     "myPixiv": "好P友",
     "noMyPixiv": "没有好P友",
     "myPixivLoadFailed": "加载好P友失败：%s",
-    "noRecommendedUsers": "暂时没有推荐作者"
+    "noRecommendedUsers": "暂时没有推荐作者",
+    "myPixivEmptyHint": "关注作者后，他们的新作会出现在这里",
+    "myPixivEmptyAction": "去搜索作品",
+    "recommendedEmptyHint": "Pixiv 会根据你的关注和收藏推荐作者，先去搜索或收藏一些作品吧",
+    "recommendedEmptyAction": "去搜索作者"
   },
   "recommendedUsers": {
     "title": "推荐作者"

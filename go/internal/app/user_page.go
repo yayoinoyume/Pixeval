@@ -189,6 +189,10 @@ type userListState struct {
 
 	// list is the list's place, touched only by the view.
 	list ui.ListState
+	// emptyHint and emptyAction are what an empty list adds under its title;
+	// a zero hint and nil action add nothing. Only the view touches them.
+	emptyHint   string
+	emptyAction func()
 }
 
 // userListFeed maps a user list to its pages: the first from first, the later
@@ -572,7 +576,7 @@ func (a *App) userListPage(c *ui.Context, st *userListState, emptyTitle, failKey
 			ui.Text(c, a.t("common.loading")).FontSize(t.TextSmall).TextColor(t.TextMuted)
 		})
 	default:
-		emptyState(c, iconUser, emptyTitle, "", nil)
+		emptyState(c, iconUser, emptyTitle, st.emptyHint, st.emptyAction)
 	}
 	if st.canLoad() && (len(v.users) == 0 || st.list.AtEnd()) {
 		a.loadMoreUsers(st)

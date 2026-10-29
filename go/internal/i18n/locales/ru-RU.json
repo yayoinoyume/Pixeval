@@ -383,7 +383,11 @@
     "myPixiv": "Пользователи MyPixiv",
     "noMyPixiv": "Пользователей MyPixiv нет",
     "myPixivLoadFailed": "Не удалось загрузить пользователей MyPixiv: %s",
-    "noRecommendedUsers": "Рекомендуемых авторов пока нет"
+    "noRecommendedUsers": "Рекомендуемых авторов пока нет",
+    "myPixivEmptyHint": "Подпишитесь на авторов, и их новые работы появятся здесь",
+    "myPixivEmptyAction": "Найти работы",
+    "recommendedEmptyHint": "Pixiv рекомендует авторов по вашим подпискам и закладкам. Сначала найдите или добавьте в закладки несколько работ.",
+    "recommendedEmptyAction": "Найти авторов"
   },
   "recommendedUsers": {
     "title": "Рекомендуемые авторы"
