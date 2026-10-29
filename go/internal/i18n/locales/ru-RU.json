@@ -22,6 +22,16 @@
     "following": "Новое от подписок",
     "ranking": "Рейтинг"
   },
+  "ranking": {
+    "mode": "Режим рейтинга",
+    "day": "За день",
+    "week": "За неделю",
+    "month": "За месяц",
+    "dayMale": "За день (мужчины)",
+    "dayFemale": "За день (женщины)",
+    "weekOriginal": "Оригиналы за неделю",
+    "weekRookie": "Новички за неделю"
+  },
   "common": {
     "retry": "Повторить",
     "loading": "Загрузка…",
@@ -45,7 +55,15 @@
     "action": "Поиск",
     "illust": "Illustrations",
     "novel": "Novels",
-    "hint": "Введите ключевое слово для поиска"
+    "hint": "Введите ключевое слово для поиска",
+    "sort": "Сортировка",
+    "sortDateDesc": "Сначала новые",
+    "sortDateAsc": "Сначала старые",
+    "sortPopular": "По закладкам",
+    "target": "Совпадение",
+    "targetPartial": "Частичное совпадение тегов",
+    "targetExact": "Точное совпадение тегов",
+    "targetTitleCaption": "Название и описание"
   },
   "viewer": {
     "imageFailed": "Ошибка загрузки изображения",

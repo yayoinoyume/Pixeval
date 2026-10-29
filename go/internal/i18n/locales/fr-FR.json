@@ -22,6 +22,16 @@
     "following": "Suivis",
     "ranking": "Classement"
   },
+  "ranking": {
+    "mode": "Mode du classement",
+    "day": "Jour",
+    "week": "Semaine",
+    "month": "Mois",
+    "dayMale": "Jour (hommes)",
+    "dayFemale": "Jour (femmes)",
+    "weekOriginal": "Semaine originale",
+    "weekRookie": "Semaine des nouveaux"
+  },
   "common": {
     "retry": "Réessayer",
     "loading": "Chargement…",
@@ -45,7 +55,15 @@
     "action": "Rechercher",
     "illust": "Illustrations",
     "novel": "Novels",
-    "hint": "Saisissez un mot-clé pour lancer la recherche"
+    "hint": "Saisissez un mot-clé pour lancer la recherche",
+    "sort": "Trier par",
+    "sortDateDesc": "Plus récentes",
+    "sortDateAsc": "Plus anciennes",
+    "sortPopular": "Plus de favoris",
+    "target": "Correspondance",
+    "targetPartial": "Correspondance partielle des tags",
+    "targetExact": "Correspondance exacte des tags",
+    "targetTitleCaption": "Titre et légende"
   },
   "viewer": {
     "imageFailed": "Échec du chargement de l'image",

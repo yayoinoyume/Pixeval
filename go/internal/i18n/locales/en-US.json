@@ -22,6 +22,16 @@
     "following": "Following",
     "ranking": "Ranking"
   },
+  "ranking": {
+    "mode": "Ranking mode",
+    "day": "Daily",
+    "week": "Weekly",
+    "month": "Monthly",
+    "dayMale": "Daily (male)",
+    "dayFemale": "Daily (female)",
+    "weekOriginal": "Weekly original",
+    "weekRookie": "Weekly rookie"
+  },
   "common": {
     "retry": "Retry",
     "loading": "Loading…",
@@ -45,7 +55,15 @@
     "action": "Search",
     "illust": "Illustrations",
     "novel": "Novels",
-    "hint": "Type a keyword to search"
+    "hint": "Type a keyword to search",
+    "sort": "Sort by",
+    "sortDateDesc": "Newest first",
+    "sortDateAsc": "Oldest first",
+    "sortPopular": "Most bookmarked",
+    "target": "Match",
+    "targetPartial": "Partial tag match",
+    "targetExact": "Exact tag match",
+    "targetTitleCaption": "Title and caption"
   },
   "viewer": {
     "imageFailed": "Image failed to load",

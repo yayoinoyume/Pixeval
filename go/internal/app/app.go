@@ -62,12 +62,19 @@ type App struct {
 	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
 	// so switching tabs loses nothing.
 	homeFeeds [homeTabCount]*browseState
+	// rankMode is the ranking feed's period and audience, chosen on the home
+	// page's ranking tab.
+	rankMode pixiv.RankMode
 	// search is the last illustration search's results, and searchNovels the
 	// last novel search's. searchKind is which of the two the search page
 	// shows.
 	search       *browseState
 	searchNovels *novelFeedState
 	searchKind   int
+	// searchSort and searchTarget are the illustration search's order and
+	// match, chosen on the search page.
+	searchSort   string
+	searchTarget string
 	// settings are the user's preferences, loaded at start and saved from the
 	// settings page. shortcutsOpen shows the shortcut hint in its About card.
 	settings      *Settings
@@ -185,8 +192,11 @@ func New() *App {
 		route:            routeHome,
 		cardText:         60,
 		homeFeeds:        newHomeFeeds(),
+		rankMode:         pixiv.Day,
 		search:           &browseState{},
 		searchNovels:     &novelFeedState{},
+		searchSort:       searchSortDateDesc,
+		searchTarget:     searchTargetPartial,
 		updater:          mygoUpdater{},
 	}
 	// The check probes the install directory, so the settings page asks once.

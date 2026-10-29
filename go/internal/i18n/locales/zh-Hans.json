@@ -22,6 +22,16 @@
     "following": "关注",
     "ranking": "排行"
   },
+  "ranking": {
+    "mode": "排行模式",
+    "day": "日榜",
+    "week": "周榜",
+    "month": "月榜",
+    "dayMale": "男性向日榜",
+    "dayFemale": "女性向日榜",
+    "weekOriginal": "原创周榜",
+    "weekRookie": "新人周榜"
+  },
   "common": {
     "retry": "重试",
     "loading": "加载中…",
@@ -45,7 +55,15 @@
     "action": "搜索",
     "illust": "插画",
     "novel": "小说",
-    "hint": "输入关键词开始搜索"
+    "hint": "输入关键词开始搜索",
+    "sort": "排序",
+    "sortDateDesc": "按时间（新到旧）",
+    "sortDateAsc": "按时间（旧到新）",
+    "sortPopular": "按收藏数",
+    "target": "匹配方式",
+    "targetPartial": "标签部分匹配",
+    "targetExact": "标签完全匹配",
+    "targetTitleCaption": "标题与简介"
   },
   "viewer": {
     "imageFailed": "图片加载失败",
