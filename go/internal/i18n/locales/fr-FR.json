@@ -31,9 +31,23 @@
     "groupLibrary": "Bibliothèque"
   },
   "home": {
-    "recommended": "Recommandés",
-    "following": "Suivis",
-    "ranking": "Classement"
+    "edit": "Modifier les cartes",
+    "editDone": "Terminé",
+    "addCard": "Ajouter une carte",
+    "removeCard": "Retirer la carte",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "resetCards": "Réinitialiser",
+    "viewAll": "Tout voir",
+    "cardsEmpty": "Rien pour le moment",
+    "cardsEmptyHint": "Revenez plus tard ou réessayez.",
+    "lastCard": "Gardez au moins une carte",
+    "source.recommended": "Recommandés",
+    "source.following": "Suivis",
+    "source.ranking": "Classement",
+    "source.new": "Nouveautés",
+    "source.myPixiv": "Amis MyPixiv",
+    "source.bookmarks": "Favoris"
   },
   "ranking": {
     "mode": "Mode du classement",

@@ -95,44 +95,32 @@ func TestBrowseCardLabels(t *testing.T) {
 	}
 }
 
-// TestHomeTabsKeyboard checks the home tab line is one stop of Tab and takes
-// the keys of a tab list: the arrows and Home/End move the choice, and the
-// focus follows it.
-func TestHomeTabsKeyboard(t *testing.T) {
-	a := New()
+// TestHomeCardTitlesAreNotTabs checks the home page no longer offers a tab
+// line: the card titles are names, not tab stops, and Tab reaches the cards'
+// View all actions instead.
+func TestHomeCardTitlesAreNotTabs(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
 	tt := ui.NewTester(a.View, 1000, 700)
-	// The navigation and the sign-in button come first; the tab line is one
-	// stop, on the tab chosen.
+	tt.Frame()
+	viewAll := a.t("home.viewAll") + " · " + a.homeCardTitle(a.homeCards[0])
 	reached := false
-	for i := 0; i < 16 && !reached; i++ {
+	for i := 0; i < 40 && !reached; i++ {
 		tt.Key(0, ui.KeyTab)
-		reached = tt.Focused("推荐")
+		for _, title := range []string{
+			a.homeCardTitle(a.homeCards[0]),
+			a.homeCardTitle(a.homeCards[1]),
+			a.homeCardTitle(a.homeCards[2]),
+		} {
+			if tt.Focused(title) {
+				t.Fatalf("the card title %q took the focus as a tab did", title)
+			}
+		}
+		reached = tt.Focused(viewAll)
 	}
 	if !reached {
-		t.Fatalf("Tab never reached the chosen tab: %q", tt.Texts())
-	}
-	if tt.Focused("关注") {
-		t.Fatalf("an unchosen tab took the focus: %q", tt.Texts())
-	}
-
-	tt.Key(0, ui.KeyRight)
-	if a.homeTab != 1 {
-		t.Fatalf("homeTab %d after the right key, want 1", a.homeTab)
-	}
-	if !tt.Focused("关注") {
-		t.Errorf("the focus did not follow the choice: %q", tt.Texts())
-	}
-
-	tt.Key(0, ui.KeyEnd)
-	if a.homeTab != homeTabRanking {
-		t.Fatalf("homeTab %d after End, want %d", a.homeTab, homeTabRanking)
-	}
-	tt.Key(0, ui.KeyHome)
-	if a.homeTab != 0 {
-		t.Fatalf("homeTab %d after Home, want 0", a.homeTab)
-	}
-	tt.Key(0, ui.KeyLeft)
-	if a.homeTab != homeTabRanking {
-		t.Fatalf("homeTab %d after the left key from the first, want %d", a.homeTab, homeTabRanking)
+		t.Fatalf("Tab never reached %q: %q", viewAll, tt.Texts())
 	}
 }

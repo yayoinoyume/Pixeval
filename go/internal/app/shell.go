@@ -24,6 +24,7 @@ type route string
 
 const (
 	routeHome             route = "home"
+	routeFeed             route = "feed"
 	routeNew              route = "new"
 	routeMyPixiv          route = "mypixiv"
 	routeRecommendedUsers route = "recommendedUsers"
@@ -50,9 +51,15 @@ const (
 	routeExtensions       route = "extensions"
 )
 
-// routeLabel is the navigation label of the page.
+// routeLabel is the navigation label of the page; the full home feed names
+// its source instead.
 func (a *App) routeLabel(r route) string {
 	switch r {
+	case routeFeed:
+		if a.feed != nil {
+			return a.homeSourceLabel(a.feed.card.Source)
+		}
+		return a.t("nav.home")
 	case routeRelated:
 		return a.t("related.title")
 	case routeSeriesList:
@@ -159,8 +166,8 @@ func (a *App) escape() {
 		return
 	}
 	switch a.route {
-	case routeUser, routeSeries, routeNovel, routeRelated, routeUserRelated,
-		routeUserMyPixiv, routeHelp, routeAbout, routeExtensions:
+	case routeFeed, routeUser, routeSeries, routeNovel, routeRelated,
+		routeUserRelated, routeUserMyPixiv, routeHelp, routeAbout, routeExtensions:
 		a.goBack()
 	}
 }
@@ -357,9 +364,10 @@ func (a *App) header(c *ui.Context) {
 	t := themeOf(c)
 	ui.Row(c).Height(84).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-		if a.route == routeUser || a.route == routeSeries || a.route == routeRelated ||
-			a.route == routeUserRelated || a.route == routeUserMyPixiv ||
-			a.route == routeHelp || a.route == routeAbout || a.route == routeExtensions {
+		if a.route == routeFeed || a.route == routeUser || a.route == routeSeries ||
+			a.route == routeRelated || a.route == routeUserRelated ||
+			a.route == routeUserMyPixiv || a.route == routeHelp ||
+			a.route == routeAbout || a.route == routeExtensions {
 			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
@@ -527,6 +535,8 @@ func (a *App) page(c *ui.Context) {
 	switch a.route {
 	case routeHome:
 		a.homePage(c)
+	case routeFeed:
+		a.feedPage(c)
 	case routeNew:
 		a.newPage(c)
 	case routeMyPixiv:
@@ -586,6 +596,12 @@ func (a *App) page(c *ui.Context) {
 // goBack leaves a user, series or related page for the viewer or page it was
 // opened from.
 func (a *App) goBack() {
+	if a.route == routeFeed {
+		// The full feed is a page of its own; the home cards keep their place.
+		a.feed = nil
+		a.route = routeHome
+		return
+	}
 	if a.route == routeUserRelated && a.relatedUsers != nil {
 		// The user page behind the list comes back whole, with its tabs and
 		// place, and its own way back.
@@ -693,33 +709,6 @@ func textTabs(c *ui.Context, t tokens, selected *int, labels ...string) bool {
 		}
 	})
 	return tabs.List.Changed()
-}
-
-// homePage draws the home tabs above the feed of the one chosen. Pixiv's
-// recommendation also needs a token, so every tab asks a signed-out user to
-// sign in instead of fetching.
-func (a *App) homePage(c *ui.Context) {
-	t := themeOf(c)
-	ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
-		if textTabs(c, t, &a.homeTab, a.t("home.recommended"), a.t("home.following"), a.t("home.ranking")) {
-			a.armHome(a.homeTab)
-		}
-	})
-	if a.session == nil {
-		a.loginPrompt(c)
-		return
-	}
-	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		if a.homeTab == homeTabRanking {
-			ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Children(func() {
-				mode := a.rankModeLabel(a.rankMode)
-				if ui.Select(c, &mode, a.rankModeChoices()).Width(200).Height(36).Label(a.t("ranking.mode")).Changed() {
-					a.setRankMode(a.rankModeValue(mode))
-				}
-			})
-		}
-		a.browsePage(c, a.homeFeeds[a.homeTab])
-	})
 }
 
 // sauceSearchTimeout bounds one reverse image search.

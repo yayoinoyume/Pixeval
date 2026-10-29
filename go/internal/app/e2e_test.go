@@ -236,15 +236,15 @@ func TestE2E(t *testing.T) {
 	// a. The home feed loads from the fake API as the browse page draws it.
 	tt := ui.NewTester(func(c *ui.Context) {
 		ui.Column(c).Fill().Children(func() {
-			a.browsePage(c, a.homeFeeds[0])
+			a.browsePage(c, a.homeCards[0].feed)
 		})
 	}, 1000, 700)
-	waitE2EFeed(t, a.homeFeeds[0])
+	waitE2EFeed(t, a.homeCards[0].feed)
 	tt.Frame()
 	if !tt.HasText(e2eTitle) {
 		t.Fatalf("首页没有显示标题 %q: %q", e2eTitle, tt.Texts())
 	}
-	work := a.homeFeeds[0].snapshot().items[0]
+	work := a.homeCards[0].feed.snapshot().items[0]
 
 	ctx, cancel := context.WithTimeout(context.Background(), e2eTimeout)
 	defer cancel()

@@ -250,7 +250,10 @@ func (a *App) blockedTagsSnapshot() []BlockedTag {
 // feeds loaded already, so a block takes effect on the current page at once.
 func (a *App) removeBlockedTagsFromLists() {
 	feeds := []*browseState{a.newFeed, a.myPixivFeed, a.search, a.bookmarks}
-	feeds = append(feeds, a.homeFeeds[:]...)
+	feeds = append(feeds, a.homeCardFeeds()...)
+	if a.feed != nil {
+		feeds = append(feeds, a.feed.st)
+	}
 	if a.related != nil {
 		feeds = append(feeds, a.related.feed)
 	}

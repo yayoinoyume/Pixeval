@@ -31,9 +31,23 @@
     "groupLibrary": "Библиотека"
   },
   "home": {
-    "recommended": "Рекомендации",
-    "following": "Новое от подписок",
-    "ranking": "Рейтинг"
+    "edit": "Изменить карточки",
+    "editDone": "Готово",
+    "addCard": "Добавить карточку",
+    "removeCard": "Удалить карточку",
+    "moveUp": "Вверх",
+    "moveDown": "Вниз",
+    "resetCards": "Сбросить",
+    "viewAll": "Все",
+    "cardsEmpty": "Пока ничего нет",
+    "cardsEmptyHint": "Загляните позже или попробуйте ещё раз.",
+    "lastCard": "Оставьте хотя бы одну карточку",
+    "source.recommended": "Рекомендации",
+    "source.following": "Подписки",
+    "source.ranking": "Рейтинг",
+    "source.new": "Новые",
+    "source.myPixiv": "Друзья MyPixiv",
+    "source.bookmarks": "Закладки"
   },
   "ranking": {
     "mode": "Режим рейтинга",
