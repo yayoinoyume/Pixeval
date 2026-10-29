@@ -80,7 +80,7 @@ func (c *Client) NextRecommendedUsers(ctx context.Context, nextURL string) (*Pag
 // RelatedUsers lists the users Pixiv lists beside userID.
 func (c *Client) RelatedUsers(ctx context.Context, userID int64) (*Page[UserPreview], error) {
 	q := url.Values{}
-	q.Set("user_id", strconv.FormatInt(userID, 10))
+	q.Set("seed_user_id", strconv.FormatInt(userID, 10))
 	c.setFilter(q)
 	return c.userPreviewPage(ctx, c.pageURL("/v1/user/related", q))
 }

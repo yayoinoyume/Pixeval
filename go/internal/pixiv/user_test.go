@@ -505,7 +505,7 @@ func TestRecommendedUsersPagingPassesNextURL(t *testing.T) {
 
 const relatedUsersBody = `{"user_previews":[{"user":{"id":9,"name":"相似九",` +
 	`"account":"similar9"},"illusts":[{"id":7,"title":"work"}]}],` +
-	`"next_url":"https://app-api.pixiv.net/v1/user/related?user_id=42&offset=30"}`
+	`"next_url":"https://app-api.pixiv.net/v1/user/related?seed_user_id=42&offset=30"}`
 
 func TestRelatedUsersRequestsUserAndFilter(t *testing.T) {
 	var got recordedRequest
@@ -521,8 +521,11 @@ func TestRelatedUsersRequestsUserAndFilter(t *testing.T) {
 	if got.path != "/v1/user/related" {
 		t.Errorf("path = %q", got.path)
 	}
-	if q := got.query; q.Get("user_id") != "42" || q.Get("filter") != "for_android" {
+	if q := got.query; q.Get("seed_user_id") != "42" || q.Get("filter") != "for_android" {
 		t.Errorf("query = %v", q)
+	}
+	if got.query.Has("user_id") {
+		t.Errorf("query still sends user_id: %v", got.query)
 	}
 	if len(page.Items) != 1 {
 		t.Fatalf("items = %+v, want one user", page.Items)
@@ -542,9 +545,9 @@ func TestRelatedUsersPagingPassesNextURL(t *testing.T) {
 	var ids []string
 	c := newWriteClient(t, func(w http.ResponseWriter, r *http.Request) {
 		paths = append(paths, r.URL.Path)
-		ids = append(ids, r.URL.Query().Get("user_id"))
+		ids = append(ids, r.URL.Query().Get("seed_user_id"))
 		io.WriteString(w, `{"user_previews":[],"next_url":"http://`+r.Host+
-			`/v1/user/related?user_id=42&offset=30"}`)
+			`/v1/user/related?seed_user_id=42&offset=30"}`)
 	})
 	ctx := context.Background()
 
