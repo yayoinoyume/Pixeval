@@ -47,6 +47,7 @@ type Backend interface {
 	UserIllusts(ctx context.Context, id int64, kind string) ([]pixiv.Illustration, error)
 	UserBookmarks(ctx context.Context, userID int64, private bool) ([]pixiv.Illustration, error)
 	SearchNovels(ctx context.Context, word string) ([]pixiv.Novel, error)
+	NovelComments(ctx context.Context, novelID int64) ([]pixiv.Comment, error)
 	WatchLater(ctx context.Context) ([]SavedWork, error)
 	DownloadHistory(ctx context.Context) ([]DownloadedWork, error)
 	Subscriptions(ctx context.Context) ([]SubscriptionInfo, error)

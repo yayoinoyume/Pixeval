@@ -835,6 +835,19 @@ func (a *App) SearchNovels(ctx context.Context, word string) ([]pixiv.Novel, err
 	return page.Items, nil
 }
 
+// NovelComments returns the first page of comments on a novel; the MCP novel
+// comments tool.
+func (a *App) NovelComments(ctx context.Context, novelID int64) ([]pixiv.Comment, error) {
+	if a.fetchNovelCommentPage == nil {
+		return nil, errors.New("novel comments are unavailable")
+	}
+	page, err := a.fetchNovelCommentPage(ctx, novelID, 0)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
 // WatchLater returns the works saved for later; the MCP watch later tool.
 func (a *App) WatchLater(_ context.Context) ([]mcp.SavedWork, error) {
 	if a.watchLater == nil {
