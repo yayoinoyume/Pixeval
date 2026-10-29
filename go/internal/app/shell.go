@@ -228,12 +228,25 @@ func (a *App) header(c *ui.Context) {
 	})
 }
 
+// accountMenuState is the header account menu's state: whether its panel is
+// open and the avatars that failed to load. The app runs one window, so one
+// menu is open at a time; a changed session closes it.
+var accountMenuState struct {
+	open   bool
+	userID int64
+	failed map[string]bool
+}
+
 // accountMenu is the signed-in account area: a quiet way out and the account
-// pill, whose menu lists the saved accounts with the current one checked,
-// adds one, and signs out.
+// pill, whose panel lists the saved accounts with their avatars, adds one,
+// removes any but the one in use, and signs out.
 func (a *App) accountMenu(c *ui.Context) {
 	t := themeOf(c)
 	name := a.userName()
+	if accountMenuState.userID != a.accounts.ActiveID() {
+		accountMenuState.open = false
+		accountMenuState.userID = a.accounts.ActiveID()
+	}
 	ui.Row(c).Height(36).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 		// Sign out comes before the pill, so the pill stays the last stop the
 		// keyboard reaches in the header.
@@ -249,21 +262,103 @@ func (a *App) accountMenu(c *ui.Context) {
 			})
 			ui.Text(c, name).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text).MaxLines(1)
 		})
-		b.Menu(func(m *ui.Menu) {
-			active := a.accounts.ActiveID()
-			for _, acc := range a.accounts.Snapshot() {
-				if m.Item(accountLabel(acc)).Checked(acc.UserID == active).Chosen() {
-					a.switchAccount(acc.UserID)
+		if b.Clicked() {
+			accountMenuState.open = !accountMenuState.open
+		}
+		ui.Popover(c, b, &accountMenuState.open, func() {
+			a.accountMenuPanel(c)
+		})
+	})
+}
+
+// accountMenuPanel is the account pill's panel: one row per saved account, a
+// rule, then the way to add one and to sign out.
+func (a *App) accountMenuPanel(c *ui.Context) {
+	t := themeOf(c)
+	active := a.accounts.ActiveID()
+	ui.Column(c).MinWidth(250).Gap(t.SpaceXS).Children(func() {
+		for _, acc := range a.accounts.Snapshot() {
+			a.accountMenuRow(c, t, acc, acc.UserID == active)
+		}
+		ui.Box(c).Height(1).Margin(t.SpaceXS, 0).Background(t.Border)
+		a.accountMenuAction(c, t, a.t("account.add"), func() {
+			accountMenuState.open = false
+			a.ShowLogin()
+		})
+		a.accountMenuAction(c, t, a.t("nav.logout"), func() {
+			accountMenuState.open = false
+			a.logout()
+		})
+	})
+}
+
+// accountMenuRow draws one saved account: its avatar, name and account handle,
+// a check on the one in use, and a way to remove any other. The row switches
+// to its account, or closes the panel when it already is that account.
+func (a *App) accountMenuRow(c *ui.Context, t tokens, acc Account, active bool) {
+	label := accountLabel(acc)
+	ui.Row(c).FillWidth().Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
+		row := ui.ButtonBase(c).Grow(1).Height(44).Radius(t.RadiusS).
+			Padding(t.SpaceXS, t.SpaceS).Gap(t.SpaceS).Row().AlignItems(ui.Center).
+			Label(label)
+		if row.Hovered() {
+			row = row.Background(t.SurfaceAlt)
+		}
+		if active {
+			row.Label(a.tf("account.current", label)).OnClick(func() {
+				accountMenuState.open = false
+			})
+		} else {
+			row.OnClick(func() {
+				accountMenuState.open = false
+				a.switchAccount(acc.UserID)
+			})
+		}
+		row.Children(func() {
+			a.avatar(c, 28, acc.AvatarURL, label, accountMenuState.failed[acc.AvatarURL], func() {
+				if accountMenuState.failed == nil {
+					accountMenuState.failed = map[string]bool{}
 				}
-			}
-			m.Separator()
-			if m.Item(a.t("account.add")).Chosen() {
-				a.ShowLogin()
-			}
-			if m.Item(a.t("nav.logout")).Chosen() {
-				a.logout()
+				accountMenuState.failed[acc.AvatarURL] = true
+			})
+			ui.Column(c).Grow(1).Gap(1).MinWidth(0).Children(func() {
+				ui.Text(c, label).FontSize(t.TextSmall).FontWeight(600).TextColor(t.Text).MaxLines(1)
+				if acc.Account != "" {
+					ui.Text(c, "@"+acc.Account).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
+				}
+			})
+			if active {
+				ui.Text(c, "✓").FontSize(t.TextSmall).TextColor(t.Accent)
 			}
 		})
+		if active {
+			return
+		}
+		removeLabel := a.tf("account.delete", label)
+		remove := ui.ButtonBase(c).Height(28).Radius(t.RadiusXS).Padding(0, t.SpaceS).
+			Label(removeLabel).OnClick(func() { a.deleteAccount(acc.UserID) })
+		fg := t.TextMuted
+		if remove.Hovered() {
+			fg = t.Danger
+			remove = remove.Background(t.SurfaceAlt)
+		}
+		remove.Children(func() {
+			ui.Text(c, removeLabel).FontSize(t.TextMicro).TextColor(fg)
+		})
+	})
+}
+
+// accountMenuAction draws one full-width action at the foot of the account
+// panel, as Add account and Sign out are.
+func (a *App) accountMenuAction(c *ui.Context, t tokens, label string, do func()) {
+	b := ui.ButtonBase(c).FillWidth().Height(32).Radius(t.RadiusS).
+		Padding(0, t.SpaceS).Gap(t.SpaceS).Row().AlignItems(ui.Center).
+		Label(label).OnClick(do)
+	if b.Hovered() {
+		b = b.Background(t.SurfaceAlt)
+	}
+	b.Children(func() {
+		ui.Text(c, label).FontSize(t.TextSmall).TextColor(t.Text)
 	})
 }
 

@@ -382,6 +382,8 @@
     "switch": "Switch account",
     "add": "Add account",
     "current": "Current account: %s",
+    "delete": "Remove %s",
+    "deleted": "Removed account %s",
     "switchFailed": "Could not switch account; the current one is kept"
   }
 }

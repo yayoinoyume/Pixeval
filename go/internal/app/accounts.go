@@ -19,11 +19,12 @@ const accountLimit = 10
 // Account is one saved sign-in. Token keeps its credentials, so a switch does
 // not ask for the password again.
 type Account struct {
-	UserID   int64       `json:"userId"`
-	Name     string      `json:"name"`
-	Account  string      `json:"account"`
-	Token    pixiv.Token `json:"token"`
-	LastUsed time.Time   `json:"lastUsed"`
+	UserID    int64       `json:"userId"`
+	Name      string      `json:"name"`
+	Account   string      `json:"account"`
+	AvatarURL string      `json:"avatarUrl"`
+	Token     pixiv.Token `json:"token"`
+	LastUsed  time.Time   `json:"lastUsed"`
 }
 
 // Accounts are the saved sign-ins and the one in use. The view reads it on the
@@ -122,6 +123,12 @@ func (as *Accounts) Save(path string) error {
 	if err != nil {
 		return err
 	}
+	return writeAccounts(path, data)
+}
+
+// writeAccounts replaces path with data in one step, readable by the user
+// alone, so a crash cannot leave a half written accounts file.
+func writeAccounts(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
@@ -134,6 +141,38 @@ func (as *Accounts) Save(path string) error {
 		return err
 	}
 	return nil
+}
+
+// Remove drops userID's saved account and writes the list at path. The account
+// in use is not removable: the session belongs to it. A write that fails
+// leaves the list as it was, so the file and the view agree.
+func (as *Accounts) Remove(path string, userID int64) (Account, bool, error) {
+	as.mu.Lock()
+	defer as.mu.Unlock()
+	if userID == as.ActiveUserID {
+		return Account{}, false, nil
+	}
+	idx := -1
+	for i := range as.Saved {
+		if as.Saved[i].UserID == userID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return Account{}, false, nil
+	}
+	removed := as.Saved[idx]
+	saved := append(append([]Account(nil), as.Saved[:idx]...), as.Saved[idx+1:]...)
+	data, err := json.MarshalIndent(&Accounts{ActiveUserID: as.ActiveUserID, Saved: saved}, "", "  ")
+	if err != nil {
+		return Account{}, false, err
+	}
+	if err := writeAccounts(path, data); err != nil {
+		return Account{}, false, err
+	}
+	as.Saved = saved
+	return removed, true, nil
 }
 
 // Snapshot is the saved accounts, newest first.
@@ -173,11 +212,12 @@ func (as *Accounts) Upsert(t *pixiv.Token, now time.Time) {
 	defer as.mu.Unlock()
 	saved := make([]Account, 0, len(as.Saved)+1)
 	saved = append(saved, Account{
-		UserID:   userID,
-		Name:     t.User.Name,
-		Account:  t.User.Account,
-		Token:    *t,
-		LastUsed: now,
+		UserID:    userID,
+		Name:      t.User.Name,
+		Account:   t.User.Account,
+		AvatarURL: t.User.ProfileImageUrls.Px50x50,
+		Token:     *t,
+		LastUsed:  now,
 	})
 	for _, old := range as.Saved {
 		if old.UserID != userID {
@@ -188,6 +228,25 @@ func (as *Accounts) Upsert(t *pixiv.Token, now time.Time) {
 		saved = saved[:accountLimit]
 	}
 	as.Saved, as.ActiveUserID = saved, userID
+}
+
+// deleteAccount removes userID's saved account and writes the list. The
+// account in use stays: this round has no way to sign out by deleting it.
+func (a *App) deleteAccount(userID int64) {
+	path, err := accountsPath()
+	if err != nil {
+		log.Printf("accounts: delete: %v", err)
+		return
+	}
+	removed, ok, err := a.accounts.Remove(path, userID)
+	if err != nil {
+		log.Printf("accounts: delete: %v", err)
+		return
+	}
+	if !ok {
+		return
+	}
+	a.notice = a.tf("account.deleted", accountLabel(removed))
 }
 
 // rememberAccount adds tok's account to the saved list and makes it active.
