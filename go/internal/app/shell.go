@@ -27,6 +27,9 @@ const (
 	routeNew              route = "new"
 	routeMyPixiv          route = "mypixiv"
 	routeRecommendedUsers route = "recommendedUsers"
+	routeMyFollowing      route = "myFollowing"
+	routeMyFollowers      route = "myFollowers"
+	routeMyPixivUsers     route = "myPixivUsers"
 	routeSearch           route = "search"
 	routeSpotlight        route = "spotlight"
 	routeSubs             route = "subscriptions"
@@ -89,7 +92,9 @@ type navGroup struct {
 // that stand alone.
 var navGroups = []navGroup{
 	{id: "works", glyph: iconImage, routes: []route{routeNew, routeSeriesList, routeMyPixiv, routeSpotlight, routeSubs}},
-	{id: "users", glyph: iconUser, routes: []route{routeRecommendedUsers}},
+	{id: "users", glyph: iconUser, routes: []route{
+		routeRecommendedUsers, routeMyFollowing, routeMyFollowers, routeMyPixivUsers,
+	}},
 	{id: "library", glyph: iconSeries, routes: []route{routeHistory, routeDownloads, routeWatchLater}},
 }
 
@@ -527,6 +532,12 @@ func (a *App) page(c *ui.Context) {
 		a.myPixivPage(c)
 	case routeRecommendedUsers:
 		a.recommendedUsersPage(c)
+	case routeMyFollowing:
+		a.myFollowingPage(c)
+	case routeMyFollowers:
+		a.myFollowersPage(c)
+	case routeMyPixivUsers:
+		a.myPixivUsersListPage(c)
 	case routeSearch:
 		a.searchPage(c)
 	case routeSpotlight:
