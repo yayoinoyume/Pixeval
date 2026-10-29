@@ -124,7 +124,7 @@ func (c *Client) SearchIllustrations(ctx context.Context, opts SearchOptions) (*
 func (c *Client) Illustration(ctx context.Context, id int64) (*Illustration, error) {
 	q := url.Values{}
 	q.Set("illust_id", strconv.FormatInt(id, 10))
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	var r struct {
 		Illust Illustration `json:"illust"`
 	}

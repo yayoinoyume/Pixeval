@@ -10,14 +10,14 @@ import (
 func (c *Client) SeriesWorks(ctx context.Context, seriesID int64) (*SeriesPage, error) {
 	q := url.Values{}
 	q.Set("illust_series_id", strconv.FormatInt(seriesID, 10))
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.seriesPage(ctx, c.pageURL("/v1/illust/series", q))
 }
 
 // SeriesDetail fetches a series and its works by ID.
 func (c *Client) SeriesDetail(ctx context.Context, seriesID int64) (*SeriesPage, error) {
 	q := url.Values{}
-	q.Set("filter", "for_android")
+	c.setFilter(q)
 	return c.seriesPage(ctx, c.pageURL("/v1/illust/series/"+strconv.FormatInt(seriesID, 10), q))
 }
 
