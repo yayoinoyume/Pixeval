@@ -18,6 +18,64 @@ import (
 
 const imageReferer = "https://www.pixiv.net"
 
+// The hosts domain fronting can redirect, and the IP lists the original
+// Pixeval ships with.
+const (
+	pixivAppAPIHost = "app-api.pixiv.net"
+	pixivImageHost  = "i.pximg.net"
+	pixivOAuthHost  = "oauth.secure.pixiv.net"
+)
+
+// DefaultAppAPIResolver is the app API IP list used when the setting is empty.
+func DefaultAppAPIResolver() []string { return []string{"104.18.42.239", "172.64.145.17"} }
+
+// DefaultImageResolver is the image IP list used when the setting is empty.
+func DefaultImageResolver() []string {
+	return []string{"210.140.139.134", "210.140.139.135", "210.140.139.136", "210.140.139.137"}
+}
+
+// DefaultOAuthResolver is the OAuth IP list used when the setting is empty.
+func DefaultOAuthResolver() []string { return []string{"104.18.42.239", "172.64.145.17"} }
+
+// domainFrontingConfig is one immutable fronting setting plus the round robin
+// position. SetDomainFronting replaces the whole pointer, so a request never
+// reads a half changed list.
+type domainFrontingConfig struct {
+	enabled bool
+	app     []string
+	image   []string
+	oauth   []string
+	next    atomic.Uint64
+}
+
+// hostIPs returns the IP list for host, or nil when fronting leaves it alone.
+func (c *domainFrontingConfig) hostIPs(host string) []string {
+	switch strings.ToLower(strings.TrimSuffix(host, ".")) {
+	case pixivAppAPIHost:
+		return c.app
+	case pixivImageHost:
+		return c.image
+	case pixivOAuthHost:
+		return c.oauth
+	default:
+		return nil
+	}
+}
+
+// frontedAddress picks the address to dial for host:port, or false when the
+// host is not fronted. n selects the list entry, so the caller can round robin
+// and a test can ask for a position without a network.
+func frontedAddress(host, port string, cfg *domainFrontingConfig, n uint64) (string, bool) {
+	if cfg == nil || !cfg.enabled {
+		return "", false
+	}
+	ips := cfg.hostIPs(host)
+	if len(ips) == 0 {
+		return "", false
+	}
+	return net.JoinHostPort(ips[n%uint64(len(ips))], port), true
+}
+
 // Client talks to the Pixiv app API. Requests are serialized with a minimum
 // interval, and a 429 pauses every request until Retry-After.
 type Client struct {
@@ -35,25 +93,34 @@ type Client struct {
 	// while requests are in flight.
 	proxy atomic.Value
 
+	// dialer is the transport's dialer. fronting is the domain fronting setting
+	// it consults; mirror is the image mirror's scheme and host, empty when off.
+	dialer   *net.Dialer
+	fronting atomic.Pointer[domainFrontingConfig]
+	mirror   atomic.Value
+
 	// AllowR18 asks Pixiv for every work instead of filtering R18 out. It is
 	// set through SetAllowR18 and read through filterParam, both under mu.
 	AllowR18 bool
 }
 
 func NewClient() *Client {
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	c := &Client{
 		baseURL:  appBaseURL,
 		cooldown: 700 * time.Millisecond,
 		backoff:  []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second},
+		dialer:   dialer,
 	}
 	c.proxy.Store(http.ProxyFromEnvironment)
+	c.mirror.Store("")
 	c.hc = &http.Client{
 		Timeout: 100 * time.Second,
 		// A feed loads six covers at once; the default pool of two idle
 		// connections per host would redo TLS for the rest of every batch.
 		Transport: &http.Transport{
 			Proxy:                 c.proxyFor,
-			DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			DialContext:           c.dialContext,
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          16,
 			MaxIdleConnsPerHost:   8,
@@ -95,6 +162,90 @@ func (c *Client) SetProxy(raw string) error {
 	}
 	c.proxy.Store(proxy)
 	return nil
+}
+
+// SetDomainFronting makes the shared transport dial Pixiv's app API, image and
+// OAuth hosts at the given IPs, round robin, while Host and TLS SNI stay the
+// real names. This is IP resolution, not TLS fragmentation. A proxy set with
+// SetProxy wins: the transport then dials the proxy, so no fronted address is
+// used. Empty lists fall back to the defaults the original Pixeval ships.
+func (c *Client) SetDomainFronting(enabled bool, appIPs, imageIPs, oauthIPs []string) {
+	c.fronting.Store(&domainFrontingConfig{
+		enabled: enabled,
+		app:     resolverIPs(appIPs, DefaultAppAPIResolver()),
+		image:   resolverIPs(imageIPs, DefaultImageResolver()),
+		oauth:   resolverIPs(oauthIPs, DefaultOAuthResolver()),
+	})
+}
+
+// resolverIPs keeps the valid IPs and their order, and falls back to fallback
+// when none are left.
+func resolverIPs(ips, fallback []string) []string {
+	out := make([]string, 0, len(ips))
+	seen := make(map[string]bool, len(ips))
+	for _, raw := range ips {
+		raw = strings.TrimSpace(raw)
+		if net.ParseIP(raw) == nil || seen[raw] {
+			continue
+		}
+		seen[raw] = true
+		out = append(out, raw)
+	}
+	if len(out) == 0 {
+		return append([]string(nil), fallback...)
+	}
+	return out
+}
+
+// dialContext dials the fronted address when the setting covers the host, and
+// the original address otherwise. The transport keeps the request's host for
+// the Host header and TLS SNI.
+func (c *Client) dialContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	dialAddr := addr
+	if cfg := c.fronting.Load(); cfg != nil {
+		if host, port, err := net.SplitHostPort(addr); err == nil {
+			if fronted, ok := frontedAddress(host, port, cfg, cfg.next.Add(1)-1); ok {
+				dialAddr = fronted
+			}
+		}
+	}
+	return c.dialer.DialContext(ctx, network, dialAddr)
+}
+
+// SetImageMirror makes GetImage fetch i.pximg.net images from the mirror's
+// scheme and host, keeping the path and query. Empty, or a URL the app cannot
+// use, turns the mirror off.
+func (c *Client) SetImageMirror(raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		c.mirror.Store("")
+		return
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		c.mirror.Store("")
+		return
+	}
+	c.mirror.Store(u.Scheme + "://" + u.Host)
+}
+
+// imageURL applies the image mirror to an i.pximg.net URL.
+func (c *Client) imageURL(raw string) string {
+	base, _ := c.mirror.Load().(string)
+	if base == "" {
+		return raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || !strings.EqualFold(strings.TrimSuffix(u.Hostname(), "."), pixivImageHost) {
+		return raw
+	}
+	m, err := url.Parse(base)
+	if err != nil || m.Host == "" {
+		return raw
+	}
+	u.Scheme = m.Scheme
+	u.Host = m.Host
+	return u.String()
 }
 
 // SetToken replaces the session token.
@@ -312,6 +463,7 @@ func retryAfter(resp *http.Response) time.Duration {
 
 // GetImage downloads an illustration image with the Referer the CDN needs.
 func (c *Client) GetImage(ctx context.Context, imageURL string) ([]byte, error) {
+	imageURL = c.imageURL(imageURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
 	if err != nil {
 		return nil, err

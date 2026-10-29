@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -19,8 +21,95 @@ import (
 )
 
 // loginHTTP is the client of the login exchange. It has its own timeout so a
-// stuck request cannot hold the login window.
-var loginHTTP = &http.Client{Timeout: 30 * time.Second}
+// stuck request cannot hold the login window, and it follows the saved proxy
+// through loginProxy, which is swapped atomically.
+var (
+	loginProxy atomic.Value
+	loginHTTP  = newLoginHTTP()
+)
+
+func newLoginHTTP() *http.Client {
+	loginProxy.Store(http.ProxyFromEnvironment)
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.Proxy = func(req *http.Request) (*url.URL, error) {
+		return loginProxy.Load().(func(*http.Request) (*url.URL, error))(req)
+	}
+	return &http.Client{Timeout: 30 * time.Second, Transport: tr}
+}
+
+// setLoginProxy points the login exchange at raw, or back at the environment's
+// proxy when raw is empty. A URL the transport cannot dial is rejected and the
+// current proxy stays.
+func setLoginProxy(raw string) error {
+	proxy := http.ProxyFromEnvironment
+	if raw = strings.TrimSpace(raw); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return fmt.Errorf("proxy: %w", err)
+		}
+		switch u.Scheme {
+		case "http", "https", "socks5":
+		default:
+			return fmt.Errorf("proxy: unsupported scheme %q", u.Scheme)
+		}
+		if u.Host == "" {
+			return errors.New("proxy: missing host")
+		}
+		proxy = http.ProxyURL(u)
+	}
+	loginProxy.Store(proxy)
+	return nil
+}
+
+// webViewProxyEnv remembers the process's proxy variables before the login
+// window first changes them, so clearing the proxy restores the user's values.
+var webViewProxyEnv = struct {
+	sync.Mutex
+	saved  bool
+	values map[string]proxyEnvValue
+}{values: map[string]proxyEnvValue{}}
+
+type proxyEnvValue struct {
+	value string
+	set   bool
+}
+
+// WebKitGTK reads the proxy from the process environment when it creates the
+// login page's network session. Both cases are set because libsoup reads the
+// lower case names. A window that is already open keeps the proxy it started
+// with; a save applies to the next one.
+var webViewProxyVars = []string{"HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"}
+
+// applyWebViewProxy sets the login window's proxy environment, or restores the
+// values captured before the first change when raw is empty.
+func applyWebViewProxy(raw string) {
+	raw = strings.TrimSpace(raw)
+	webViewProxyEnv.Lock()
+	defer webViewProxyEnv.Unlock()
+	if !webViewProxyEnv.saved {
+		for _, key := range webViewProxyVars {
+			value, set := os.LookupEnv(key)
+			webViewProxyEnv.values[key] = proxyEnvValue{value: value, set: set}
+		}
+		webViewProxyEnv.saved = true
+	}
+	for _, key := range webViewProxyVars {
+		if raw != "" {
+			os.Setenv(key, raw)
+			continue
+		}
+		value := webViewProxyEnv.values[key]
+		if value.set {
+			os.Setenv(key, value.value)
+		} else {
+			os.Unsetenv(key)
+		}
+	}
+	if raw == "" {
+		webViewProxyEnv.saved = false
+		webViewProxyEnv.values = map[string]proxyEnvValue{}
+	}
+}
 
 // tokenPath is where the session token lives: the user's config directory.
 func tokenPath() (string, error) {
@@ -56,6 +145,7 @@ type loginWindow struct {
 
 // ShowLogin opens the Pixiv sign-in window. It must run on the main thread.
 func (a *App) ShowLogin() {
+	applyWebViewProxy(a.settings.ProxyURL)
 	verifier, challenge, err := pixiv.GeneratePKCE()
 	if err != nil {
 		// No PKCE pair, no login: crypto/rand failing leaves nothing to retry.

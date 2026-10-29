@@ -6,14 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/migrate"
+	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 // migratedMarker next to settings.json records that the old Pixeval's settings
@@ -82,8 +85,20 @@ type Settings struct {
 	NovelLineHeight float64 `json:"novelLineHeight"`
 	NovelWidth      float64 `json:"novelWidth"`
 	// ProxyURL routes the app's requests through a proxy; empty follows the
-	// environment's proxy settings.
+	// environment's proxy settings. It also routes the login exchange and the
+	// login window.
 	ProxyURL string `json:"proxyUrl"`
+	// PixivDomainFronting dials Pixiv's hosts at the resolver IPs instead of
+	// their DNS names. A proxy wins over it.
+	PixivDomainFronting bool `json:"pixivDomainFronting"`
+	// The resolver lists are comma or newline separated IPs. Empty falls back
+	// to the original Pixeval's defaults.
+	PixivAppAPIResolver string `json:"pixivAppAPIResolver"`
+	PixivImageResolver  string `json:"pixivImageResolver"`
+	PixivOAuthResolver  string `json:"pixivOAuthResolver"`
+	// ImageMirror replaces i.pximg.net's scheme and host when downloading
+	// images; empty turns the mirror off.
+	ImageMirror string `json:"imageMirror"`
 	// MCPToken is the bearer token the local MCP server requires. It is
 	// generated on the first start and only shown on the settings page.
 	MCPToken string `json:"mcpToken"`
@@ -118,6 +133,10 @@ func Default() *Settings {
 		NovelWidth:      novelWidthDefault,
 
 		ImageCacheLimitMB: imageCacheLimitDefault,
+
+		PixivAppAPIResolver: strings.Join(pixiv.DefaultAppAPIResolver(), "\n"),
+		PixivImageResolver:  strings.Join(pixiv.DefaultImageResolver(), "\n"),
+		PixivOAuthResolver:  strings.Join(pixiv.DefaultOAuthResolver(), "\n"),
 	}
 }
 
@@ -249,6 +268,10 @@ func (s *Settings) normalize() {
 	if !validProxyURL(s.ProxyURL) {
 		s.ProxyURL = ""
 	}
+	s.PixivAppAPIResolver = normalizeResolver(s.PixivAppAPIResolver, pixiv.DefaultAppAPIResolver())
+	s.PixivImageResolver = normalizeResolver(s.PixivImageResolver, pixiv.DefaultImageResolver())
+	s.PixivOAuthResolver = normalizeResolver(s.PixivOAuthResolver, pixiv.DefaultOAuthResolver())
+	s.ImageMirror = normalizeImageMirror(s.ImageMirror)
 	s.SauceNAOAPIKey = strings.TrimSpace(s.SauceNAOAPIKey)
 	s.MCPToken = strings.TrimSpace(s.MCPToken)
 	// A template the parser rejects cannot name a file, so it falls back to
@@ -276,6 +299,76 @@ func validProxyURL(raw string) bool {
 		return true
 	}
 	return false
+}
+
+// parseResolverIPs keeps the valid, distinct IPs of a comma or newline
+// separated list.
+func parseResolverIPs(raw string) []string {
+	fields := strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
+	out := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	for _, field := range fields {
+		if net.ParseIP(field) == nil || seen[field] {
+			continue
+		}
+		seen[field] = true
+		out = append(out, field)
+	}
+	return out
+}
+
+// resolverIPs parses a saved list, falling back to defaults when it holds no
+// valid IP.
+func resolverIPs(raw string, defaults []string) []string {
+	if ips := parseResolverIPs(raw); len(ips) > 0 {
+		return ips
+	}
+	return append([]string(nil), defaults...)
+}
+
+// normalizeResolver writes a resolver list back in the form the settings page
+// edits: one IP per line, defaults when empty.
+func normalizeResolver(raw string, defaults []string) string {
+	return strings.Join(resolverIPs(raw, defaults), "\n")
+}
+
+// validImageMirror reports whether raw is empty or an http/https URL with a
+// host.
+func validImageMirror(raw string) bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return true
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return u.Scheme == "http" || u.Scheme == "https"
+}
+
+// normalizeImageMirror trims the mirror URL and its trailing slashes, and drops
+// one the downloader cannot use.
+func normalizeImageMirror(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if !validImageMirror(raw) {
+		return ""
+	}
+	return strings.TrimRight(raw, "/")
+}
+
+// applyNetworkSettings points the shared client and the login exchange at the
+// saved network preferences. A proxy wins over domain fronting: the transport
+// dials the proxy, so no Pixiv host reaches the fronted address.
+func applyNetworkSettings(client *pixiv.Client, s *Settings) error {
+	if err := client.SetProxy(s.ProxyURL); err != nil {
+		return err
+	}
+	client.SetDomainFronting(s.PixivDomainFronting,
+		resolverIPs(s.PixivAppAPIResolver, pixiv.DefaultAppAPIResolver()),
+		resolverIPs(s.PixivImageResolver, pixiv.DefaultImageResolver()),
+		resolverIPs(s.PixivOAuthResolver, pixiv.DefaultOAuthResolver()))
+	client.SetImageMirror(s.ImageMirror)
+	return setLoginProxy(s.ProxyURL)
 }
 
 // newMCPToken is a fresh bearer token for the local MCP server: 32 random

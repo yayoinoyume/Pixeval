@@ -13,6 +13,7 @@ import (
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
+	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 // The check fetches a manifest; the install downloads an archive.
@@ -165,9 +166,39 @@ func (a *App) settingsPage(c *ui.Context) {
 					})
 
 					a.settingsGroup(c, a.t("settings.groupNetwork"), func(row settingsRow) {
+						advanced := ui.Local(c.Root(), "settings.networkAdvanced", func() bool { return false })
 						row(a.t("settings.proxy"), a.t("settings.proxyHint"), func() {
-							ui.TextInput(c, &s.ProxyURL).Width(360).Height(36).Label(a.t("settings.proxy"))
+							ui.TextInput(c, &s.ProxyURL).Width(240).Height(36).Label(a.t("settings.proxy"))
+							ui.Column(c).Gap(2).Children(func() {
+								ui.Text(c, a.t("settings.domainFronting")).FontSize(t.TextTiny).
+									TextColor(t.TextMuted).MaxLines(1)
+								switchControl(c, &s.PixivDomainFronting, a.t("settings.domainFronting"))
+							})
+							if ui.Button(c, a.t("settings.networkAdvanced")).Clicked() {
+								*advanced = !*advanced
+							}
 						})
+						if *advanced {
+							ui.Text(c, a.t("settings.domainFrontingHint")).FontSize(t.TextTiny).
+								TextColor(t.TextMuted).MaxLines(3).
+								Padding(t.SpaceS, settingsPad, t.SpaceM, settingsPad)
+							row(a.t("settings.appAPIResolver"), "", func() {
+								ui.TextArea(c, &s.PixivAppAPIResolver).Width(360).Height(64).
+									Label(a.t("settings.appAPIResolver"))
+							})
+							row(a.t("settings.imageResolver"), "", func() {
+								ui.TextArea(c, &s.PixivImageResolver).Width(360).Height(64).
+									Label(a.t("settings.imageResolver"))
+							})
+							row(a.t("settings.oauthResolver"), "", func() {
+								ui.TextArea(c, &s.PixivOAuthResolver).Width(360).Height(64).
+									Label(a.t("settings.oauthResolver"))
+							})
+							row(a.t("settings.imageMirror"), a.t("settings.imageMirrorHint"), func() {
+								ui.TextInput(c, &s.ImageMirror).Width(360).Height(36).
+									Label(a.t("settings.imageMirror"))
+							})
+						}
 						row(a.t("settings.sauceKey"), a.t("settings.sauceKeyHint"), func() {
 							ui.TextInput(c, &s.SauceNAOAPIKey).Width(360).Height(36).Label(a.t("settings.sauceKey"))
 						})
@@ -640,7 +671,8 @@ func (a *App) applySavedSettings(c *ui.Context) {
 			a.images.SetDiskLimit(imageCacheLimitBytes(a.settings))
 			a.cacheUsageAt = time.Time{}
 		}
-		if err := a.client.SetProxy(a.settings.ProxyURL); err != nil {
+		applyWebViewProxy(a.settings.ProxyURL)
+		if err := applyNetworkSettings(a.client, a.settings); err != nil {
 			a.settingsErr = a.t("settings.proxyInvalid")
 			return
 		}
@@ -731,7 +763,15 @@ func (a *App) saveSettings() {
 		a.settingsErr = a.t("settings.proxyInvalid")
 		return
 	}
+	if !validImageMirror(a.settings.ImageMirror) {
+		a.settingsErr = a.t("settings.networkInvalid")
+		return
+	}
 	a.settings.ProxyURL = strings.TrimSpace(a.settings.ProxyURL)
+	a.settings.PixivAppAPIResolver = normalizeResolver(a.settings.PixivAppAPIResolver, pixiv.DefaultAppAPIResolver())
+	a.settings.PixivImageResolver = normalizeResolver(a.settings.PixivImageResolver, pixiv.DefaultImageResolver())
+	a.settings.PixivOAuthResolver = normalizeResolver(a.settings.PixivOAuthResolver, pixiv.DefaultOAuthResolver())
+	a.settings.ImageMirror = normalizeImageMirror(a.settings.ImageMirror)
 	a.settings.SauceNAOAPIKey = strings.TrimSpace(a.settings.SauceNAOAPIKey)
 	if a.settingsSaved == nil {
 		a.settingsSaved = make(chan error, 1)

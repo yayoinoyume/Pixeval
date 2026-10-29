@@ -40,6 +40,12 @@ func TestSettingsRoundTrip(t *testing.T) {
 
 		ProxyURL: "socks5://127.0.0.1:1080",
 
+		PixivDomainFronting: true,
+		PixivAppAPIResolver: "203.0.113.1\n203.0.113.2",
+		PixivImageResolver:  "198.51.100.7",
+		PixivOAuthResolver:  "203.0.113.9",
+		ImageMirror:         "https://mirror.example",
+
 		SauceNAOAPIKey: "secret-key",
 
 		ImageCacheLimitMB: 1024,
@@ -156,6 +162,17 @@ func TestDefaultSettings(t *testing.T) {
 	}
 	if s.ImageCacheLimitMB != imageCacheLimitDefault {
 		t.Errorf("image cache limit %d, want %d", s.ImageCacheLimitMB, imageCacheLimitDefault)
+	}
+	if s.PixivDomainFronting {
+		t.Error("domain fronting on by default")
+	}
+	if s.PixivAppAPIResolver != strings.Join(pixiv.DefaultAppAPIResolver(), "\n") ||
+		s.PixivImageResolver != strings.Join(pixiv.DefaultImageResolver(), "\n") ||
+		s.PixivOAuthResolver != strings.Join(pixiv.DefaultOAuthResolver(), "\n") {
+		t.Errorf("resolver defaults %q/%q/%q", s.PixivAppAPIResolver, s.PixivImageResolver, s.PixivOAuthResolver)
+	}
+	if s.ImageMirror != "" {
+		t.Errorf("image mirror %q, want empty", s.ImageMirror)
 	}
 }
 
@@ -443,10 +460,91 @@ func TestLoadNormalizesProxy(t *testing.T) {
 	}
 }
 
-// TestAppliesSavedProxy checks starting the app with a saved proxy points the
-// shared client at it.
+// TestLoadNormalizesResolvers checks a saved resolver keeps valid IPs in
+// order, drops invalid and duplicate entries, and falls back to the defaults
+// when nothing valid is left.
+func TestLoadNormalizesResolvers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	data := `{"pixivAppAPIResolver":"203.0.113.1, not-an-ip 203.0.113.1\n203.0.113.2",` +
+		`"pixivImageResolver":"not-an-ip",` +
+		`"pixivOAuthResolver":"  "}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := "203.0.113.1\n203.0.113.2"; s.PixivAppAPIResolver != want {
+		t.Errorf("app resolver %q, want %q", s.PixivAppAPIResolver, want)
+	}
+	if want := strings.Join(pixiv.DefaultImageResolver(), "\n"); s.PixivImageResolver != want {
+		t.Errorf("image resolver %q, want %q", s.PixivImageResolver, want)
+	}
+	if want := strings.Join(pixiv.DefaultOAuthResolver(), "\n"); s.PixivOAuthResolver != want {
+		t.Errorf("oauth resolver %q, want %q", s.PixivOAuthResolver, want)
+	}
+}
+
+// TestLoadNormalizesImageMirror checks a saved mirror loses its trailing
+// slashes and an unusable URL is dropped.
+func TestLoadNormalizesImageMirror(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"https://mirror.example", "https://mirror.example"},
+		{"https://mirror.example/", "https://mirror.example"},
+		{"  http://mirror.example:8080///  ", "http://mirror.example:8080"},
+		{"", ""},
+		{"mirror.example", ""},
+		{"ftp://mirror.example", ""},
+		{"https://", ""},
+	} {
+		path := filepath.Join(t.TempDir(), "settings.json")
+		data := `{"imageMirror":` + strconv.Quote(tt.in) + `}`
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if s.ImageMirror != tt.want {
+			t.Errorf("image mirror %q, want %q", s.ImageMirror, tt.want)
+		}
+	}
+}
+
+// TestLoginHTTPProxy checks the login exchange follows the saved proxy and
+// falls back to the environment's when it is cleared.
+func TestLoginHTTPProxy(t *testing.T) {
+	t.Cleanup(func() { _ = setLoginProxy("") })
+	if err := setLoginProxy("socks5://127.0.0.1:1080"); err != nil {
+		t.Fatalf("setLoginProxy: %v", err)
+	}
+	tr, ok := loginHTTP.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("login transport is not *http.Transport")
+	}
+	req, err := http.NewRequest(http.MethodPost, "https://oauth.secure.pixiv.net/auth/token", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := tr.Proxy(req)
+	if err != nil || got == nil || got.String() != "socks5://127.0.0.1:1080" {
+		t.Errorf("login proxy = %v, %v, want socks5://127.0.0.1:1080", got, err)
+	}
+	if err := setLoginProxy(""); err != nil {
+		t.Fatalf("setLoginProxy empty: %v", err)
+	}
+	got, err = tr.Proxy(req)
+	want, wantErr := http.ProxyFromEnvironment(req)
+	if (err != nil) != (wantErr != nil) || (got == nil) != (want == nil) ||
+		(got != nil && want != nil && got.String() != want.String()) {
+		t.Errorf("login proxy = %v, %v, want the environment's %v, %v", got, err, want, wantErr)
+	}
+}
 func TestAppliesSavedProxy(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Cleanup(func() { _ = setLoginProxy("") })
 	path, err := settingsPath()
 	if err != nil {
 		t.Fatalf("settingsPath: %v", err)
@@ -701,6 +799,10 @@ func TestSettingsPageSavesSauceNAOKey(t *testing.T) {
 // running client at it, and a later load reads it back.
 func TestSettingsPageSavesProxy(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Cleanup(func() {
+		applyWebViewProxy("")
+		_ = setLoginProxy("")
+	})
 	a := New()
 	a.route = routeSettings
 	a.settings.ProxyURL = "socks5://127.0.0.1:1080"
@@ -744,6 +846,77 @@ func TestSettingsPageSavesProxy(t *testing.T) {
 		}
 		tt.Frame()
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestSettingsPageSavesNetwork checks a save writes the domain fronting
+// switch, normalizes the IP lists and the mirror, and a later load reads them
+// back.
+func TestSettingsPageSavesNetwork(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	a.settings.PixivDomainFronting = true
+	a.settings.PixivAppAPIResolver = "203.0.113.1, 203.0.113.2\nnot-an-ip"
+	a.settings.PixivImageResolver = "198.51.100.7"
+	a.settings.PixivOAuthResolver = "not-an-ip"
+	a.settings.ImageMirror = "https://mirror.example/"
+	tt := ui.NewTester(a.View, 1000, 1200)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil && got.ImageMirror == "https://mirror.example" {
+			if !got.PixivDomainFronting {
+				t.Error("domain fronting not saved")
+			}
+			if want := "203.0.113.1\n203.0.113.2"; got.PixivAppAPIResolver != want {
+				t.Errorf("app resolver %q, want %q", got.PixivAppAPIResolver, want)
+			}
+			if want := "198.51.100.7"; got.PixivImageResolver != want {
+				t.Errorf("image resolver %q, want %q", got.PixivImageResolver, want)
+			}
+			if want := strings.Join(pixiv.DefaultOAuthResolver(), "\n"); got.PixivOAuthResolver != want {
+				t.Errorf("oauth resolver %q, want %q", got.PixivOAuthResolver, want)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("settings not saved: %v", err)
+		}
+		tt.Frame()
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestSettingsPageRejectsInvalidImageMirror checks a mirror that is not an
+// http/https URL is reported and nothing is written.
+func TestSettingsPageRejectsInvalidImageMirror(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	a.settings.ImageMirror = "ftp://mirror.example"
+	tt := ui.NewTester(a.View, 1000, 1200)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("网络设置无效，未保存") {
+		t.Errorf("invalid mirror not reported: %q", tt.Texts())
+	}
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("settings saved with an invalid mirror")
 	}
 }
 
