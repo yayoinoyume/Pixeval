@@ -38,9 +38,7 @@ func TestShellLoggedOut(t *testing.T) {
 // its title.
 func TestShellNavSwitches(t *testing.T) {
 	a := New()
-	// The rail is taller than 700 with every destination it has, so the
-	// window is the app's own size for the click to land.
-	tt := ui.NewTester(a.View, 1280, 820)
+	tt := ui.NewTester(a.View, 1024, 720)
 	if err := tt.Click("设置"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -63,10 +61,10 @@ func TestShellNavSwitches(t *testing.T) {
 }
 
 // TestShellRailSettingsReachableInShortWindow checks Settings stays pinned at
-// the rail's bottom when the window is shorter than every destination.
+// the rail's bottom when the window is shorter than the design window.
 func TestShellRailSettingsReachableInShortWindow(t *testing.T) {
 	a := New()
-	tt := ui.NewTester(a.View, 1280, 790)
+	tt := ui.NewTester(a.View, 1280, 600)
 	tt.Frame()
 	if err := tt.Click("设置"); err != nil {
 		t.Fatalf("Click Settings: %v", err)
@@ -76,23 +74,105 @@ func TestShellRailSettingsReachableInShortWindow(t *testing.T) {
 	}
 }
 
-// TestShellRailScrollsDestinations checks a destination below the rail's
-// viewport comes into reach by scrolling the rail.
-func TestShellRailScrollsDestinations(t *testing.T) {
+// TestShellRailGroupsReachDestinations checks the rail's groups hold the pages
+// that are not top-level: a group opens its menu and a row shows its page at
+// the design window's size, without scrolling the rail.
+func TestShellRailGroupsReachDestinations(t *testing.T) {
 	a := New()
-	tt := ui.NewTester(a.View, 1280, 600)
+	tt := ui.NewTester(a.View, 1024, 720)
 	tt.Frame()
-	if err := tt.Click("稍后再看"); err == nil {
-		t.Fatal("the last destination was reachable without scrolling")
+	if _, ok := tt.Find("新作"); ok {
+		t.Fatalf("新作 is in the rail before its group opens: %q", tt.Texts())
+	}
+	for _, c := range []struct {
+		group string
+		page  string
+		want  route
+	}{
+		{"作品", "新作", routeNew},
+		{"作品", "MyPixiv", routeMyPixiv},
+		{"作品", "特辑", routeSpotlight},
+		{"作品", "追更", routeSubs},
+		{"用户", "推荐作者", routeRecommendedUsers},
+		{"库", "历史", routeHistory},
+		{"库", "下载", routeDownloads},
+		{"库", "稍后再看", routeWatchLater},
+	} {
+		if err := tt.Click(c.group); err != nil {
+			t.Fatalf("open %s: %v", c.group, err)
+		}
+		tt.Frame()
+		if err := tt.Click(c.page); err != nil {
+			t.Fatalf("Click %s in %s: %v", c.page, c.group, err)
+		}
+		tt.Frame()
+		if a.route != c.want {
+			t.Errorf("route %q after %s, want %q", a.route, c.page, c.want)
+		}
+		if navMenuState.open != "" {
+			t.Errorf("the %s menu stayed open after choosing %s", c.group, c.page)
+		}
+	}
+}
+
+// TestShellRailDoesNotScroll checks the rail does not scroll: its
+// destinations stay put when the pointer scrolls over it, and Settings stays
+// in reach at the design window.
+func TestShellRailDoesNotScroll(t *testing.T) {
+	a := New()
+	tt := ui.NewTester(a.View, 1024, 720)
+	tt.Frame()
+	home, ok := tt.Find("首页")
+	if !ok {
+		t.Fatalf("首页 missing: %q", tt.Texts())
+	}
+	settings, ok := tt.Find("设置")
+	if !ok {
+		t.Fatalf("设置 missing: %q", tt.Texts())
+	}
+	if settings.Y+settings.H > 720 {
+		t.Errorf("Settings at %+v is outside the 720 window", settings)
 	}
 	tt.Scroll(30, 400, 0, 400)
 	tt.Frame()
-	if err := tt.Click("稍后再看"); err != nil {
-		t.Fatalf("Click after scrolling: %v", err)
+	homeAfter, _ := tt.Find("首页")
+	settingsAfter, _ := tt.Find("设置")
+	if homeAfter.Y != home.Y || settingsAfter.Y != settings.Y {
+		t.Errorf("the rail scrolled: home %v -> %v, settings %v -> %v",
+			home.Y, homeAfter.Y, settings.Y, settingsAfter.Y)
 	}
-	if a.route != routeWatchLater {
-		t.Errorf("route %q, want %q", a.route, routeWatchLater)
+	if err := tt.Click("设置"); err != nil {
+		t.Fatalf("Click Settings: %v", err)
 	}
+	if a.route != routeSettings {
+		t.Errorf("route %q, want %q", a.route, routeSettings)
+	}
+}
+
+// navGo shows a rail destination: a top-level one directly, and one inside a
+// group through the group's menu.
+func navGo(t *testing.T, tt *ui.Tester, label string) {
+	t.Helper()
+	group := map[string]string{
+		"新作":      "作品",
+		"MyPixiv": "作品",
+		"特辑":      "作品",
+		"追更":      "作品",
+		"推荐作者":    "用户",
+		"历史":      "库",
+		"下载":      "库",
+		"稍后再看":    "库",
+	}[label]
+	if group != "" {
+		if err := tt.Click(group); err != nil {
+			t.Fatalf("open %s: %v", group, err)
+		}
+		tt.Frame()
+	}
+	if err := tt.Click(label); err != nil {
+		t.Fatalf("Click %s: %v", label, err)
+	}
+	tt.Frame()
 }
 
 // TestShellLoggedIn checks a signed-in session shows the user's name instead
@@ -151,13 +231,14 @@ func TestSessionLifecycle(t *testing.T) {
 	}
 }
 
-// TestShellRail checks the rail is 88 wide with every destination inside it
-// and the settings held to the bottom, as the design draws it.
+// TestShellRail checks the rail shows its seven top-level destinations inside
+// its width at the design window, with Settings held to the bottom and the
+// grouped pages out of the rail until their menu opens.
 func TestShellRail(t *testing.T) {
 	a := New()
-	tt := ui.NewTester(a.View, 1024, 768)
+	tt := ui.NewTester(a.View, 1024, 720)
 	tt.Frame()
-	for _, label := range []string{"首页", "新作", "MyPixiv", "搜索", "追更", "下载", "历史", "设置"} {
+	for _, label := range []string{"首页", "搜索", "收藏", "作品", "用户", "库", "设置"} {
 		r, ok := tt.Find(label)
 		if !ok {
 			t.Fatalf("%s missing: %q", label, tt.Texts())
@@ -165,13 +246,21 @@ func TestShellRail(t *testing.T) {
 		if r.X < 0 || r.X+r.W > navWidth+1 {
 			t.Errorf("%s at %+v, outside the %v rail", label, r, navWidth)
 		}
+		if r.Y < 0 || r.Y+r.H > 720 {
+			t.Errorf("%s at %+v, outside the window", label, r)
+		}
+	}
+	for _, label := range []string{"新作", "MyPixiv", "特辑", "追更", "推荐作者", "历史", "下载", "稍后再看"} {
+		if _, ok := tt.Find(label); ok {
+			t.Errorf("%s is in the rail before its group opens", label)
+		}
 	}
 	home, _ := tt.Find("首页")
 	settings, _ := tt.Find("设置")
 	if settings.Y <= home.Y {
 		t.Errorf("settings at %v is not under the destinations (%v)", settings.Y, home.Y)
 	}
-	if settings.Y < 768/2 {
+	if settings.Y < 720/2 {
 		t.Errorf("settings at %v is not held to the bottom", settings.Y)
 	}
 }
@@ -179,7 +268,7 @@ func TestShellRail(t *testing.T) {
 // TestShellFitsWindow checks the rail and the app bar fit the narrow and the
 // design window, with nothing pushed past the right or bottom edge.
 func TestShellFitsWindow(t *testing.T) {
-	for _, size := range []struct{ w, h int }{{1024, 768}, {1280, 820}} {
+	for _, size := range []struct{ w, h int }{{1024, 720}, {1024, 768}, {1280, 820}} {
 		a := New()
 		tt := ui.NewTester(a.View, size.w, size.h)
 		tt.Frame()
@@ -402,14 +491,16 @@ func TestSearchFiltersHiddenOutsideIllust(t *testing.T) {
 	if !tt.HasText("起始日期") {
 		t.Fatalf("the date filter is missing: %q", tt.Texts())
 	}
-	for _, tab := range []string{"小说", "用户"} {
-		if err := tt.Click(tab); err != nil {
-			t.Fatalf("Click %s tab: %v", tab, err)
-		}
-		tt.Frame()
-		if tt.HasText("起始日期") {
-			t.Errorf("the date filter is shown on the %s tab: %q", tab, tt.Texts())
-		}
+	if err := tt.Click("小说"); err != nil {
+		t.Fatalf("Click 小说 tab: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("起始日期") {
+		t.Errorf("the date filter is shown on the novel tab: %q", tt.Texts())
+	}
+	searchUserTab(t, a, tt)
+	if tt.HasText("起始日期") {
+		t.Errorf("the date filter is shown on the user tab: %q", tt.Texts())
 	}
 }
 
@@ -448,15 +539,54 @@ func userSearchQueries(t *testing.T, a *App) []url.Values {
 	return queries
 }
 
-// userTab shows the user tab of a search and waits for its list.
-func userTab(t *testing.T, a *App, tt *ui.Tester) {
-	t.Helper()
-	if err := tt.Click(a.t("search.user")); err != nil {
-		t.Fatalf("Click user tab: %v", err)
+// searchTabsFocused reports whether the search tab line has the keyboard
+// focus, whichever tab is chosen.
+func searchTabsFocused(tt *ui.Tester, a *App) bool {
+	// The user tab's name is also the rail's Users group, so only the labels
+	// no rail item shares can tell the tab line apart from the rail.
+	for _, key := range []string{"search.illust", "search.novel", "search.sauce"} {
+		if tt.Focused(a.t(key)) {
+			return true
+		}
 	}
+	return false
+}
+
+// searchUserTab selects the user tab of the search page. The rail's Users
+// group shares the tab's name, so the tab line is reached by the keyboard
+// rather than by a text click.
+func searchUserTab(t *testing.T, a *App, tt *ui.Tester) {
+	t.Helper()
+	if a.searchKind == searchUser {
+		return
+	}
+	// A long saved history would put the tab line past a fixed number of Tab
+	// presses, and the tab shares its name with the rail's Users group.
+	a.searchHistory = &SearchHistory{}
+	tt.Frame()
+	if !searchTabsFocused(tt, a) {
+		reached := false
+		for i := 0; i < 20 && !reached; i++ {
+			tt.Key(0, ui.KeyTab)
+			reached = searchTabsFocused(tt, a)
+		}
+		if !reached {
+			t.Fatalf("Tab never reached the search tabs: %q", tt.Texts())
+		}
+	}
+	tt.Key(0, ui.KeyHome)
+	tt.Key(0, ui.KeyRight)
+	tt.Key(0, ui.KeyRight)
 	if a.searchKind != searchUser {
 		t.Fatalf("searchKind %d, want %d", a.searchKind, searchUser)
 	}
+	tt.Frame()
+}
+
+// userTab shows the user tab of a search and waits for its list.
+func userTab(t *testing.T, a *App, tt *ui.Tester) {
+	t.Helper()
+	searchUserTab(t, a, tt)
 	waitUsers(t, a.searchUsers, func(v userListView) bool { return len(v.users) == 1 })
 	tt.Frame()
 }
@@ -503,9 +633,7 @@ func TestSearchUserTabPages(t *testing.T) {
 	tt.Frame()
 	a.startSearch(a.search)
 	tt.Frame()
-	if err := tt.Click(a.t("search.user")); err != nil {
-		t.Fatalf("Click user tab: %v", err)
-	}
+	searchUserTab(t, a, tt)
 	// The list draws its first page, sees its end, and loads the next one.
 	deadline := time.Now().Add(2 * time.Second)
 	for len(a.searchUsers.snapshot().users) < 2 {
@@ -531,9 +659,7 @@ func TestSearchUserTabEmpty(t *testing.T) {
 	tt.Frame()
 	a.startSearch(a.search)
 	tt.Frame()
-	if err := tt.Click(a.t("search.user")); err != nil {
-		t.Fatalf("Click user tab: %v", err)
-	}
+	searchUserTab(t, a, tt)
 	waitUsers(t, a.searchUsers, func(v userListView) bool {
 		return v.started && len(v.users) == 0
 	})

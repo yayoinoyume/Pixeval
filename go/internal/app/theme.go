@@ -17,7 +17,7 @@ import (
 // controls, and a serif for the few display lines. The artwork supplies the
 // color on its own page; the rest of the app stays quiet.
 const (
-	navWidth       = 80
+	navWidth       = 96
 	contentPadding = 40
 )
 

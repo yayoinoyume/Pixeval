@@ -617,9 +617,7 @@ func TestNewPageLoadsNewFeed(t *testing.T) {
 	fake := &feedPixiv{body: func(int, string, string) string { return worksJSON(1, 2, "") }}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	if a.route != routeNew {
 		t.Fatalf("route %q, want %q", a.route, routeNew)
 	}
@@ -650,9 +648,7 @@ func TestMyPixivPageLoadsFollowedUsersWorks(t *testing.T) {
 	fake := &feedPixiv{body: func(int, string, string) string { return worksJSON(5, 2, "") }}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("MyPixiv"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "MyPixiv")
 	if a.route != routeMyPixiv {
 		t.Fatalf("route %q, want %q", a.route, routeMyPixiv)
 	}
@@ -682,9 +678,7 @@ func TestNewFeedPagesWithCursor(t *testing.T) {
 	}}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	waitBrowse(t, a.newFeed, "load the first page",
 		func(v browseView) bool { return len(v.items) == 20 })
 	tt.Frame()
@@ -709,9 +703,7 @@ func TestMyPixivEmptyFeed(t *testing.T) {
 	}}
 	_, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("MyPixiv"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "MyPixiv")
 	// The empty state draws once a page settled; wait for it on the frame.
 	deadline := time.Now().Add(2 * time.Second)
 	for {
@@ -769,9 +761,7 @@ func TestNewPageKindTabsAskTheirContentType(t *testing.T) {
 	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	waitBrowse(t, a.newFeed, "load the illustrations",
 		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
 	if _, q := fake.requests(); len(q) != 1 || q[0].Get("content_type") != "illust" {
@@ -812,9 +802,7 @@ func TestMyPixivKindTabsAskTheirContentType(t *testing.T) {
 	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("MyPixiv"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "MyPixiv")
 	waitBrowse(t, a.myPixivFeed, "load the illustrations",
 		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
 	tt.Frame()
@@ -838,9 +826,7 @@ func TestNewPageKindSwitchBackRestartsTheFeed(t *testing.T) {
 	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	waitBrowse(t, a.newFeed, "load the illustrations",
 		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
 	tt.Frame()
@@ -876,9 +862,7 @@ func TestNewPageMangaPagesWithCursor(t *testing.T) {
 	}}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	waitBrowse(t, a.newFeed, "load the manga",
 		func(v browseView) bool { return len(v.items) == 20 })
 	tt.Frame()
@@ -908,9 +892,7 @@ func TestNewPageMangaEmptyFeed(t *testing.T) {
 	fake := &kindPixiv{body: func(q url.Values, host string) string { return `{"illusts":[],"next_url":""}` }}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	waitBrowse(t, a.newFeed, "settle the illustration page",
 		func(v browseView) bool { return v.started })
 	tt.Frame()
@@ -934,9 +916,7 @@ func TestNewPageKindSurvivesLeavingThePage(t *testing.T) {
 	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
 	a, tt := newFeedTestApp(t, fake)
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	waitBrowse(t, a.newFeed, "load the illustrations",
 		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
 	tt.Frame()
@@ -950,9 +930,7 @@ func TestNewPageKindSurvivesLeavingThePage(t *testing.T) {
 		t.Fatalf("Click: %v", err)
 	}
 	tt.Frame()
-	if err := tt.Click("新作"); err != nil {
-		t.Fatalf("Click: %v", err)
-	}
+	navGo(t, tt, "新作")
 	tt.Frame()
 	if a.newKind != feedManga {
 		t.Errorf("kind = %d, want the manga tab still chosen", a.newKind)

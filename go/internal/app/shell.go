@@ -64,10 +64,28 @@ func (a *App) routeLabel(r route) string {
 	return a.t("nav." + string(r))
 }
 
-var (
-	browseRoutes  = []route{routeHome, routeNew, routeMyPixiv, routeRecommendedUsers, routeSearch, routeSpotlight, routeSubs}
-	libraryRoutes = []route{routeDownloads, routeHistory, routeBookmarks, routeWatchLater}
-)
+// navGroup is one rail group: the pages its menu lists, the glyph on the
+// group's button and the key its name is read from. The rail shows few
+// destinations; the groups hold the rest one click away.
+type navGroup struct {
+	id     string
+	glyph  *ui.SVG
+	routes []route
+}
+
+// navGroups are the rail's groups, in the order they show under the pages
+// that stand alone.
+var navGroups = []navGroup{
+	{id: "works", glyph: iconImage, routes: []route{routeNew, routeMyPixiv, routeSpotlight, routeSubs}},
+	{id: "users", glyph: iconUser, routes: []route{routeRecommendedUsers}},
+	{id: "library", glyph: iconSeries, routes: []route{routeHistory, routeDownloads, routeWatchLater}},
+}
+
+// navMenuState is the rail's open group menu: a group id, "" when none is
+// open. The app runs one window, so one menu is open at a time.
+var navMenuState struct {
+	open string
+}
 
 // View builds the shell: the navigation on the left, the page title and the
 // sign-in state above the page. The viewer takes the whole window instead.
@@ -107,9 +125,11 @@ func (a *App) shortcuts(c *ui.Context) {
 	}
 }
 
-// goRoute shows r, closing the viewer that covers the pages.
+// goRoute shows r, closing the viewer that covers the pages and the rail's
+// open group menu.
 func (a *App) goRoute(r route) {
 	a.closeViewer()
+	navMenuState.open = ""
 	a.route = r
 }
 
@@ -127,9 +147,11 @@ func (a *App) escape() {
 	}
 }
 
-// nav is the window's rail: the brand, the destinations, and the settings
-// held to the bottom. Each destination is a glyph over its name, as Material
-// You draws a navigation rail.
+// nav is the window's rail: the brand, the few destinations that stand
+// alone, the groups, and the settings held to the bottom. Each destination is
+// a glyph over its name, as the rail draws it; a group opens its menu beside
+// the rail. The rail does not scroll: its destinations fit the design window,
+// so Settings is always in reach.
 func (a *App) nav(c *ui.Context) {
 	t := themeOf(c)
 	ui.Column(c).Width(navWidth).FillHeight().Padding(t.SpaceXL, t.SpaceS, t.SpaceL, t.SpaceS).
@@ -137,19 +159,13 @@ func (a *App) nav(c *ui.Context) {
 		BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
 		Role(ui.RoleGroup).Label(a.t("nav.region")).Children(func() {
 		a.brand(c)
-		// The destinations scroll between the brand and Settings, so the rail
-		// stays usable when the window is shorter than all of them: Settings is
-		// always at the bottom.
-		ui.Scroll(c).Grow(1).Children(func() {
-			ui.Column(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
-				for _, r := range browseRoutes {
-					a.navItem(c, r)
-				}
-				for _, r := range libraryRoutes {
-					a.navItem(c, r)
-				}
-			})
-		})
+		a.navItem(c, routeHome)
+		a.navItem(c, routeSearch)
+		a.navItem(c, routeBookmarks)
+		for _, g := range navGroups {
+			a.navGroupItem(c, g)
+		}
+		ui.Spacer(c)
 		a.navItem(c, routeSettings)
 	})
 }
@@ -166,16 +182,15 @@ func (a *App) brand(c *ui.Context) {
 	})
 }
 
-// navItem is one destination: a glyph in a tonal pill over its name. The
-// chosen page's pill is the primary container; hovering lifts the item.
+// navItem is one destination: a glyph over its name, with a rule under it
+// when the page is showing. The rail keeps the short name; the page header
+// may name the page more fully.
 func (a *App) navItem(c *ui.Context, r route) {
 	t := themeOf(c)
 	selected := a.route == r
-	// The rail keeps its short name; the page header may name the page more
-	// fully.
 	label := a.t("nav." + string(r))
-	b := ui.ButtonBase(c).Key("nav."+string(r)).Width(64).Height(56).
-		Radius(t.RadiusS).Padding(t.SpaceS, 0, t.SpaceXS, 0).Gap(2).
+	b := ui.ButtonBase(c).Key("nav."+string(r)).Width(80).Height(52).
+		Radius(t.RadiusS).Padding(6, 0, t.SpaceXS, 0).Gap(1).
 		Column().AlignItems(ui.Center).Justify(ui.Center).
 		Label(label).Tooltip(label)
 	if b.Hovered() {
@@ -188,7 +203,7 @@ func (a *App) navItem(c *ui.Context, r route) {
 		fg = t.Text
 	}
 	b.Children(func() {
-		ui.Icon(c, navGlyph(r)).Size(20, 20).TextColor(fg)
+		ui.Icon(c, navGlyph(r)).Size(18, 18).TextColor(fg)
 		ui.Text(c, label).FontSize(t.TextMicro).FontWeight(500).TextColor(fg).MaxLines(1)
 		bar := t.Accent
 		if !selected {
@@ -201,21 +216,116 @@ func (a *App) navItem(c *ui.Context, r route) {
 	}
 }
 
-// navGlyph is the rail's glyph for a destination. icons.go is out of this
-// batch, so the ones navIcon does not know are mapped here.
-func navGlyph(r route) *ui.SVG {
-	switch r {
-	case routeNew, routeSpotlight:
-		return iconImage
-	case routeMyPixiv, routeRecommendedUsers:
-		return iconUser
-	case routeBookmarks:
-		return iconHeart
-	case routeWatchLater:
-		return iconHistory
-	default:
-		return navIcon(r)
+// navGroupItem is one group: its glyph over its name and a caret, with a rule
+// under it while one of its pages is showing. Its button opens the group's
+// menu beside the rail, and choosing a page there closes it.
+func (a *App) navGroupItem(c *ui.Context, g navGroup) {
+	t := themeOf(c)
+	label := a.t("nav." + g.id)
+	active := a.navGroupRoute(g)
+	selected := active != ""
+	tip := label
+	if selected {
+		tip += " · " + a.t("nav."+string(active))
 	}
+	b := ui.ButtonBase(c).Key("nav.group."+g.id).Width(80).Height(52).
+		Radius(t.RadiusS).Padding(6, 0, t.SpaceXS, 0).Gap(1).
+		Column().AlignItems(ui.Center).Justify(ui.Center).
+		Label(label).Tooltip(tip)
+	if b.Hovered() {
+		b = b.Background(t.SurfaceAlt)
+	}
+	fg := t.TextMuted
+	if selected {
+		fg = t.Text
+	} else if b.Hovered() {
+		fg = t.Text
+	}
+	b.Children(func() {
+		ui.Icon(c, g.glyph).Size(18, 18).TextColor(fg)
+		ui.Row(c).Gap(2).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, label).FontSize(t.TextMicro).FontWeight(500).TextColor(fg).MaxLines(1)
+			ui.Icon(c, iconRight).Size(9, 9).TextColor(fg)
+		})
+		bar := t.Accent
+		if !selected {
+			bar = ui.Transparent
+		}
+		ui.Box(c).Width(14).Height(2).Background(bar)
+	})
+	if b.Clicked() {
+		if navMenuState.open == g.id {
+			navMenuState.open = ""
+		} else {
+			navMenuState.open = g.id
+		}
+	}
+	open := navMenuState.open == g.id
+	ui.PopoverBase(c, b, &open, func(panel ui.Element) {
+		panel.AttachTo(b, ui.AnchorEnd, ui.AnchorStart).MarginStart(t.SpaceS).
+			Background(t.Surface).Border(1, t.Border).Radius(t.RadiusS).
+			Padding(t.SpaceXS).MinWidth(190)
+		panel.Children(func() {
+			ui.Column(c).Gap(2).Children(func() {
+				for _, r := range g.routes {
+					a.navGroupMenuRow(c, t, r)
+				}
+			})
+		})
+	})
+	// A press outside the menu closed it: drop the rail's record of it, so
+	// the next frame does not open it again.
+	if !open && navMenuState.open == g.id {
+		navMenuState.open = ""
+	}
+}
+
+// navGroupRoute is the group's page that is showing, or "" when the page is
+// outside the group.
+func (a *App) navGroupRoute(g navGroup) route {
+	for _, r := range g.routes {
+		if a.route == r {
+			return r
+		}
+	}
+	return ""
+}
+
+// navGroupMenuRow is one page in a group's menu. The page showing is marked
+// with the accent rule and accent text; choosing a row shows that page and
+// closes the menu.
+func (a *App) navGroupMenuRow(c *ui.Context, t tokens, r route) {
+	label := a.t("nav." + string(r))
+	selected := a.route == r
+	row := ui.ButtonBase(c).FillWidth().Height(34).Radius(t.RadiusS).
+		Padding(0, t.SpaceS).Gap(t.SpaceS).Row().AlignItems(ui.Center).
+		Label(label).OnClick(func() {
+		a.goRoute(r)
+	})
+	if row.Hovered() {
+		row = row.Background(t.SurfaceAlt)
+	}
+	fg := t.Text
+	if selected {
+		fg = t.Accent
+	}
+	row.Children(func() {
+		bar := t.Accent
+		if !selected {
+			bar = ui.Transparent
+		}
+		ui.Box(c).Width(2).Height(16).Background(bar)
+		ui.Text(c, label).FontSize(t.TextSmall).FontWeight(500).TextColor(fg).MaxLines(1)
+	})
+}
+
+// navGlyph is the rail's glyph for a destination that stands alone:
+// bookmarks has its own heart, the rest follow navIcon.
+func navGlyph(r route) *ui.SVG {
+	if r == routeBookmarks {
+		return iconHeart
+	}
+	return navIcon(r)
 }
 
 // header is the Material app bar: the page title and the account state above
