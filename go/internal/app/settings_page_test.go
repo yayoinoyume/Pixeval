@@ -285,7 +285,7 @@ func TestSettingsPageClearButtons(t *testing.T) {
 	a.searchHistory.Add("猫")
 	a.novelProgress.Set(7, 0.5)
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 1800)
+	tt := ui.NewTester(a.View, 1000, 2100)
 	click := func(key string) {
 		t.Helper()
 		if err := tt.Click(a.t(key)); err != nil {
@@ -336,6 +336,92 @@ func TestSettingsPageClearButtons(t *testing.T) {
 	}
 }
 
+// TestSettingsPageMCPCard checks the MCP card shows the local address, the
+// token clients send and the button that replaces it.
+func TestSettingsPageMCPCard(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.settings.MCPToken = "shown-token"
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 2000)
+	// The token itself sits in a read-only field, whose text the headless
+	// tester does not read; the label is what it shows here.
+	for _, text := range []string{
+		a.t("settings.groupMCP"),
+		a.t("settings.mcpAddress"),
+		mcpAddr,
+		a.t("settings.mcpToken"),
+		a.t("settings.mcpCopy"),
+		a.t("settings.mcpRegenerate"),
+	} {
+		if !tt.HasText(text) {
+			t.Errorf("%q missing: %q", text, tt.Texts())
+		}
+	}
+}
+
+// TestSettingsPageCopiesMCPToken checks the copy button puts exactly the saved
+// token on the clipboard.
+func TestSettingsPageCopiesMCPToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.settings.MCPToken = "copy-me"
+	var copied string
+	a.clipboardWriteText = func(text string) error {
+		copied = text
+		return nil
+	}
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 2000)
+	if err := tt.Click(a.t("settings.mcpCopy")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if copied != "copy-me" {
+		t.Errorf("clipboard got %q, want the token", copied)
+	}
+	if !tt.HasText(a.t("settings.mcpCopied")) {
+		t.Errorf("copy not reported: %q", tt.Texts())
+	}
+}
+
+// TestSettingsPageRegeneratesMCPToken checks the button replaces the token,
+// saves it and says a restart applies it.
+func TestSettingsPageRegeneratesMCPToken(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.settings.MCPToken = "old-token"
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 2000)
+	if err := tt.Click(a.t("settings.mcpRegenerate")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	token := a.settings.MCPToken
+	if token == "" || token == "old-token" {
+		t.Fatalf("token %q after regenerating, want a new one", token)
+	}
+	if !tt.HasText(a.t("settings.mcpRegenerated")) {
+		t.Errorf("regeneration not reported: %q", tt.Texts())
+	}
+
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil && got.MCPToken == token {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("token not saved: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestSettingsPageResetsSettings checks the reset button saves the defaults
 // while the account, the queue and the records stay.
 func TestSettingsPageResetsSettings(t *testing.T) {
@@ -345,18 +431,22 @@ func TestSettingsPageResetsSettings(t *testing.T) {
 	a.settings.Theme = themeDark
 	a.settings.CardWidth = 300
 	a.settings.ShowR18 = true
+	a.settings.MCPToken = "token-before-reset"
 	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
 	a.downloads.Add([]download.Task{{ID: "1_0", IllustID: 1, Title: "排队中"}})
 	a.history.Add(HistoryEntry{ID: 1, Title: "作品"})
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 1800)
+	tt := ui.NewTester(a.View, 1000, 2100)
 	if err := tt.Click(a.t("settings.resetSettings")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	waitSettingsSaved(t, a, tt)
 
-	if want := *Default(); *a.settings != want {
-		t.Errorf("settings %+v after reset, want the defaults %+v", *a.settings, want)
+	want := *Default()
+	// The MCP token is a credential, so a reset keeps it.
+	want.MCPToken = "token-before-reset"
+	if *a.settings != want {
+		t.Errorf("settings %+v after reset, want %+v", *a.settings, want)
 	}
 	path, err := settingsPath()
 	if err != nil {
@@ -370,8 +460,8 @@ func TestSettingsPageResetsSettings(t *testing.T) {
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-	if want := *Default(); saved != want {
-		t.Errorf("saved settings %+v, want the defaults", saved)
+	if saved != want {
+		t.Errorf("saved settings %+v, want %+v", saved, want)
 	}
 	if a.session == nil || a.session.User.Name != "测试用户" {
 		t.Errorf("account %+v lost by the reset", a.session)

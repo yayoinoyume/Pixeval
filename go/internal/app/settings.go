@@ -1,6 +1,8 @@
 package app
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log"
@@ -82,6 +84,9 @@ type Settings struct {
 	// ProxyURL routes the app's requests through a proxy; empty follows the
 	// environment's proxy settings.
 	ProxyURL string `json:"proxyUrl"`
+	// MCPToken is the bearer token the local MCP server requires. It is
+	// generated on the first start and only shown on the settings page.
+	MCPToken string `json:"mcpToken"`
 	// SauceNAOAPIKey authenticates the reverse image search; empty turns it
 	// off.
 	SauceNAOAPIKey string `json:"sauceNaoApiKey"`
@@ -245,6 +250,7 @@ func (s *Settings) normalize() {
 		s.ProxyURL = ""
 	}
 	s.SauceNAOAPIKey = strings.TrimSpace(s.SauceNAOAPIKey)
+	s.MCPToken = strings.TrimSpace(s.MCPToken)
 	// A template the parser rejects cannot name a file, so it falls back to
 	// the default one instead of failing every download.
 	if strings.TrimSpace(s.DownloadMacro) == "" {
@@ -270,6 +276,16 @@ func validProxyURL(raw string) bool {
 		return true
 	}
 	return false
+}
+
+// newMCPToken is a fresh bearer token for the local MCP server: 32 random
+// bytes in unpadded base64url, which goes in a header as is.
+func newMCPToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
 // Save writes s to path as JSON only the user can read, replacing the file in

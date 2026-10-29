@@ -5,12 +5,15 @@ package mcp
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
@@ -42,20 +45,24 @@ type Backend interface {
 }
 
 // Server answers MCP requests for one Backend. It keeps no session state, so a
-// single value serves every client.
+// single value serves every client. Every request must carry the bearer token
+// it was made with.
 type Server struct {
 	backend Backend
+	token   string
 }
 
-// New is a Server for b.
-func New(b Backend) *Server {
-	return &Server{backend: b}
+// New is a Server for b that only accepts token as its bearer token. An empty
+// token accepts nothing, so a misconfigured server stays closed.
+func New(b Backend, token string) *Server {
+	return &Server{backend: b, token: token}
 }
 
-// ListenAndServe serves b on addr at /mcp until the listener fails.
-func ListenAndServe(addr string, b Backend) error {
+// ListenAndServe serves b on addr at /mcp until the listener fails. Clients
+// must send token in an Authorization: Bearer header.
+func ListenAndServe(addr string, b Backend, token string) error {
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", New(b))
+	mux.Handle("/mcp", New(b, token))
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           mux,
@@ -108,6 +115,13 @@ type initializeResult struct {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !s.authorized(r) {
+		// The reply names no token: a client that guessed wrong only learns
+		// that it must send the right one.
+		w.Header().Set("WWW-Authenticate", `Bearer realm="pixeval-go"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -141,6 +155,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, resp)
+}
+
+// authorized reports whether r carries the bearer token the server was made
+// with. Both sides are hashed first, so the comparison takes the same time
+// whatever the guess is and does not depend on the token's length.
+func (s *Server) authorized(r *http.Request) bool {
+	if s.token == "" {
+		return false
+	}
+	fields := strings.Fields(r.Header.Get("Authorization"))
+	if len(fields) != 2 || !strings.EqualFold(fields[0], "bearer") {
+		return false
+	}
+	want := sha256.Sum256([]byte(s.token))
+	got := sha256.Sum256([]byte(fields[1]))
+	return subtle.ConstantTimeCompare(got[:], want[:]) == 1
 }
 
 // handle answers req, reporting false when no reply is due.
