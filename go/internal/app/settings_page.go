@@ -372,26 +372,26 @@ func (a *App) settingsPage(c *ui.Context) {
 					})
 
 					a.settingsGroup(c, a.t("settings.groupData"), func(row settingsRow) {
-						row("", "", func() {
-							if ui.Button(c, a.t("settings.clearBrowseHistory")).Clicked() {
+						row(a.t("settings.browseHistory"), "", func() {
+							if ui.Button(c, a.t("settings.clearBrowseHistory")).TextColor(t.Danger).Clicked() {
 								a.clearHistory()
 								c.Toast(a.t("settings.historyCleared"))
 							}
 						})
-						row("", "", func() {
-							if ui.Button(c, a.t("settings.clearDownloadHistory")).Clicked() {
+						row(a.t("settings.downloadHistory"), "", func() {
+							if ui.Button(c, a.t("settings.clearDownloadHistory")).TextColor(t.Danger).Clicked() {
 								// It leaves its own notice, which the next frame toasts.
 								a.clearDownloadHistory()
 							}
 						})
-						row("", "", func() {
-							if ui.Button(c, a.t("settings.clearSearchHistory")).Clicked() {
+						row(a.t("settings.searchHistory"), "", func() {
+							if ui.Button(c, a.t("settings.clearSearchHistory")).TextColor(t.Danger).Clicked() {
 								a.clearSearchHistory()
 								c.Toast(a.t("settings.historyCleared"))
 							}
 						})
-						row("", "", func() {
-							if ui.Button(c, a.t("settings.clearNovelProgress")).Clicked() {
+						row(a.t("settings.novelReading"), "", func() {
+							if ui.Button(c, a.t("settings.clearNovelProgress")).TextColor(t.Danger).Clicked() {
 								a.clearNovelProgress()
 								c.Toast(a.t("settings.historyCleared"))
 							}

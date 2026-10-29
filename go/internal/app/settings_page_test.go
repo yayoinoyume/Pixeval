@@ -333,13 +333,25 @@ func TestSettingsPageBlockedTags(t *testing.T) {
 	}
 }
 
+// dataClearRows pairs each record the data card clears with the label of its row.
+var dataClearRows = []struct {
+	label  string
+	button string
+}{
+	{"settings.browseHistory", "settings.clearBrowseHistory"},
+	{"settings.downloadHistory", "settings.clearDownloadHistory"},
+	{"settings.searchHistory", "settings.clearSearchHistory"},
+	{"settings.novelReading", "settings.clearNovelProgress"},
+}
+
 // TestSettingsPageDataCard checks the data card offers every record it can
-// clear, and says a reset keeps the rest.
+// clear, names each row, and says a reset keeps the rest.
 func TestSettingsPageDataCard(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := New()
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 1800)
+	// Tall enough that the data card's rows are laid out, not only positioned.
+	tt := ui.NewTester(a.View, 1000, 2600)
 	for _, key := range []string{
 		"settings.groupData",
 		"settings.clearBrowseHistory",
@@ -351,6 +363,24 @@ func TestSettingsPageDataCard(t *testing.T) {
 	} {
 		if !tt.HasText(a.t(key)) {
 			t.Errorf("%s missing: %q", key, tt.Texts())
+		}
+	}
+	// Every row names the record its button empties, so a clear action is
+	// never an unnamed button.
+	for _, pair := range dataClearRows {
+		label, ok := tt.Find(a.t(pair.label))
+		if !ok || label.W == 0 {
+			t.Errorf("%s label is not laid out: %q", pair.label, tt.Texts())
+			continue
+		}
+		button, ok := tt.Find(a.t(pair.button))
+		if !ok || button.W == 0 {
+			t.Errorf("%s button is not laid out: %q", pair.button, tt.Texts())
+			continue
+		}
+		if label.X >= button.X || label.Y+label.H <= button.Y || label.Y >= button.Y+button.H {
+			t.Errorf("%s at %v is not left of %s at %v on the same row",
+				pair.label, label, pair.button, button)
 		}
 	}
 }
@@ -623,6 +653,17 @@ func TestSettingsPageFitsNarrowWindow(t *testing.T) {
 	}
 	if data.Y < 0 || data.Y+data.H > height || data.X+data.W > width {
 		t.Errorf("the data card at %v is outside the window after scrolling", data)
+	}
+	// The rows' labels widen the card, so each must still fit the window.
+	for _, pair := range dataClearRows {
+		r, ok := tt.Find(a.t(pair.label))
+		if !ok || r.W == 0 {
+			t.Fatalf("%q is not laid out: %q", pair.label, tt.Texts())
+		}
+		if r.X < 0 || r.X+r.W > width || r.Y < 0 || r.Y+r.H > height {
+			t.Errorf("the data card's %q at %v is outside the %d by %d window",
+				pair.label, r, width, height)
+		}
 	}
 	if after, ok := tt.Find(a.t("common.save")); !ok || after.Y != save.Y {
 		t.Errorf("save moved from y=%v to %v while scrolling", save.Y, after.Y)
