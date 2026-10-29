@@ -180,6 +180,55 @@ func TestSettingsPageNetworkAdvanced(t *testing.T) {
 	}
 }
 
+// TestSettingsPageGroupTitles checks every card is titled, and that a card's
+// title reads as a heading for its rows: smaller than their labels, above
+// them, and inside the window.
+func TestSettingsPageGroupTitles(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	// Tall enough to lay out every card at once.
+	tt := ui.NewTester(a.View, 1000, 2600)
+	tt.Frame()
+	const width = 1000
+	for _, key := range []string{
+		"settings.groupAppearance",
+		"settings.groupDownloads",
+		"settings.groupNetwork",
+		"settings.groupCache",
+		"settings.groupContent",
+		"settings.groupAbout",
+		"settings.groupSubscriptions",
+		"block.user",
+		"block.tag",
+		"settings.groupMCP",
+		"settings.groupData",
+	} {
+		r, ok := tt.Find(a.t(key))
+		if !ok || r.W == 0 || r.H == 0 {
+			t.Errorf("%s is not titled: %q", key, tt.Texts())
+			continue
+		}
+		if r.X < 0 || r.X+r.W > width {
+			t.Errorf("%s at %v overflows the %d wide window", key, r, width)
+		}
+	}
+	// A title names its rows without competing with them: its text is
+	// smaller than a row label, not the same 15 as the rows below.
+	tok := tokensFor(false)
+	title, ok := tt.Find(a.t("settings.groupAppearance"))
+	label, labeled := tt.Find(a.t("settings.theme"))
+	if !ok || !labeled {
+		t.Fatalf("title or row label missing: %q", tt.Texts())
+	}
+	if got, want := title.H-(tok.SpaceL+tok.SpaceS), label.H; got >= want {
+		t.Errorf("title text is %.0f high, want less than the row label's %.0f", got, want)
+	}
+	if title.Y >= label.Y {
+		t.Errorf("title at y=%v, want it above its first row at y=%v", title.Y, label.Y)
+	}
+}
+
 // tabToLabel tabs forward until the element named label has the focus.
 func tabToLabel(t *testing.T, tt *ui.Tester, label string) {
 	t.Helper()
@@ -540,6 +589,14 @@ func TestSettingsPageFitsNarrowWindow(t *testing.T) {
 	}
 	if save.W == 0 || save.H == 0 || save.Y < 0 || save.Y+save.H > height {
 		t.Fatalf("save %v is not in the window", save)
+	}
+	title, ok := tt.Find(a.t("settings.groupAppearance"))
+	if !ok {
+		t.Fatalf("the first card is not titled: %q", tt.Texts())
+	}
+	theme, ok := tt.Find(a.t("settings.theme"))
+	if !ok || title.W == 0 || title.X < 0 || title.X+title.W > width || title.Y >= theme.Y {
+		t.Errorf("the first card title at %v is not shown above its rows", title)
 	}
 	for _, label := range []string{
 		a.t("settings.theme"),
