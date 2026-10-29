@@ -197,7 +197,10 @@
     "ugoiraQueued": "Animation queued",
     "ugoiraUnsupported": "Batch download of animations is not supported yet",
     "novelSaved": "Novel saved",
-    "novelFailed": "Could not save the novel: %s"
+    "novelFailed": "Could not save the novel: %s",
+    "openFile": "Open file",
+    "openFolder": "Open folder",
+    "openFailed": "Could not open: %s"
   },
   "settings": {
     "theme": "Theme",

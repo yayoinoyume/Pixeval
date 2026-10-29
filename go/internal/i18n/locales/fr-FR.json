@@ -197,7 +197,10 @@
     "ugoiraQueued": "Animation ajoutée à la file",
     "ugoiraUnsupported": "Le téléchargement par lot des animations n'est pas encore pris en charge",
     "novelSaved": "Roman enregistré",
-    "novelFailed": "Échec de l'enregistrement du roman : %s"
+    "novelFailed": "Échec de l'enregistrement du roman : %s",
+    "openFile": "Ouvrir le fichier",
+    "openFolder": "Ouvrir le dossier",
+    "openFailed": "Impossible d'ouvrir : %s"
   },
   "settings": {
     "theme": "Thème",

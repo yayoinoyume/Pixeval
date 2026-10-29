@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
@@ -460,7 +461,42 @@ func (a *App) downloadHistoryRow(c *ui.Context, entry download.HistoryEntry) {
 		ui.Text(c, source).FontSize(t.TextSmall).TextColor(t.TextMuted)
 		ui.Text(c, a.tf("download.completedAt", downloadCompletedAt(entry.CompletedAt))).
 			FontSize(t.TextSmall).TextColor(t.TextMuted)
+		if ui.Button(c, a.t("download.openFile")).Clicked() {
+			a.openDownloadPath(entry.Dest)
+		}
+		if ui.Button(c, a.t("download.openFolder")).Clicked() {
+			a.openDownloadPath(downloadFolder(entry.Dest))
+		}
 	})
+}
+
+// openDownloadPath opens a completed download or its folder with the system's
+// default application, and leaves a notice when the path is gone or the
+// system cannot open it.
+func (a *App) openDownloadPath(p string) {
+	var err error
+	if p == "" {
+		err = os.ErrNotExist
+	} else if _, err = os.Stat(p); err == nil {
+		open := a.openPathFn
+		if open == nil {
+			open = mygo.Shell.OpenPath
+		}
+		err = open(p)
+	}
+	if err != nil {
+		a.notice = a.tf("download.openFailed", err.Error())
+		a.update(func() {})
+	}
+}
+
+// downloadFolder is the folder a completed download sits in, or "" when the
+// entry has no destination.
+func downloadFolder(dest string) string {
+	if dest == "" {
+		return ""
+	}
+	return filepath.Dir(dest)
 }
 
 // downloadCompletedAt is the local time a finished download shows.
@@ -557,6 +593,14 @@ func (a *App) downloadRow(c *ui.Context, task download.Task) {
 		if task.State == download.Failed {
 			if ui.Button(c, a.t("common.retry")).Clicked() {
 				a.retryDownload(task)
+			}
+		}
+		if task.State == download.Done {
+			if ui.Button(c, a.t("download.openFile")).Clicked() {
+				a.openDownloadPath(task.Dest)
+			}
+			if ui.Button(c, a.t("download.openFolder")).Clicked() {
+				a.openDownloadPath(downloadFolder(task.Dest))
 			}
 		}
 		if !downloadFinished(task.State) {
