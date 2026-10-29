@@ -351,6 +351,9 @@
     "followersLoadFailed": "加载粉丝列表失败：%s",
     "relatedUsers": "相关用户",
     "noRelatedUsers": "没有相关用户",
+    "myPixiv": "好P友",
+    "noMyPixiv": "没有好P友",
+    "myPixivLoadFailed": "加载好P友失败：%s",
     "noRecommendedUsers": "暂时没有推荐作者"
   },
   "recommendedUsers": {

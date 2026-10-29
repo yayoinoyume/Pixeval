@@ -77,6 +77,8 @@ type App struct {
 	userView *userViewState
 	// relatedUsers is the related-users page shown, nil until one opens.
 	relatedUsers *relatedUsersViewState
+	// myPixivUsers is the MyPixiv-users page shown, nil until one opens.
+	myPixivUsers *myPixivUsersViewState
 	// recommendedUsers is the recommended-authors page's list.
 	recommendedUsers *userListState
 	// seriesView is the series page shown, nil until one opens.
@@ -692,11 +694,12 @@ func (a *App) resetAccountPages() {
 	a.searchUsers = &userListState{}
 	a.userView = nil
 	a.relatedUsers = nil
+	a.myPixivUsers = nil
 	a.seriesView = nil
 	a.related = nil
 	a.novelView = nil
 	switch a.route {
-	case routeUser, routeUserRelated, routeSeries, routeRelated, routeNovel:
+	case routeUser, routeUserRelated, routeUserMyPixiv, routeSeries, routeRelated, routeNovel:
 		a.route = routeHome
 	}
 }

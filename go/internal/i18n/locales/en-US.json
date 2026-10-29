@@ -351,6 +351,9 @@
     "followersLoadFailed": "Cannot load the followers list: %s",
     "relatedUsers": "Related users",
     "noRelatedUsers": "No related users yet",
+    "myPixiv": "MyPixiv users",
+    "noMyPixiv": "No MyPixiv users yet",
+    "myPixivLoadFailed": "Cannot load MyPixiv users: %s",
     "noRecommendedUsers": "No recommended users yet"
   },
   "recommendedUsers": {

@@ -37,6 +37,7 @@ const (
 	routeSettings         route = "settings"
 	routeUser             route = "user"
 	routeUserRelated      route = "userRelated"
+	routeUserMyPixiv      route = "userMyPixiv"
 	routeSeries           route = "series"
 	routeNovel            route = "novel"
 	routeRelated          route = "related"
@@ -49,6 +50,8 @@ func (a *App) routeLabel(r route) string {
 		return a.t("related.title")
 	case routeUserRelated:
 		return a.t("user.relatedUsers")
+	case routeUserMyPixiv:
+		return a.t("user.myPixiv")
 	case routeRecommendedUsers:
 		return a.t("recommendedUsers.title")
 	}
@@ -112,7 +115,7 @@ func (a *App) escape() {
 		return
 	}
 	switch a.route {
-	case routeUser, routeSeries, routeNovel, routeRelated, routeUserRelated:
+	case routeUser, routeSeries, routeNovel, routeRelated, routeUserRelated, routeUserMyPixiv:
 		a.goBack()
 	}
 }
@@ -215,7 +218,7 @@ func (a *App) header(c *ui.Context) {
 	ui.Row(c).Height(84).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		if a.route == routeUser || a.route == routeSeries || a.route == routeRelated ||
-			a.route == routeUserRelated {
+			a.route == routeUserRelated || a.route == routeUserMyPixiv {
 			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
@@ -409,6 +412,8 @@ func (a *App) page(c *ui.Context) {
 		a.userPage(c)
 	case routeUserRelated:
 		a.relatedUsersPage(c)
+	case routeUserMyPixiv:
+		a.myPixivUsersPage(c)
 	case routeSeries:
 		a.seriesPage(c)
 	case routeNovel:
@@ -432,6 +437,14 @@ func (a *App) goBack() {
 		r := a.relatedUsers
 		a.userView, a.backRoute = r.user, r.backRoute
 		a.relatedUsers, a.route = nil, routeUser
+		return
+	}
+	if a.route == routeUserMyPixiv && a.myPixivUsers != nil {
+		// The user page behind the list comes back whole, with its tabs and
+		// place, and its own way back.
+		m := a.myPixivUsers
+		a.userView, a.backRoute = m.user, m.backRoute
+		a.myPixivUsers, a.route = nil, routeUser
 		return
 	}
 	if a.route == routeRelated && a.related != nil {

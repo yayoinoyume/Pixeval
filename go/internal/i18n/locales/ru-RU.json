@@ -351,6 +351,9 @@
     "followersLoadFailed": "Не удалось загрузить подписчиков: %s",
     "relatedUsers": "Похожие пользователи",
     "noRelatedUsers": "Похожих пользователей нет",
+    "myPixiv": "Пользователи MyPixiv",
+    "noMyPixiv": "Пользователей MyPixiv нет",
+    "myPixivLoadFailed": "Не удалось загрузить пользователей MyPixiv: %s",
     "noRecommendedUsers": "Рекомендуемых авторов пока нет"
   },
   "recommendedUsers": {
