@@ -204,6 +204,9 @@ type App struct {
 	// novelContent fetches a novel body off the main thread; tests replace it
 	// to avoid the network.
 	novelContent func(ctx context.Context, novelID int64) (string, error)
+	// fetchNovelCommentPage fetches one page of a novel's comments off the main
+	// thread; tests replace it to avoid the network.
+	fetchNovelCommentPage func(ctx context.Context, novelID int64, offset int) (*pixiv.Page[pixiv.Comment], error)
 	// novelBookmarkFn sets or clears a novel's bookmark off the main thread;
 	// tests replace it to avoid the network.
 	novelBookmarkFn func(ctx context.Context, id int64, on bool) error
@@ -340,10 +343,11 @@ func New() *App {
 		followPrivateFn: func(ctx context.Context, id int64) error {
 			return client.Follow(ctx, id, true)
 		},
-		fetchCommentPage: client.Comments,
-		addCommentFn:     client.AddComment,
-		deleteCommentFn:  client.DeleteComment,
-		novelContent:     client.NovelContent,
+		fetchCommentPage:      client.Comments,
+		addCommentFn:          client.AddComment,
+		deleteCommentFn:       client.DeleteComment,
+		novelContent:          client.NovelContent,
+		fetchNovelCommentPage: client.NovelComments,
 		novelBookmarkFn: func(ctx context.Context, id int64, on bool) error {
 			if on {
 				return client.AddNovelBookmark(ctx, id, false)

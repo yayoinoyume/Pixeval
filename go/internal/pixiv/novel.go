@@ -22,6 +22,14 @@ func (c *Client) NovelContent(ctx context.Context, novelID int64) (string, error
 	return novelText(page)
 }
 
+// NovelComments reads one page of comments on a novel.
+func (c *Client) NovelComments(ctx context.Context, novelID int64, offset int) (*Page[Comment], error) {
+	q := url.Values{}
+	q.Set("novel_id", strconv.FormatInt(novelID, 10))
+	q.Set("offset", strconv.Itoa(offset))
+	return c.commentPage(ctx, c.pageURL("/v1/novel/comments", q))
+}
+
 // AddNovelBookmark bookmarks a novel. A private bookmark is visible only to
 // the user.
 func (c *Client) AddNovelBookmark(ctx context.Context, novelID int64, private bool) error {

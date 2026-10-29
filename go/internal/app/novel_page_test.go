@@ -546,3 +546,182 @@ func TestNovelFileNameIsSafe(t *testing.T) {
 		t.Errorf("name %q, want %q", got, want)
 	}
 }
+
+// novelCommentFixture is one novel comment by an author.
+func novelCommentFixture(id int64, author, text string) pixiv.Comment {
+	return pixiv.Comment{ID: id, Comment: text, User: pixiv.User{Name: author}}
+}
+
+// TestNovelPageShowsComments checks a signed-in reader sees the loaded
+// comments below the body, with their author, date and text.
+func TestNovelPageShowsComments(t *testing.T) {
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{}
+	a.fetchNovelCommentPage = func(_ context.Context, id int64, offset int) (*pixiv.Page[pixiv.Comment], error) {
+		if id != 7 || offset != 0 {
+			t.Errorf("fetched novel %d offset %d, want 7:0", id, offset)
+		}
+		return &pixiv.Page[pixiv.Comment]{Items: []pixiv.Comment{{
+			ID:         1,
+			Comment:    "第一条评论",
+			User:       pixiv.User{Name: "作者甲"},
+			CreateDate: time.Date(2024, 5, 1, 10, 0, 0, 0, time.Local),
+		}}}, nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool {
+		return !v.loading && !v.commentsLoading && len(v.comments) == 1
+	})
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	for _, want := range []string{a.t("novel.comments"), "第一条评论", "作者甲", "2024-05-01 10:00"} {
+		if !tt.HasText(want) {
+			t.Errorf("%q missing: %q", want, tt.Texts())
+		}
+	}
+}
+
+// TestNovelPageCommentsEmpty checks a first page with no comments says so.
+func TestNovelPageCommentsEmpty(t *testing.T) {
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{}
+	a.fetchNovelCommentPage = func(context.Context, int64, int) (*pixiv.Page[pixiv.Comment], error) {
+		return &pixiv.Page[pixiv.Comment]{}, nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool {
+		return !v.loading && !v.commentsLoading && v.commentsErr == ""
+	})
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if want := a.t("novel.commentsEmpty"); !tt.HasText(want) {
+		t.Errorf("%q missing: %q", want, tt.Texts())
+	}
+}
+
+// TestNovelPageCommentsFailureRetry checks a failed comment load shows the
+// reason and the retry button loads the first page again.
+func TestNovelPageCommentsFailureRetry(t *testing.T) {
+	var mu sync.Mutex
+	calls := 0
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{}
+	a.fetchNovelCommentPage = func(context.Context, int64, int) (*pixiv.Page[pixiv.Comment], error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls == 1 {
+			return nil, errors.New("网络失败")
+		}
+		return &pixiv.Page[pixiv.Comment]{Items: []pixiv.Comment{
+			novelCommentFixture(1, "作者甲", "重试后的评论"),
+		}}, nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return v.commentsErr != "" })
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if want := a.tf("novel.commentsFailed", "网络失败"); !tt.HasText(want) {
+		t.Errorf("%q missing: %q", want, tt.Texts())
+	}
+	if err := tt.Click(a.t("common.retry")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitNovel(t, a, func(v novelPageView) bool {
+		return !v.commentsLoading && len(v.comments) == 1 && v.commentsErr == ""
+	})
+
+	tt.Frame()
+	if !tt.HasText("重试后的评论") {
+		t.Errorf("retried comment missing: %q", tt.Texts())
+	}
+}
+
+// TestNovelPageCommentsLoadMore checks the next page asks for the offset after
+// the comments already loaded and appends its items.
+func TestNovelPageCommentsLoadMore(t *testing.T) {
+	var mu sync.Mutex
+	var offsets []int
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{}
+	a.fetchNovelCommentPage = func(_ context.Context, id int64, offset int) (*pixiv.Page[pixiv.Comment], error) {
+		mu.Lock()
+		offsets = append(offsets, offset)
+		mu.Unlock()
+		if id != 7 {
+			t.Errorf("novel %d, want 7", id)
+		}
+		if offset == 0 {
+			return &pixiv.Page[pixiv.Comment]{
+				Items:   []pixiv.Comment{novelCommentFixture(1, "作者甲", "第一条评论")},
+				NextURL: "next",
+			}, nil
+		}
+		return &pixiv.Page[pixiv.Comment]{
+			Items: []pixiv.Comment{novelCommentFixture(2, "作者乙", "第二条评论")},
+		}, nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool {
+		return !v.loading && !v.commentsLoading && len(v.comments) == 1 && v.commentsNext != ""
+	})
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click(a.t("novel.loadMoreComments")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitNovel(t, a, func(v novelPageView) bool {
+		return !v.commentsLoading && len(v.comments) == 2 && v.commentsNext == ""
+	})
+
+	mu.Lock()
+	got := append([]int(nil), offsets...)
+	mu.Unlock()
+	if len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Errorf("fetched offsets %v, want [0 1]", got)
+	}
+	tt.Frame()
+	if !tt.HasText("第二条评论") {
+		t.Errorf("second page missing: %q", tt.Texts())
+	}
+}
+
+// TestNovelPageCommentsWaitForBody checks a body that fails loads no comments.
+func TestNovelPageCommentsWaitForBody(t *testing.T) {
+	a := newNovelApp(func(context.Context, int64) (string, error) {
+		return "", errors.New("正文失败")
+	})
+	a.session = &pixiv.Token{}
+	a.fetchNovelCommentPage = func(context.Context, int64, int) (*pixiv.Page[pixiv.Comment], error) {
+		t.Error("comments fetched before the body loaded")
+		return &pixiv.Page[pixiv.Comment]{}, nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return v.err != "" })
+}
+
+// TestNovelPageCommentsClearOnSwitch checks opening another novel starts with
+// an empty comment list instead of the previous novel's.
+func TestNovelPageCommentsClearOnSwitch(t *testing.T) {
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{}
+	a.fetchNovelCommentPage = func(_ context.Context, id int64, _ int) (*pixiv.Page[pixiv.Comment], error) {
+		if id == 7 {
+			return &pixiv.Page[pixiv.Comment]{Items: []pixiv.Comment{
+				novelCommentFixture(1, "作者甲", "旧小说的评论"),
+			}}, nil
+		}
+		return &pixiv.Page[pixiv.Comment]{}, nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading && len(v.comments) == 1 })
+
+	a.openNovel(8, "另一本")
+	if got := a.novelView.snapshot().comments; len(got) != 0 {
+		t.Errorf("comments after switching = %d, want none", len(got))
+	}
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading && !v.commentsLoading })
+	if got := a.novelView.snapshot().comments; len(got) != 0 {
+		t.Errorf("comments after the second load = %d, want none", len(got))
+	}
+}
