@@ -206,6 +206,10 @@
     "decrease": "减少",
     "increase": "增加",
     "groupContent": "内容",
+    "groupNetwork": "网络",
+    "proxy": "代理地址",
+    "proxyHint": "留空则跟随系统或环境变量；支持 http://、https://、socks5://",
+    "proxyInvalid": "代理地址无效，未保存",
     "groupAbout": "关于"
   },
   "history": {

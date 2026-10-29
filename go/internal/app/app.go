@@ -220,6 +220,9 @@ func New() *App {
 	client := pixiv.NewClient()
 	settings := loadSettings()
 	client.SetAllowR18(settings.ShowR18)
+	if err := client.SetProxy(settings.ProxyURL); err != nil {
+		log.Printf("settings: proxy: %v", err)
+	}
 	subsStore := &subscription.Store{}
 	if err := loadSubscriptions(subsStore); err != nil {
 		log.Printf("subscriptions: %v", err)

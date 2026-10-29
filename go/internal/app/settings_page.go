@@ -160,6 +160,12 @@ func (a *App) settingsPage(c *ui.Context) {
 						})
 					})
 
+					a.settingsGroup(c, a.t("settings.groupNetwork"), func(row settingsRow) {
+						row(a.t("settings.proxy"), a.t("settings.proxyHint"), func() {
+							ui.TextInput(c, &s.ProxyURL).Width(360).Height(36).Label(a.t("settings.proxy"))
+						})
+					})
+
 					a.settingsGroup(c, a.t("settings.groupContent"), func(row settingsRow) {
 						row(a.t("settings.showR18"), a.t("settings.showR18Hint"), func() {
 							switchControl(c, &s.ShowR18, a.t("settings.showR18"))
@@ -486,6 +492,10 @@ func (a *App) applySavedSettings(c *ui.Context) {
 		if a.downloads != nil {
 			a.downloads.SetConcurrency(a.settings.DownloadConcurrency)
 		}
+		if err := a.client.SetProxy(a.settings.ProxyURL); err != nil {
+			a.settingsErr = a.t("settings.proxyInvalid")
+			return
+		}
 		a.restartSubscriptions()
 		c.Toast(a.t("settings.saved"))
 		// The masonry keeps its last layout until the next frame; ask for it
@@ -515,6 +525,13 @@ func (a *App) saveSettings() {
 		a.settingsErr = a.t("settings.downloadMacroInvalid")
 		return
 	}
+	// A proxy the transport cannot dial is reported and nothing is saved, so
+	// the running client keeps the last working one.
+	if !validProxyURL(a.settings.ProxyURL) {
+		a.settingsErr = a.t("settings.proxyInvalid")
+		return
+	}
+	a.settings.ProxyURL = strings.TrimSpace(a.settings.ProxyURL)
 	if a.settingsSaved == nil {
 		a.settingsSaved = make(chan error, 1)
 	}

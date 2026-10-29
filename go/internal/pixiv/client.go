@@ -10,7 +10,9 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,36 +30,72 @@ type Client struct {
 	onLimit  func(retryAfter time.Duration)
 	backoff  []time.Duration
 
+	// proxy is the Proxy function the transport asks for every request. It is
+	// swapped atomically, so changing the proxy never writes a transport field
+	// while requests are in flight.
+	proxy atomic.Value
+
 	// AllowR18 asks Pixiv for every work instead of filtering R18 out. It is
 	// set through SetAllowR18 and read through filterParam, both under mu.
 	AllowR18 bool
 }
 
 func NewClient() *Client {
-	return &Client{
-		baseURL: appBaseURL,
-		hc: &http.Client{
-			Timeout: 100 * time.Second,
-			// A feed loads six covers at once; the default pool of two idle
-			// connections per host would redo TLS for the rest of every batch.
-			Transport: &http.Transport{
-				Proxy:                 http.ProxyFromEnvironment,
-				DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-				ForceAttemptHTTP2:     true,
-				MaxIdleConns:          16,
-				MaxIdleConnsPerHost:   8,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-		},
+	c := &Client{
+		baseURL:  appBaseURL,
 		cooldown: 700 * time.Millisecond,
 		backoff:  []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second, 30 * time.Second, 60 * time.Second},
 	}
+	c.proxy.Store(http.ProxyFromEnvironment)
+	c.hc = &http.Client{
+		Timeout: 100 * time.Second,
+		// A feed loads six covers at once; the default pool of two idle
+		// connections per host would redo TLS for the rest of every batch.
+		Transport: &http.Transport{
+			Proxy:                 c.proxyFor,
+			DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          16,
+			MaxIdleConnsPerHost:   8,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+	}
+	return c
+}
+
+// proxyFor asks the proxy function SetProxy last stored.
+func (c *Client) proxyFor(req *http.Request) (*url.URL, error) {
+	return c.proxy.Load().(func(*http.Request) (*url.URL, error))(req)
 }
 
 // HTTP returns the shared HTTP client, for image downloads and the web login.
 func (c *Client) HTTP() *http.Client { return c.hc }
+
+// SetProxy makes every request go through raw, or through the environment's
+// proxy again when raw is empty. A URL the transport cannot use is rejected
+// and the current proxy stays.
+func (c *Client) SetProxy(raw string) error {
+	proxy := http.ProxyFromEnvironment
+	if raw = strings.TrimSpace(raw); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return fmt.Errorf("proxy: %w", err)
+		}
+		switch u.Scheme {
+		case "http", "https", "socks5":
+		default:
+			return fmt.Errorf("proxy: unsupported scheme %q", u.Scheme)
+		}
+		if u.Host == "" {
+			return errors.New("proxy: missing host")
+		}
+		proxy = http.ProxyURL(u)
+	}
+	c.proxy.Store(proxy)
+	return nil
+}
 
 // SetToken replaces the session token.
 func (c *Client) SetToken(t *Token) {

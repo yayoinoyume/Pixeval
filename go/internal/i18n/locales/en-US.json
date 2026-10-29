@@ -206,6 +206,10 @@
     "decrease": "Decrease",
     "increase": "Increase",
     "groupContent": "Content",
+    "groupNetwork": "Network",
+    "proxy": "Proxy address",
+    "proxyHint": "Empty follows the system or environment proxy; http://, https:// and socks5:// are supported",
+    "proxyInvalid": "The proxy address is not valid, nothing was saved",
     "groupAbout": "About"
   },
   "history": {
