@@ -39,6 +39,7 @@ const (
 	routeUserRelated      route = "userRelated"
 	routeUserMyPixiv      route = "userMyPixiv"
 	routeSeries           route = "series"
+	routeSeriesList       route = "seriesList"
 	routeNovel            route = "novel"
 	routeRelated          route = "related"
 	routeHelp             route = "help"
@@ -50,6 +51,8 @@ func (a *App) routeLabel(r route) string {
 	switch r {
 	case routeRelated:
 		return a.t("related.title")
+	case routeSeriesList:
+		return a.t("nav.series")
 	case routeUserRelated:
 		return a.t("user.relatedUsers")
 	case routeUserMyPixiv:
@@ -64,6 +67,15 @@ func (a *App) routeLabel(r route) string {
 	return a.t("nav." + string(r))
 }
 
+// pageTitle is the page header's name. It is the navigation label except for
+// the series watchlist, whose header names the list rather than the group.
+func (a *App) pageTitle(r route) string {
+	if r == routeSeriesList {
+		return a.t("series.watchlistTitle")
+	}
+	return a.routeLabel(r)
+}
+
 // navGroup is one rail group: the pages its menu lists, the glyph on the
 // group's button and the key its name is read from. The rail shows few
 // destinations; the groups hold the rest one click away.
@@ -76,7 +88,7 @@ type navGroup struct {
 // navGroups are the rail's groups, in the order they show under the pages
 // that stand alone.
 var navGroups = []navGroup{
-	{id: "works", glyph: iconImage, routes: []route{routeNew, routeMyPixiv, routeSpotlight, routeSubs}},
+	{id: "works", glyph: iconImage, routes: []route{routeNew, routeSeriesList, routeMyPixiv, routeSpotlight, routeSubs}},
 	{id: "users", glyph: iconUser, routes: []route{routeRecommendedUsers}},
 	{id: "library", glyph: iconSeries, routes: []route{routeHistory, routeDownloads, routeWatchLater}},
 }
@@ -295,7 +307,7 @@ func (a *App) navGroupRoute(g navGroup) route {
 // with the accent rule and accent text; choosing a row shows that page and
 // closes the menu.
 func (a *App) navGroupMenuRow(c *ui.Context, t tokens, r route) {
-	label := a.t("nav." + string(r))
+	label := a.routeLabel(r)
 	selected := a.route == r
 	row := ui.ButtonBase(c).FillWidth().Height(34).Radius(t.RadiusS).
 		Padding(0, t.SpaceS).Gap(t.SpaceS).Row().AlignItems(ui.Center).
@@ -341,7 +353,7 @@ func (a *App) header(c *ui.Context) {
 				a.goBack()
 			}
 		}
-		displayText(c, a.routeLabel(a.route)).FontSize(t.TextDisplay).FontWeight(500).
+		displayText(c, a.pageTitle(a.route)).FontSize(t.TextDisplay).FontWeight(500).
 			LineHeight(1.12).TextColor(t.Text).Grow(1).MaxLines(1).MinWidth(0)
 		if a.session == nil {
 			if ui.PrimaryButton(c, a.t("nav.login")).Height(36).Radius(t.RadiusS).
@@ -534,6 +546,8 @@ func (a *App) page(c *ui.Context) {
 		a.myPixivUsersPage(c)
 	case routeSeries:
 		a.seriesPage(c)
+	case routeSeriesList:
+		a.seriesListPage(c)
 	case routeNovel:
 		a.novelPage(c)
 	case routeRelated:

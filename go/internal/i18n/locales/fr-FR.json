@@ -49,6 +49,7 @@
     "noWorks": "Aucune œuvre",
     "illust": "Illustrations",
     "manga": "Mangas",
+    "novel": "Romans",
     "save": "Enregistrer",
     "back": "Retour"
   },
@@ -389,6 +390,10 @@
   },
   "series": {
     "open": "Série",
+    "watchlistTitle": "Séries suivies",
+    "watchlistEmpty": "Aucune série suivie",
+    "watchlistEmptyHint": "Suivez une série sur Pixiv pour la voir ici.",
+    "novelUnsupported": "Les pages de séries de romans ne sont pas encore prises en charge",
     "loadFailed": "Impossible de charger la série : %s",
     "author": "Auteur",
     "worksCount": "%d œuvres",
