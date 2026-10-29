@@ -81,7 +81,14 @@
     "minHeight": "Min height",
     "maxHeight": "Max height",
     "invalidDate": "Use a date like YYYY-MM-DD",
-    "invalidSize": "Sizes must be 0 or a positive whole number"
+    "invalidSize": "Sizes must be 0 or a positive whole number",
+    "sauce": "Reverse image search",
+    "sauceHint": "Paste a direct image URL (http or https) to find its source",
+    "sauceURL": "Image URL",
+    "sauceSearch": "Find source",
+    "sauceNoKey": "Add a SauceNAO API key in Settings first",
+    "sauceEmpty": "No matching source found",
+    "sauceFailed": "Search failed: %s"
   },
   "spotlight": {
     "empty": "No spotlight articles",
@@ -235,6 +242,8 @@
     "proxy": "Proxy address",
     "proxyHint": "Empty follows the system or environment proxy; http://, https:// and socks5:// are supported",
     "proxyInvalid": "The proxy address is not valid, nothing was saved",
+    "sauceKey": "SauceNAO API key",
+    "sauceKeyHint": "Used by reverse image search; leave it empty to turn the feature off",
     "groupCache": "Cache",
     "cacheLimit": "Image cache limit (MB)",
     "cacheHint": "Cached images beyond the limit are deleted, the least recently used first",

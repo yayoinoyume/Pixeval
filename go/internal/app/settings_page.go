@@ -168,6 +168,9 @@ func (a *App) settingsPage(c *ui.Context) {
 						row(a.t("settings.proxy"), a.t("settings.proxyHint"), func() {
 							ui.TextInput(c, &s.ProxyURL).Width(360).Height(36).Label(a.t("settings.proxy"))
 						})
+						row(a.t("settings.sauceKey"), a.t("settings.sauceKeyHint"), func() {
+							ui.TextInput(c, &s.SauceNAOAPIKey).Width(360).Height(36).Label(a.t("settings.sauceKey"))
+						})
 					})
 
 					a.settingsGroup(c, a.t("settings.groupCache"), func(row settingsRow) {
@@ -668,6 +671,7 @@ func (a *App) saveSettings() {
 		return
 	}
 	a.settings.ProxyURL = strings.TrimSpace(a.settings.ProxyURL)
+	a.settings.SauceNAOAPIKey = strings.TrimSpace(a.settings.SauceNAOAPIKey)
 	if a.settingsSaved == nil {
 		a.settingsSaved = make(chan error, 1)
 	}

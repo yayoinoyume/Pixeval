@@ -79,6 +79,9 @@ type Settings struct {
 	// ProxyURL routes the app's requests through a proxy; empty follows the
 	// environment's proxy settings.
 	ProxyURL string `json:"proxyUrl"`
+	// SauceNAOAPIKey authenticates the reverse image search; empty turns it
+	// off.
+	SauceNAOAPIKey string `json:"sauceNaoApiKey"`
 	// ImageCacheLimitMB is how many megabytes the image cache may take on disk.
 	ImageCacheLimitMB int `json:"imageCacheLimitMB"`
 }
@@ -237,6 +240,7 @@ func (s *Settings) normalize() {
 	if !validProxyURL(s.ProxyURL) {
 		s.ProxyURL = ""
 	}
+	s.SauceNAOAPIKey = strings.TrimSpace(s.SauceNAOAPIKey)
 	// A template the parser rejects cannot name a file, so it falls back to
 	// the default one instead of failing every download.
 	if strings.TrimSpace(s.DownloadMacro) == "" {

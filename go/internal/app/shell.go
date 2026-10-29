@@ -3,14 +3,18 @@ package app
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/filter"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
+	"github.com/yayoinoyume/pixeval-go/internal/saucenao"
 	"github.com/yayoinoyume/pixeval-go/internal/ui/widgets"
 )
 
@@ -629,8 +633,11 @@ func (a *App) searchTargetValue(label string) string {
 }
 
 // searchUser is the search page's user tab, after the illustration and novel
-// ones.
-const searchUser = searchNovel + 1
+// ones, and searchSauce its reverse image search tab.
+const (
+	searchUser  = searchNovel + 1
+	searchSauce = searchUser + 1
+)
 
 // searchDateLayout is the date format the advanced filter accepts.
 const searchDateLayout = "2006-01-02"
@@ -775,23 +782,29 @@ func (a *App) searchPage(c *ui.Context) {
 	st := a.search
 	t := themeOf(c)
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
-		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, 0, contentPadding).
-			AlignItems(ui.Center).Children(func() {
-			box := ui.TextInput(c, &st.query).Grow(1).
-				Placeholder(a.t("search.placeholder")).Label(a.t("search.placeholder"))
-			if st.focusQuery {
-				st.focusQuery = false
-				box = box.Focus()
-			}
-			if ui.PrimaryButton(c, a.t("search.action")).Clicked() {
-				a.startSearch(st)
-			}
-		})
-		a.searchHistoryBar(c, t)
+		if a.searchKind != searchSauce {
+			ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, 0, contentPadding).
+				AlignItems(ui.Center).Children(func() {
+				box := ui.TextInput(c, &st.query).Grow(1).
+					Placeholder(a.t("search.placeholder")).Label(a.t("search.placeholder"))
+				if st.focusQuery {
+					st.focusQuery = false
+					box = box.Focus()
+				}
+				if ui.PrimaryButton(c, a.t("search.action")).Clicked() {
+					a.startSearch(st)
+				}
+			})
+			a.searchHistoryBar(c, t)
+		}
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
 			textTabs(c, t, &a.searchKind, a.t("search.illust"), a.t("search.novel"),
-				a.t("search.user"))
+				a.t("search.user"), a.t("search.sauce"))
 		})
+		if a.searchKind == searchSauce {
+			a.saucePage(c, t)
+			return
+		}
 		if a.searchKind == searchIllust {
 			ui.Row(c).Gap(t.SpaceS).Padding(0, contentPadding, 0, contentPadding).
 				AlignItems(ui.Center).Children(func() {
@@ -820,6 +833,181 @@ func (a *App) searchPage(c *ui.Context) {
 		}
 		a.browsePage(c, st)
 	})
+}
+
+// sauceSearchTimeout bounds one reverse image search.
+const sauceSearchTimeout = 30 * time.Second
+
+// sauceState is the reverse image search's answer. The view runs on the main
+// thread; the request goroutine changes the fields under mu.
+type sauceState struct {
+	mu       sync.Mutex
+	items    []saucenao.Entry
+	loading  bool
+	searched bool
+	err      string
+}
+
+// sauceView is what the reverse image search page draws.
+type sauceView struct {
+	items    []saucenao.Entry
+	loading  bool
+	searched bool
+	err      string
+}
+
+func (st *sauceState) snapshot() sauceView {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return sauceView{items: st.items, loading: st.loading, searched: st.searched, err: st.err}
+}
+
+// startSauceSearch looks up the box's image URL and shows the sources when it
+// lands.
+func (a *App) startSauceSearch() {
+	imageURL := strings.TrimSpace(a.sauceURL)
+	apiKey := ""
+	if a.settings != nil {
+		apiKey = strings.TrimSpace(a.settings.SauceNAOAPIKey)
+	}
+	search := a.sauceSearchFn
+	if imageURL == "" || apiKey == "" || search == nil || a.sauce == nil {
+		return
+	}
+	st := a.sauce
+	st.mu.Lock()
+	if st.loading {
+		st.mu.Unlock()
+		return
+	}
+	st.loading, st.searched, st.err, st.items = true, true, "", nil
+	st.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), sauceSearchTimeout)
+		defer cancel()
+		res, err := search(ctx, apiKey, imageURL)
+
+		st.mu.Lock()
+		st.loading = false
+		switch {
+		case errors.Is(err, saucenao.ErrNoResults):
+			st.items = nil
+		case err != nil:
+			st.err = err.Error()
+		case res == nil || len(res.Entries) == 0:
+			st.items = nil
+		default:
+			st.items = res.Entries
+		}
+		st.mu.Unlock()
+		a.update(func() {})
+	}()
+}
+
+// saucePage draws the reverse image search: the URL box and its result cards,
+// or the way to configure the key it needs.
+func (a *App) saucePage(c *ui.Context, t tokens) {
+	apiKey := ""
+	if a.settings != nil {
+		apiKey = strings.TrimSpace(a.settings.SauceNAOAPIKey)
+	}
+	if apiKey == "" {
+		emptyState(c, iconImage, a.t("search.sauceNoKey"), a.t("search.sauceHint"), func() {
+			if ui.PrimaryButton(c, a.t("nav.settings")).Radius(t.RadiusS).Clicked() {
+				a.goRoute(routeSettings)
+			}
+		})
+		return
+	}
+	v := a.sauce.snapshot()
+	ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, 0, contentPadding).
+		AlignItems(ui.Center).Children(func() {
+		ui.TextInput(c, &a.sauceURL).Grow(1).
+			Placeholder(a.t("search.sauceURL")).Label(a.t("search.sauceURL"))
+		if ui.PrimaryButton(c, a.t("search.sauceSearch")).Disabled(v.loading).Clicked() {
+			a.startSauceSearch()
+		}
+	})
+	ui.Row(c).Padding(t.SpaceXS, contentPadding, 0, contentPadding).Children(func() {
+		ui.Text(c, a.t("search.sauceHint")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+	})
+	if v.err != "" {
+		ui.Row(c).Padding(t.SpaceXS, contentPadding, 0, contentPadding).Children(func() {
+			ui.Text(c, a.tf("search.sauceFailed", v.err)).FontSize(t.TextSmall).TextColor(t.Danger)
+		})
+	}
+	if v.searched && !v.loading && v.err == "" && len(v.items) == 0 {
+		emptyState(c, iconImage, a.t("search.sauceEmpty"), "", nil)
+		return
+	}
+	if len(v.items) == 0 {
+		return
+	}
+	ui.Scroll(c).Grow(1).Children(func() {
+		ui.Column(c).Gap(t.SpaceS).Padding(t.SpaceM, contentPadding, t.SpaceL, contentPadding).Children(func() {
+			for _, entry := range v.items {
+				a.sauceResultCard(c, t, entry)
+			}
+		})
+	})
+}
+
+// sauceResultCard shows one source: how closely it matches, its title and
+// creator, and a link that opens it in the browser.
+func (a *App) sauceResultCard(c *ui.Context, t tokens, entry saucenao.Entry) {
+	ui.Column(c).FillWidth().Background(t.Surface).Radius(t.RadiusM).
+		Border(1, t.Border).Padding(t.SpaceM).Gap(t.SpaceXS).Children(func() {
+		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, strconv.FormatFloat(entry.Similarity, 'f', 1, 64)+"%").FontSize(t.TextSmall).
+				FontWeight(600).TextColor(t.Accent)
+			if entry.Title != "" {
+				ui.Text(c, entry.Title).FontSize(t.TextBody).FontWeight(500).TextColor(t.Text).
+					Grow(1).MaxLines(2)
+			}
+		})
+		if entry.Creator != "" {
+			ui.Text(c, entry.Creator).FontSize(t.TextSmall).TextColor(t.TextMuted).MaxLines(1)
+		}
+		if source := sauceSource(entry); source != "" {
+			b := ui.ButtonBase(c).Padding(0).Label(source).OnClick(func() {
+				a.openSauceSource(c, source)
+			})
+			b.Children(func() {
+				ui.Text(c, source).FontSize(t.TextSmall).TextColor(t.Accent).MaxLines(1)
+			})
+		}
+	})
+}
+
+// sauceSource is the link a result opens: its author page when it has one,
+// else the first source link.
+func sauceSource(entry saucenao.Entry) string {
+	candidates := make([]string, 0, 1+len(entry.ExtURLs))
+	candidates = append(candidates, entry.AuthorURL)
+	candidates = append(candidates, entry.ExtURLs...)
+	for _, raw := range candidates {
+		raw = strings.TrimSpace(raw)
+		u, err := url.Parse(raw)
+		if err != nil || u.Host == "" {
+			continue
+		}
+		if strings.EqualFold(u.Scheme, "http") || strings.EqualFold(u.Scheme, "https") {
+			return raw
+		}
+	}
+	return ""
+}
+
+// openSauceSource opens a result's source in the default browser.
+func (a *App) openSauceSource(c *ui.Context, raw string) {
+	open := a.openExternalFn
+	if open == nil {
+		open = mygo.Shell.OpenExternal
+	}
+	if err := open(raw); err != nil {
+		c.Toast(a.tf("search.sauceFailed", err.Error()))
+	}
 }
 
 // searchArmed reports whether the result list the search page shows may load.

@@ -19,6 +19,7 @@ import (
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/mcp"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
+	"github.com/yayoinoyume/pixeval-go/internal/saucenao"
 	"github.com/yayoinoyume/pixeval-go/internal/subscription"
 )
 
@@ -121,6 +122,12 @@ type App struct {
 	searchErr       string
 	// searchHistory is the words the user searched for, newest first.
 	searchHistory *SearchHistory
+	// sauceURL is the reverse image search's image URL, as typed; sauce holds
+	// its results. sauceSearchFn runs the search off the main thread; tests
+	// replace it to avoid the network.
+	sauceURL      string
+	sauce         *sauceState
+	sauceSearchFn func(ctx context.Context, apiKey, imageURL string) (*saucenao.Result, error)
 	// settings are the user's preferences, loaded at start and saved from the
 	// settings page. shortcutsOpen shows the shortcut hint in its About card.
 	settings      *Settings
@@ -342,6 +349,8 @@ func New() *App {
 		searchSort:       searchSortDateDesc,
 		searchTarget:     searchTargetPartial,
 		searchHistory:    loadSearchHistory(),
+		sauce:            &sauceState{},
+		sauceSearchFn:    saucenao.NewClient().Search,
 		updater:          mygoUpdater{},
 	}
 	// The check probes the install directory, so the settings page asks once.

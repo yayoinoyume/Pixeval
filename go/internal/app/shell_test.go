@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
+	"github.com/yayoinoyume/pixeval-go/internal/saucenao"
 )
 
 // TestShellLoggedOut checks the home page shows the login button to a
@@ -597,5 +599,175 @@ func TestSearchAgainResetsUsers(t *testing.T) {
 	}
 	if q := queries[1]; q.Get("word") != "犬" {
 		t.Errorf("second query = %v, want the new word", q)
+	}
+}
+
+// newSauceApp is a signed-in app on the search page with a reverse image
+// search function that answers without a network.
+func newSauceApp(t *testing.T, search func(context.Context, string, string) (*saucenao.Result, error)) *App {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	a := New()
+	a.images = imagex.New(nil, "")
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	a.route = routeSearch
+	a.searchKind = searchSauce
+	a.settings.SauceNAOAPIKey = "secret-key"
+	a.sauceSearchFn = search
+	return a
+}
+
+// waitSauce waits for the reverse image search goroutine to settle the state
+// as want.
+func waitSauce(t *testing.T, st *sauceState, what string, want func(v sauceView) bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if v := st.snapshot(); want(v) {
+			return
+		}
+		if time.Now().After(deadline) {
+			v := st.snapshot()
+			t.Fatalf("reverse image search did not %s: loading=%v searched=%v err=%q results=%d",
+				what, v.loading, v.searched, v.err, len(v.items))
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestSauceTabPromptsForKey checks the fourth search tab exists and a missing
+// key sends the user to the settings page instead of searching.
+func TestSauceTabPromptsForKey(t *testing.T) {
+	a := newSauceApp(t, nil)
+	a.settings.SauceNAOAPIKey = ""
+	a.searchKind = searchIllust
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if err := tt.Click("以图搜图"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.searchKind != searchSauce {
+		t.Fatalf("searchKind %d, want %d", a.searchKind, searchSauce)
+	}
+	tt.Frame()
+	if !tt.HasText("先在设置中填写 SauceNAO API Key") {
+		t.Errorf("key prompt missing: %q", tt.Texts())
+	}
+}
+
+// TestSauceSearchShowsResults checks the URL and key reach the search, and a
+// result shows its similarity, title, creator and source.
+func TestSauceSearchShowsResults(t *testing.T) {
+	var mu sync.Mutex
+	var gotKey, gotURL string
+	a := newSauceApp(t, func(_ context.Context, key, imageURL string) (*saucenao.Result, error) {
+		mu.Lock()
+		gotKey, gotURL = key, imageURL
+		mu.Unlock()
+		return &saucenao.Result{Entries: []saucenao.Entry{{
+			Similarity: 97.4,
+			Title:      "作品标题",
+			Creator:    "画师",
+			AuthorURL:  "https://www.pixiv.net/users/1",
+			ExtURLs:    []string{"https://example.com/source"},
+		}}}, nil
+	})
+	a.sauceURL = "https://example.com/image.jpg"
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if err := tt.Click("查找来源"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitSauce(t, a.sauce, "load the source", func(v sauceView) bool {
+		return !v.loading && len(v.items) == 1
+	})
+	tt.Frame()
+	for _, text := range []string{"97.4%", "作品标题", "画师", "https://www.pixiv.net/users/1"} {
+		if !tt.HasText(text) {
+			t.Errorf("%q missing: %q", text, tt.Texts())
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if gotKey != "secret-key" {
+		t.Errorf("key = %q, want secret-key", gotKey)
+	}
+	if gotURL != "https://example.com/image.jpg" {
+		t.Errorf("url = %q, want the image URL", gotURL)
+	}
+}
+
+// TestSauceSearchEmptyAndFailed checks an empty answer says so, and a failed
+// one shows why.
+func TestSauceSearchEmptyAndFailed(t *testing.T) {
+	t.Run("empty", func(t *testing.T) {
+		a := newSauceApp(t, func(context.Context, string, string) (*saucenao.Result, error) {
+			return nil, saucenao.ErrNoResults
+		})
+		a.sauceURL = "https://example.com/image.jpg"
+		tt := ui.NewTester(a.View, 1000, 700)
+		tt.Frame()
+		if err := tt.Click("查找来源"); err != nil {
+			t.Fatalf("Click: %v", err)
+		}
+		waitSauce(t, a.sauce, "end empty", func(v sauceView) bool {
+			return v.searched && !v.loading && v.err == ""
+		})
+		tt.Frame()
+		if !tt.HasText("没有找到匹配的来源") {
+			t.Errorf("empty state missing: %q", tt.Texts())
+		}
+	})
+	t.Run("failed", func(t *testing.T) {
+		a := newSauceApp(t, func(context.Context, string, string) (*saucenao.Result, error) {
+			return nil, errors.New("offline")
+		})
+		a.sauceURL = "https://example.com/image.jpg"
+		tt := ui.NewTester(a.View, 1000, 700)
+		tt.Frame()
+		if err := tt.Click("查找来源"); err != nil {
+			t.Fatalf("Click: %v", err)
+		}
+		waitSauce(t, a.sauce, "fail", func(v sauceView) bool {
+			return v.searched && !v.loading && v.err != ""
+		})
+		tt.Frame()
+		if !tt.HasText("查找失败：offline") {
+			t.Errorf("failure missing: %q", tt.Texts())
+		}
+	})
+}
+
+// TestSauceResultOpensSource checks a click on a result's source opens it in
+// the browser, not in the app.
+func TestSauceResultOpensSource(t *testing.T) {
+	a := newSauceApp(t, func(context.Context, string, string) (*saucenao.Result, error) {
+		return &saucenao.Result{Entries: []saucenao.Entry{{
+			Similarity: 90,
+			Title:      "作品标题",
+			AuthorURL:  "https://www.pixiv.net/users/1",
+		}}}, nil
+	})
+	var opened []string
+	a.openExternalFn = func(url string) error {
+		opened = append(opened, url)
+		return nil
+	}
+	a.sauceURL = "https://example.com/image.jpg"
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if err := tt.Click("查找来源"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitSauce(t, a.sauce, "load the source", func(v sauceView) bool {
+		return !v.loading && len(v.items) == 1
+	})
+	tt.Frame()
+	if err := tt.Click("https://www.pixiv.net/users/1"); err != nil {
+		t.Fatalf("Click source: %v", err)
+	}
+	if len(opened) != 1 || opened[0] != "https://www.pixiv.net/users/1" {
+		t.Errorf("opened = %v, want the source URL", opened)
 	}
 }
