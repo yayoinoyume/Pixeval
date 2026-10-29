@@ -11,6 +11,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 )
 
@@ -148,6 +149,10 @@ func (a *App) settingsPage(c *ui.Context) {
 						})
 						row(a.t("settings.concurrency"), "", func() {
 							a.numberStepper(c, &s.DownloadConcurrency, 1, 8, 1, a.t("settings.concurrency"))
+						})
+						row(a.t("settings.downloadMacro"), a.t("settings.downloadMacroHint"), func() {
+							ui.TextInput(c, &s.DownloadMacro).Width(360).Height(36).
+								Label(a.t("settings.downloadMacro"))
 						})
 					})
 
@@ -469,6 +474,15 @@ func (a *App) saveSettings() {
 	path, err := settingsPath()
 	if err != nil {
 		a.settingsErr = a.tf("settings.pathFailed", err.Error())
+		return
+	}
+	// A template that does not parse would name no file, so the save keeps the
+	// last good one and says why.
+	if strings.TrimSpace(a.settings.DownloadMacro) == "" {
+		a.settings.DownloadMacro = download.DefaultMacro
+	}
+	if _, err := download.Parse(a.settings.DownloadMacro); err != nil {
+		a.settingsErr = a.t("settings.downloadMacroInvalid")
 		return
 	}
 	if a.settingsSaved == nil {

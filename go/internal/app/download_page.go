@@ -3,7 +3,9 @@ package app
 import (
 	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -39,38 +41,151 @@ func (a *App) downloadWork(w pixiv.Illustration) (queued int, ok bool) {
 	if a.downloads == nil || a.downloadsDir == "" {
 		return 0, false
 	}
+	tmpl := downloadTemplate(a.downloadMacro())
 	n := pageCount(w)
-	artist := downloadSafeName(w.User.Name)
 	tasks := make([]download.Task, 0, n)
 	for i := 0; i < n; i++ {
+		ctx := downloadContext(w, i, downloadExt(w, i))
 		tasks = append(tasks, download.Task{
 			ID:       fmt.Sprintf("%d_%d", w.ID, i),
 			IllustID: w.ID,
 			Title:    w.Title,
 			Artist:   w.User.Name,
 			URL:      w.PageURL(i),
-			// The page number is one based and padded, so a folder sorts.
-			Dest: filepath.Join(a.downloadsDir, artist, fmt.Sprintf("%d_%03d.jpg", w.ID, i+1)),
-			Page: i,
+			Dest:     downloadDest(a.downloadsDir, tmpl, ctx),
+			Page:     i,
 		})
 	}
 	return a.downloads.Add(tasks), true
 }
 
-// downloadSafeName keeps an artist name from naming a directory outside the
-// download directory, since the name comes from the API.
-func downloadSafeName(name string) string {
-	name = strings.Map(func(r rune) rune {
-		if r == '/' || r == '\\' || r == ':' || r == 0 {
-			return '_'
-		}
-		return r
-	}, name)
-	name = strings.TrimSpace(name)
-	if name == "" || name == "." || name == ".." {
+// downloadMacro is the naming template the settings ask for, or the default
+// one when there are no settings yet.
+func (a *App) downloadMacro() string {
+	if a.settings != nil && strings.TrimSpace(a.settings.DownloadMacro) != "" {
+		return a.settings.DownloadMacro
+	}
+	return download.DefaultMacro
+}
+
+// downloadTemplate parses a macro; nil means the caller names the file itself.
+func downloadTemplate(macro string) *download.Template {
+	tmpl, err := download.Parse(macro)
+	if err != nil {
+		return nil
+	}
+	return tmpl
+}
+
+// downloadContext is the macro view of one page of w. The page number is one
+// based, as the C# context counts it.
+func downloadContext(w pixiv.Illustration, page int, ext string) download.Context {
+	pages := pageCount(w)
+	ctx := download.Context{
+		ID:          w.ID,
+		Title:       downloadContextName(w.Title),
+		ArtistID:    w.User.ID,
+		ArtistName:  downloadContextName(downloadArtistName(w.User.Name)),
+		PublishTime: w.CreateDate,
+		Ext:         ext,
+		PicSetIndex: page + 1,
+		IsPicSet:    pages > 1,
+		IsPicOne:    pages <= 1,
+		IsSeries:    w.Series != nil,
+		IsR18:       w.XRestrict >= 1,
+		IsR18G:      w.XRestrict >= 2,
+		IsAI:        w.IllustAIType == 2,
+	}
+	if w.Series != nil {
+		ctx.SeriesID, ctx.SeriesTitle = w.Series.ID, downloadContextName(w.Series.Title)
+	}
+	return ctx
+}
+
+// downloadContextName keeps a value from the API from making path segments of
+// its own: only the template's own separators may.
+func downloadContextName(s string) string {
+	return strings.NewReplacer("/", "_", "\\", "_").Replace(s)
+}
+
+// downloadArtistName keeps an unnamed work filed under a folder of its own,
+// as the fixed layout did before the template.
+func downloadArtistName(name string) string {
+	if strings.TrimSpace(name) == "" {
 		return "unknown"
 	}
 	return name
+}
+
+// downloadExt is the extension of the page's image URL, jpg when it has none.
+func downloadExt(w pixiv.Illustration, page int) string {
+	u, err := url.Parse(w.PageURL(page))
+	if err != nil {
+		return "jpg"
+	}
+	ext := strings.TrimPrefix(strings.ToLower(path.Ext(u.Path)), ".")
+	if ext == "" {
+		return "jpg"
+	}
+	return ext
+}
+
+// downloadDest renders one page's template under dir. The rendered text is
+// split on its separators so a template can make subdirectories, but every
+// segment is made a safe name and empty or parent segments are dropped, so a
+// template cannot write outside dir. A template that renders nothing usable,
+// or a path that still leaves dir, falls back to the id and page name.
+func downloadDest(dir string, tmpl *download.Template, ctx download.Context) string {
+	text := ""
+	if tmpl != nil {
+		if rendered, err := tmpl.Render(ctx); err == nil {
+			text = rendered
+		}
+	}
+	dest := filepath.Join(dir, downloadSafeRel(text))
+	if !downloadWithin(dir, dest) {
+		dest = filepath.Join(dir, fmt.Sprintf("%d_%03d.%s", ctx.ID, ctx.PicSetIndex, ctx.Ext))
+	}
+	return dest
+}
+
+// downloadSafeRel rebuilds a relative path from rendered text, dropping what
+// names no file: empty segments, "." and "..".
+func downloadSafeRel(text string) string {
+	var segments []string
+	for _, part := range strings.FieldsFunc(text, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if seg := downloadSafeSegment(part); seg != "" {
+			segments = append(segments, seg)
+		}
+	}
+	return filepath.Join(segments...)
+}
+
+// downloadSafeSegment makes one segment a name that is legal on every
+// platform. The separators are gone by now, since they split the text.
+func downloadSafeSegment(seg string) string {
+	seg = strings.Map(func(r rune) rune {
+		switch {
+		case r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|':
+			return '_'
+		case r < 0x20 || r == 0x7f:
+			return -1
+		}
+		return r
+	}, seg)
+	// Windows drops a trailing dot or space from a name.
+	seg = strings.TrimRight(strings.TrimSpace(seg), ". ")
+	if seg == "" || seg == "." || seg == ".." {
+		return ""
+	}
+	return seg
+}
+
+// downloadWithin reports whether dest names a file under dir.
+func downloadWithin(dir, dest string) bool {
+	rel, err := filepath.Rel(dir, dest)
+	return err == nil && rel != "." && rel != ".." &&
+		!strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // downloadFinished reports whether a task has reached its last state.

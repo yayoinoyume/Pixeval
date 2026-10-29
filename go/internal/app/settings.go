@@ -6,7 +6,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/migrate"
 )
@@ -36,6 +38,7 @@ type Settings struct {
 	Language            string  `json:"language"`
 	DownloadDir         string  `json:"downloadDir"`
 	DownloadConcurrency int     `json:"downloadConcurrency"`
+	DownloadMacro       string  `json:"downloadMacro"`
 	ShowR18             bool    `json:"showR18"`
 	CardWidth           float64 `json:"cardWidth"`
 	// AutoDownloadSubscriptions queues the works a background check finds.
@@ -55,6 +58,7 @@ func Default() *Settings {
 		Language:            i18n.LangAuto,
 		DownloadDir:         dir,
 		DownloadConcurrency: downloadConcurrency,
+		DownloadMacro:       download.DefaultMacro,
 		ShowR18:             false,
 		CardWidth:           cardWidth,
 
@@ -174,6 +178,13 @@ func (s *Settings) normalize() {
 	if s.SubscriptionIntervalMinutes < subscriptionIntervalMin ||
 		s.SubscriptionIntervalMinutes > subscriptionIntervalMax {
 		s.SubscriptionIntervalMinutes = subscriptionIntervalDefault
+	}
+	// A template the parser rejects cannot name a file, so it falls back to
+	// the default one instead of failing every download.
+	if strings.TrimSpace(s.DownloadMacro) == "" {
+		s.DownloadMacro = download.DefaultMacro
+	} else if _, err := download.Parse(s.DownloadMacro); err != nil {
+		s.DownloadMacro = download.DefaultMacro
 	}
 }
 

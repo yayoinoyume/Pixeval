@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -169,8 +170,10 @@ func TestViewerDownloadQueuesPages(t *testing.T) {
 		if task.URL != w.PageURL(i) {
 			t.Errorf("task %d url %q, want %q", i, task.URL, w.PageURL(i))
 		}
-		// viewerWork has no artist, so the folder is the fallback one.
-		want := filepath.Join(a.downloadsDir, "unknown", fmt.Sprintf("%d_%03d.jpg", w.ID, i+1))
+		// viewerWork has no artist, so the name uses the fallback one, and the
+		// default macro files the pages under the work's title.
+		want := filepath.Join(a.downloadsDir, "[unknown] 查看器作品",
+			fmt.Sprintf("[unknown] %dp%d.jpg", w.ID, i+1))
 		if task.Dest != want {
 			t.Errorf("task %d dest %q, want %q", i, task.Dest, want)
 		}
@@ -199,5 +202,101 @@ func TestViewerDownloadSinglePage(t *testing.T) {
 	}
 	if tasks[0].URL != w.PageURL(0) {
 		t.Errorf("url %q, want %q", tasks[0].URL, w.PageURL(0))
+	}
+	// A single page work has no set folder in the default macro.
+	want := filepath.Join(a.downloadsDir, "[unknown] 9.jpg")
+	if tasks[0].Dest != want {
+		t.Errorf("dest %q, want %q", tasks[0].Dest, want)
+	}
+}
+
+// TestDownloadWorkUsesMacro checks a saved template names each page and keeps
+// the subdirectories it spells out.
+func TestDownloadWorkUsesMacro(t *testing.T) {
+	a := newDownloadApp(t)
+	a.settings = Default()
+	a.settings.DownloadMacro = "@{artist_name}/@{title}/@{id}_@{pic_set_index}.@{ext}"
+	w := viewerWork()
+	w.User.Name = "画家A"
+	if _, ok := a.downloadWork(w); !ok {
+		t.Fatal("downloadWork reported saving off")
+	}
+	tasks := a.downloads.Snapshot()
+	if len(tasks) != pageCount(w) {
+		t.Fatalf("%d tasks queued, want %d", len(tasks), pageCount(w))
+	}
+	for i, task := range tasks {
+		want := filepath.Join(a.downloadsDir, "画家A", "查看器作品", fmt.Sprintf("%d_%d.jpg", w.ID, i+1))
+		if task.Dest != want {
+			t.Errorf("task %d dest %q, want %q", i, task.Dest, want)
+		}
+	}
+}
+
+// TestDownloadWorkFallbacks checks a template the parser rejects, and one that
+// names no file, still queue a page under the download directory.
+func TestDownloadWorkFallbacks(t *testing.T) {
+	w := viewerWork()
+	for _, macro := range []string{"@{nope}", ".."} {
+		a := newDownloadApp(t)
+		a.settings = Default()
+		a.settings.DownloadMacro = macro
+		if _, ok := a.downloadWork(w); !ok {
+			t.Fatalf("%q: downloadWork reported saving off", macro)
+		}
+		tasks := a.downloads.Snapshot()
+		want := filepath.Join(a.downloadsDir, fmt.Sprintf("%d_001.jpg", w.ID))
+		if tasks[0].Dest != want {
+			t.Errorf("%q: dest %q, want %q", macro, tasks[0].Dest, want)
+		}
+	}
+}
+
+// TestDownloadDestStaysInsideDownloadDir checks a template cannot climb out of
+// the download directory, and that unsafe characters are replaced.
+func TestDownloadDestStaysInsideDownloadDir(t *testing.T) {
+	dir := t.TempDir()
+	ctx := download.Context{ID: 7, PicSetIndex: 1, Ext: "jpg", ArtistName: "a:b*c?", Title: "t<i>tle|x"}
+	cases := []struct{ name, macro string }{
+		{"parent", `../@{id}.@{ext}`},
+		{"nested parent", `@{artist_name}/../../@{id}.@{ext}`},
+		{"absolute", `/etc/@{id}.@{ext}`},
+		{"windows parent", `..\\@{id}.@{ext}`},
+		{"unsafe characters", `@{artist_name}/@{title}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dest := downloadDest(dir, downloadTemplate(tc.macro), ctx)
+			if !downloadWithin(dir, dest) {
+				t.Fatalf("dest %q leaves %q", dest, dir)
+			}
+			if strings.Contains(dest, "..") {
+				t.Errorf("dest %q keeps a parent segment", dest)
+			}
+		})
+	}
+
+	dest := downloadDest(dir, downloadTemplate(`@{artist_name}/@{title}`), ctx)
+	want := filepath.Join(dir, "a_b_c_", "t_i_tle_x")
+	if dest != want {
+		t.Errorf("dest %q, want %q", dest, want)
+	}
+}
+
+// TestDownloadContextKeepsDataOutOfPathSegments checks a slash in the API's
+// text does not make a directory of its own.
+func TestDownloadContextKeepsDataOutOfPathSegments(t *testing.T) {
+	w := pixiv.Illustration{
+		ID: 7, Title: "中文/标题", User: pixiv.User{Name: `画\家`},
+		Series: &pixiv.Series{ID: 3, Title: "系/列"},
+	}
+	ctx := downloadContext(w, 0, "jpg")
+	for _, got := range []string{ctx.Title, ctx.ArtistName, ctx.SeriesTitle} {
+		if strings.ContainsAny(got, `/\`) {
+			t.Errorf("%q keeps a path separator", got)
+		}
+	}
+	if ctx.SeriesID != 3 || !ctx.IsSeries || !ctx.IsPicOne || ctx.PicSetIndex != 1 {
+		t.Errorf("context %+v", ctx)
 	}
 }
