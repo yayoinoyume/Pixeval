@@ -14,6 +14,7 @@
     "history": "History",
     "bookmarks": "Bookmarks",
     "settings": "Settings",
+    "extensions": "Extensions",
     "login": "Sign in",
     "logout": "Sign out",
     "loggedIn": "Signed in: %s",
@@ -316,6 +317,13 @@
     "license": "Pixeval Go is free software under the GNU General Public License v3.",
     "github": "Open on GitHub",
     "openFailed": "Could not open the link: %s"
+  },
+  "ext": {
+    "hostMissing": "This version has no extension host",
+    "hostMissingHint": "Extension files are never loaded, so there is nothing here to add, enable, or remove.",
+    "why": "Pixeval's extensions are native components built for .NET. The Go version cannot load the same files; supporting extensions needs a separate interface that does not exist yet.",
+    "available": "What works now: download naming templates, subscription updates, domain fronting, and MCP.",
+    "settingsHint": "This version does not load extensions"
   },
   "history": {
     "empty": "No history yet",

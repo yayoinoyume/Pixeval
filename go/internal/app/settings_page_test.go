@@ -395,7 +395,7 @@ func TestSettingsPageClearButtons(t *testing.T) {
 	a.searchHistory.Add("猫")
 	a.novelProgress.Set(7, 0.5)
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 2400)
+	tt := ui.NewTester(a.View, 1000, 2500)
 	click := func(key string) {
 		t.Helper()
 		if err := tt.Click(a.t(key)); err != nil {

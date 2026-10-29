@@ -295,6 +295,8 @@ func (a *App) settingsPage(c *ui.Context) {
 							}
 						})
 						a.updateStatus(c)
+						ui.Box(c).Height(1).FillWidth().Background(t.Border)
+						a.extensionsRow(c)
 					})
 
 					a.settingsGroup(c, a.t("settings.groupSubscriptions"), func(row settingsRow) {

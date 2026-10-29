@@ -14,6 +14,7 @@
     "history": "历史",
     "bookmarks": "收藏",
     "settings": "设置",
+    "extensions": "扩展",
     "login": "登录",
     "logout": "退出",
     "loggedIn": "已登录：%s",
@@ -316,6 +317,13 @@
     "license": "Pixeval Go 是遵循 GNU 通用公共许可证第 3 版的开源软件。",
     "github": "在 GitHub 上查看",
     "openFailed": "无法打开链接：%s"
+  },
+  "ext": {
+    "hostMissing": "本版本没有扩展宿主",
+    "hostMissingHint": "扩展文件不会被加载，所以这里没有添加、启用或卸载。",
+    "why": "原版扩展是面向 .NET 的原生组件，Go 版本加载不了同一份文件；要支持扩展需要另做一套接口，目前还没有做。",
+    "available": "现在可用：下载命名模板、追更、域前置、MCP。",
+    "settingsHint": "本版本不加载扩展"
   },
   "history": {
     "empty": "还没有浏览记录",
