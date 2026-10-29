@@ -131,6 +131,24 @@ func (a *App) frontingValue(label string) string {
 // its control on the right.
 type settingsRow func(label, hint string, control func())
 
+// settingsConfirmAction is a data action waiting for the user's second
+// click.
+type settingsConfirmAction int
+
+const (
+	settingsConfirmNone settingsConfirmAction = iota
+	settingsConfirmBrowseHistory
+	settingsConfirmDownloadHistory
+	settingsConfirmSearchHistory
+	settingsConfirmNovelProgress
+	settingsConfirmReset
+)
+
+// settingsConfirmPending is the action the confirmation dialog asks about. It
+// is package state because the page's buttons are rebuilt every frame, and
+// only this page reads it.
+var settingsConfirmPending settingsConfirmAction
+
 // settingsPad is the horizontal inset of a settings card's title and rows.
 const settingsPad float32 = 20
 
@@ -376,32 +394,28 @@ func (a *App) settingsPage(c *ui.Context) {
 					a.settingsGroup(c, a.t("settings.groupData"), func(row settingsRow) {
 						row(a.t("settings.browseHistory"), "", func() {
 							if ui.Button(c, a.t("settings.clearBrowseHistory")).TextColor(t.Danger).Clicked() {
-								a.clearHistory()
-								c.Toast(a.t("settings.historyCleared"))
+								settingsConfirmPending = settingsConfirmBrowseHistory
 							}
 						})
 						row(a.t("settings.downloadHistory"), "", func() {
 							if ui.Button(c, a.t("settings.clearDownloadHistory")).TextColor(t.Danger).Clicked() {
-								// It leaves its own notice, which the next frame toasts.
-								a.clearDownloadHistory()
+								settingsConfirmPending = settingsConfirmDownloadHistory
 							}
 						})
 						row(a.t("settings.searchHistory"), "", func() {
 							if ui.Button(c, a.t("settings.clearSearchHistory")).TextColor(t.Danger).Clicked() {
-								a.clearSearchHistory()
-								c.Toast(a.t("settings.historyCleared"))
+								settingsConfirmPending = settingsConfirmSearchHistory
 							}
 						})
 						row(a.t("settings.novelReading"), "", func() {
 							if ui.Button(c, a.t("settings.clearNovelProgress")).TextColor(t.Danger).Clicked() {
-								a.clearNovelProgress()
-								c.Toast(a.t("settings.historyCleared"))
+								settingsConfirmPending = settingsConfirmNovelProgress
 							}
 						})
 						ui.Box(c).Height(1).FillWidth().Background(t.Border)
 						row(a.t("settings.resetHint"), "", func() {
 							if ui.Button(c, a.t("settings.resetSettings")).Clicked() {
-								a.resetSettings()
+								settingsConfirmPending = settingsConfirmReset
 							}
 						})
 					})
@@ -409,7 +423,70 @@ func (a *App) settingsPage(c *ui.Context) {
 			})
 		})
 		a.settingsFooter(c)
+		a.settingsConfirmDialog(c)
 	})
+}
+
+// settingsConfirmTitle is what the dialog asks and the line under it.
+func (a *App) settingsConfirmTitle(action settingsConfirmAction) (title, hint string) {
+	switch action {
+	case settingsConfirmBrowseHistory:
+		return a.t("settings.confirmBrowseHistory"), a.t("settings.confirmHint")
+	case settingsConfirmDownloadHistory:
+		return a.t("settings.confirmDownloadHistory"), a.t("settings.confirmHint")
+	case settingsConfirmSearchHistory:
+		return a.t("settings.confirmSearchHistory"), a.t("settings.confirmHint")
+	case settingsConfirmNovelProgress:
+		return a.t("settings.confirmNovelProgress"), a.t("settings.confirmHint")
+	case settingsConfirmReset:
+		return a.t("settings.confirmReset"), a.t("settings.resetHint")
+	}
+	return "", ""
+}
+
+// settingsConfirmDialog asks before a data action runs. Cancel, Escape and a
+// click outside leave the record alone; only Confirm runs the action.
+func (a *App) settingsConfirmDialog(c *ui.Context) {
+	action := settingsConfirmPending
+	open := action != settingsConfirmNone
+	ui.Modal(c, &open, func() {
+		t := themeOf(c)
+		title, hint := a.settingsConfirmTitle(action)
+		ui.Text(c, title).FontSize(t.TextTitle).FontWeight(600)
+		ui.Text(c, hint).FontSize(t.TextBody).TextColor(t.TextMuted).MaxWidth(360)
+		ui.Row(c).Gap(t.SpaceS).Justify(ui.End).Children(func() {
+			if ui.Button(c, a.t("common.cancel")).Clicked() {
+				open = false
+			}
+			if ui.PrimaryButton(c, a.t("common.confirm")).Clicked() {
+				open = false
+				a.runSettingsConfirm(c, action)
+			}
+		})
+	})
+	if !open {
+		settingsConfirmPending = settingsConfirmNone
+	}
+}
+
+// runSettingsConfirm runs the action the user confirmed.
+func (a *App) runSettingsConfirm(c *ui.Context, action settingsConfirmAction) {
+	switch action {
+	case settingsConfirmBrowseHistory:
+		a.clearHistory()
+		c.Toast(a.t("settings.historyCleared"))
+	case settingsConfirmDownloadHistory:
+		// It leaves its own notice, which the next frame toasts.
+		a.clearDownloadHistory()
+	case settingsConfirmSearchHistory:
+		a.clearSearchHistory()
+		c.Toast(a.t("settings.historyCleared"))
+	case settingsConfirmNovelProgress:
+		a.clearNovelProgress()
+		c.Toast(a.t("settings.historyCleared"))
+	case settingsConfirmReset:
+		a.resetSettings()
+	}
 }
 
 // settingsFooter keeps the save action in reach however far the page is

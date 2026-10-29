@@ -55,7 +55,9 @@
     "manga": "Манга",
     "novel": "Новеллы",
     "save": "Сохранить",
-    "back": "Назад"
+    "back": "Назад",
+    "cancel": "Отмена",
+    "confirm": "Подтвердить"
   },
   "a11y": {
     "card": "%s, by %s",
@@ -301,7 +303,13 @@
     "clearDownloadHistory": "Очистить историю загрузок",
     "clearSearchHistory": "Очистить историю поиска",
     "clearNovelProgress": "Очистить прогресс чтения",
+    "confirmBrowseHistory": "Очистить историю просмотров?",
+    "confirmDownloadHistory": "Очистить историю загрузок?",
+    "confirmSearchHistory": "Очистить историю поиска?",
+    "confirmNovelProgress": "Очистить прогресс чтения?",
+    "confirmHint": "Это действие нельзя отменить.",
     "resetSettings": "Сбросить настройки",
+    "confirmReset": "Сбросить настройки до значений по умолчанию?",
     "resetHint": "Сбрасываются только настройки: аккаунты, загрузки и файлы истории остаются",
     "historyCleared": "Очищено",
     "resetDone": "Настройки сброшены"

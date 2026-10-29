@@ -55,7 +55,9 @@
     "manga": "Manga",
     "novel": "Novels",
     "save": "Save",
-    "back": "Back"
+    "back": "Back",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   },
   "a11y": {
     "card": "%s, by %s",
@@ -301,7 +303,13 @@
     "clearDownloadHistory": "Clear download history",
     "clearSearchHistory": "Clear search history",
     "clearNovelProgress": "Clear reading progress",
+    "confirmBrowseHistory": "Clear browse history?",
+    "confirmDownloadHistory": "Clear download history?",
+    "confirmSearchHistory": "Clear search history?",
+    "confirmNovelProgress": "Clear reading progress?",
+    "confirmHint": "This cannot be undone.",
     "resetSettings": "Reset settings",
+    "confirmReset": "Reset settings to default?",
     "resetHint": "Resets the settings only: accounts, downloads and history files are kept",
     "historyCleared": "Cleared",
     "resetDone": "Settings reset to default"

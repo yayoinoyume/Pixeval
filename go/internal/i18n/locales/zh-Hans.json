@@ -55,7 +55,9 @@
     "manga": "漫画",
     "novel": "小说",
     "save": "保存",
-    "back": "返回"
+    "back": "返回",
+    "cancel": "取消",
+    "confirm": "确认"
   },
   "a11y": {
     "card": "%s，作者：%s",
@@ -301,7 +303,13 @@
     "clearDownloadHistory": "清空下载历史",
     "clearSearchHistory": "清空搜索历史",
     "clearNovelProgress": "清空小说阅读进度",
+    "confirmBrowseHistory": "确定要清空浏览历史吗？",
+    "confirmDownloadHistory": "确定要清空下载历史吗？",
+    "confirmSearchHistory": "确定要清空搜索历史吗？",
+    "confirmNovelProgress": "确定要清空小说阅读进度吗？",
+    "confirmHint": "清空后无法恢复。",
     "resetSettings": "恢复默认设置",
+    "confirmReset": "确定要恢复默认设置吗？",
     "resetHint": "只重置设置，不删账号、下载与历史文件",
     "historyCleared": "已清空",
     "resetDone": "已恢复默认设置"
