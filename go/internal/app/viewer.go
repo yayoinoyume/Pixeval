@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -108,6 +109,12 @@ type viewerState struct {
 	bookmarking bool
 	bookmarked  bool
 	bookmarkGen int
+	// bookmarkOpen shows the bookmark menu, and bookmarkPrivate and
+	// bookmarkTags are the visibility and tags it submits. They are
+	// main-thread state, as drawing is.
+	bookmarkOpen    bool
+	bookmarkPrivate bool
+	bookmarkTags    string
 
 	// detail is the work's full record from the detail endpoint, which the
 	// feed's copy lacks; detailErr and detailLoading follow the fetch. The
@@ -482,6 +489,62 @@ func stopUgoira(v *viewerState) {
 	v.ugoiraPlaying = false
 	v.ugoiraGen++
 	v.mu.Unlock()
+}
+
+// maxBookmarkTags is how many tags Pixiv accepts on one bookmark.
+const maxBookmarkTags = 10
+
+// parseBookmarkTags splits the bookmark menu's comma-separated input into
+// tags, dropping blanks and anything past Pixiv's limit.
+func parseBookmarkTags(s string) []string {
+	var tags []string
+	for _, part := range strings.Split(s, ",") {
+		tag := strings.TrimSpace(part)
+		if tag == "" {
+			continue
+		}
+		if len(tags) == maxBookmarkTags {
+			break
+		}
+		tags = append(tags, tag)
+	}
+	return tags
+}
+
+// submitBookmark adds the work's bookmark with the chosen visibility and
+// tags off the main thread. The menu closes at once, and the work's state
+// flips only once the request succeeds; a failure leaves a notice.
+func (a *App) submitBookmark(v *viewerState, private bool, tags []string) {
+	v.mu.Lock()
+	if v.bookmarking || (a.bookmarkWithTagsFn == nil && a.bookmarkFn == nil) {
+		v.mu.Unlock()
+		return
+	}
+	v.bookmarking = true
+	id := v.work.ID
+	v.mu.Unlock()
+	v.bookmarkOpen = false
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
+		defer cancel()
+		var err error
+		if a.bookmarkWithTagsFn != nil {
+			err = a.bookmarkWithTagsFn(ctx, id, private, tags)
+		} else {
+			err = a.bookmarkFn(ctx, id, true)
+		}
+		a.update(func() {
+			v.mu.Lock()
+			v.bookmarking = false
+			if err == nil {
+				v.bookmarked = true
+				v.bookmarkGen++
+			} else {
+				a.notice = a.tf("bookmark.saveFailed", err.Error())
+			}
+			v.mu.Unlock()
+		})
+	}()
 }
 
 // toggleBookmark adds or removes the work's bookmark off the main thread. The
@@ -1162,9 +1225,23 @@ func (a *App) viewerActions(c *ui.Context, t tokens, v *viewerState, failed bool
 		if bookmarked {
 			glyph, label = iconHeartFill, a.t("viewer.bookmarked")
 		}
-		if b := a.viewerPrimary(c, t, glyph, label); b.Disabled(bookmarking).Clicked() {
-			a.toggleBookmark(v)
+		b := a.viewerPrimary(c, t, glyph, label).Disabled(bookmarking)
+		if b.Clicked() {
+			switch {
+			case bookmarked:
+				a.toggleBookmark(v)
+			case a.bookmarkWithTagsFn == nil:
+				// Without the tagged API, the button keeps the plain toggle.
+				a.toggleBookmark(v)
+			default:
+				v.bookmarkPrivate = false
+				v.bookmarkTags = ""
+				v.bookmarkOpen = true
+			}
 		}
+		ui.Popover(c, b, &v.bookmarkOpen, func() {
+			a.bookmarkPopover(c, t, v)
+		})
 		if failed {
 			if b := a.viewerAction(c, t, iconRefresh, a.t("common.retry"), false); b.Clicked() {
 				a.viewerReload(v)
@@ -1223,6 +1300,23 @@ func (a *App) viewerActions(c *ui.Context, t tokens, v *viewerState, failed bool
 			FontFeatures("tnum").TextColor(t.TextMuted)
 		if a.viewerIconButton(c, t, iconRight, a.t("viewer.next"), t.Text).Disabled(v.page >= n-1).Clicked() {
 			a.viewerGo(1)
+		}
+	})
+}
+
+// bookmarkPopover is the bookmark menu: whether the bookmark is public or
+// private, and an optional comma-separated list of tags.
+func (a *App) bookmarkPopover(c *ui.Context, t tokens, v *viewerState) {
+	ui.Column(c).Gap(t.SpaceS).Padding(t.SpaceS).Children(func() {
+		ui.Row(c).Gap(t.SpaceM).Children(func() {
+			ui.Radio(c, &v.bookmarkPrivate, false, a.t("bookmark.public"))
+			ui.Radio(c, &v.bookmarkPrivate, true, a.t("bookmark.private"))
+		})
+		ui.TextInput(c, &v.bookmarkTags).Width(260).Height(32).
+			Label(a.t("bookmark.tags")).Placeholder(a.t("bookmark.tagsHint"))
+		ui.Text(c, a.t("bookmark.tagsHint")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+		if ui.PrimaryButton(c, a.t("bookmark.save")).Clicked() {
+			a.submitBookmark(v, v.bookmarkPrivate, parseBookmarkTags(v.bookmarkTags))
 		}
 	})
 }

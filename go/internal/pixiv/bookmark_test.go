@@ -4,9 +4,30 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"testing"
 )
+
+func TestAddBookmarkWithTagsSendsForm(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, `{}`))
+	if err := c.AddBookmarkWithTags(context.Background(), 123, true, []string{"猫", "風景"}); err != nil {
+		t.Fatalf("AddBookmarkWithTags: %v", err)
+	}
+	checkWrite(t, got, http.MethodPost, "/v2/illust/bookmark/add",
+		url.Values{"illust_id": {"123"}, "restrict": {"private"}, "tags[]": {"猫", "風景"}})
+}
+
+func TestAddBookmarkWithoutTagsSendsNoTag(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, `{}`))
+	if err := c.AddBookmark(context.Background(), 456, false); err != nil {
+		t.Fatalf("AddBookmark: %v", err)
+	}
+	checkWrite(t, got, http.MethodPost, "/v2/illust/bookmark/add",
+		url.Values{"illust_id": {"456"}, "restrict": {"public"}})
+}
 
 const bookmarkFeedBody = `{"illusts":[{"id":7,"title":"work","user":{"id":9,"name":"someone"}}],` +
 	`"next_url":"https://app-api.pixiv.net/v1/user/bookmarks/illust?user_id=42&restrict=public&offset=48&limit=48"}`

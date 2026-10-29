@@ -303,6 +303,14 @@
     "unbookmark": "取消收藏",
     "unbookmarkFailed": "取消收藏失败：%s"
   },
+  "bookmark": {
+    "public": "公开",
+    "private": "私密",
+    "tags": "标签",
+    "tagsHint": "用逗号分隔，最多 10 个",
+    "save": "保存",
+    "saveFailed": "收藏失败：%s"
+  },
   "login": {
     "title": "登录 Pixiv",
     "prompt": "登录 Pixiv 后开始浏览",

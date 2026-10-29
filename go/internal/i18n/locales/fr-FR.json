@@ -303,6 +303,14 @@
     "unbookmark": "Retirer des favoris",
     "unbookmarkFailed": "Impossible de retirer le favori : %s"
   },
+  "bookmark": {
+    "public": "Public",
+    "private": "Privé",
+    "tags": "Étiquettes",
+    "tagsHint": "Séparées par des virgules, jusqu'à 10",
+    "save": "Enregistrer",
+    "saveFailed": "Impossible d'enregistrer le favori : %s"
+  },
   "login": {
     "title": "Se connecter à Pixiv",
     "prompt": "Connectez-vous à Pixiv pour commencer à parcourir",
