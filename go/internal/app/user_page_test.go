@@ -999,8 +999,14 @@ func TestUserPageRelatedUsersEntry(t *testing.T) {
 		}
 	}
 	if !containsPart(tr.requestedURLs(), "/v1/user/related") ||
-		!containsPart(tr.requestedURLs(), "user_id=7") {
+		!containsPart(tr.requestedURLs(), "seed_user_id=7") {
 		t.Errorf("requests = %v, want the related list of user 7", tr.requestedURLs())
+	}
+	for _, u := range tr.requestedURLs() {
+		if strings.Contains(u, "/v1/user/related") &&
+			(strings.Contains(u, "?user_id=") || strings.Contains(u, "&user_id=")) {
+			t.Errorf("related request still sends user_id: %s", u)
+		}
 	}
 
 	if err := tt.Click(a.t("common.back")); err != nil {
