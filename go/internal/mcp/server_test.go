@@ -20,6 +20,7 @@ type fakeBackend struct {
 	users     []pixiv.UserPreview
 	user      *pixiv.UserDetail
 	novels    []pixiv.Novel
+	comments  []pixiv.Comment
 	saved     []SavedWork
 	downloads []DownloadedWork
 	subs      []SubscriptionInfo
@@ -44,6 +45,7 @@ type fakeBackend struct {
 	bookmarksID      int64
 	bookmarksPrivate bool
 	novelsWord       string
+	novelCommentsID  int64
 	relatedID        int64
 }
 
@@ -115,6 +117,11 @@ func (f *fakeBackend) UserBookmarks(_ context.Context, userID int64, private boo
 func (f *fakeBackend) SearchNovels(_ context.Context, word string) ([]pixiv.Novel, error) {
 	f.novelsWord = word
 	return f.novels, f.err
+}
+
+func (f *fakeBackend) NovelComments(_ context.Context, novelID int64) ([]pixiv.Comment, error) {
+	f.novelCommentsID = novelID
+	return f.comments, f.err
 }
 
 func (f *fakeBackend) WatchLater(_ context.Context) ([]SavedWork, error) {
@@ -247,7 +254,7 @@ func TestToolsList(t *testing.T) {
 		"search_illustrations", "recommended", "illustration_detail", "ranking",
 		"set_bookmark", "queue_download", "status",
 		"search_users", "user_detail", "user_illusts", "user_bookmarks",
-		"search_novels", "watch_later", "download_history", "subscriptions",
+		"search_novels", "novel_comments", "watch_later", "download_history", "subscriptions",
 		"related_illustrations", "spotlight",
 	}
 	if len(got.Tools) != len(want) {
@@ -387,6 +394,10 @@ func TestReadToolsCallBackend(t *testing.T) {
 			ID: 9, Title: "Rain Story", User: pixiv.User{Name: "Ame"},
 			TotalBookmarks: 3, PageCount: 4,
 		}},
+		comments: []pixiv.Comment{{
+			ID: 55, Comment: "great read", User: pixiv.User{Name: "Ame"},
+			CreateDate: savedAt,
+		}},
 		saved: []SavedWork{{ID: 101, Title: "Rain", Artist: "Ame", SavedAt: savedAt}},
 		downloads: []DownloadedWork{{
 			IllustID: 101, Title: "Rain", Artist: "Ame", Dest: "/tmp/rain.png",
@@ -422,6 +433,12 @@ func TestReadToolsCallBackend(t *testing.T) {
 	if text := callToolText(t, h, "search_novels", `{"word":"rain"}`); b.novelsWord != "rain" ||
 		!strings.Contains(text, "#9 Rain Story — Ame") {
 		t.Errorf("search_novels word %q text %q", b.novelsWord, text)
+	}
+	if text := callToolText(t, h, "novel_comments", `{"id":9,"limit":5}`); b.novelCommentsID != 9 ||
+		!strings.Contains(text, "#55 Ame") ||
+		!strings.Contains(text, "2026-10-01 12:00") ||
+		!strings.Contains(text, "great read") {
+		t.Errorf("novel_comments id %d text %q", b.novelCommentsID, text)
 	}
 	if text := callToolText(t, h, "watch_later", `{}`); !strings.Contains(text, "#101 Rain — Ame") ||
 		!strings.Contains(text, "saved 2026-10-01T12:00:00Z") {
@@ -469,6 +486,21 @@ func TestReadToolLimitCapped(t *testing.T) {
 	}
 	if strings.Contains(text, "#51 ") {
 		t.Errorf("text has item 51: %q", text)
+	}
+}
+
+func TestNovelCommentsLimit(t *testing.T) {
+	comments := make([]pixiv.Comment, 60)
+	for i := range comments {
+		comments[i] = pixiv.Comment{ID: int64(i + 1), Comment: "c"}
+	}
+	h := newTestServer(&fakeBackend{comments: comments})
+
+	if text := callToolText(t, h, "novel_comments", `{"id":1}`); !strings.Contains(text, "#20 ") || strings.Contains(text, "#21 ") {
+		t.Errorf("default limit text %q", text)
+	}
+	if text := callToolText(t, h, "novel_comments", `{"id":1,"limit":999}`); !strings.Contains(text, "#50 ") || strings.Contains(text, "#51 ") {
+		t.Errorf("capped limit text %q", text)
 	}
 }
 

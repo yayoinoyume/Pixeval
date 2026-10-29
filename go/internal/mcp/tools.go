@@ -96,6 +96,11 @@ var userIDProperty = property{
 	Description: "The user's Pixiv id.",
 }
 
+var novelIDProperty = property{
+	Type:        "integer",
+	Description: "The novel's Pixiv id.",
+}
+
 var kindProperty = property{
 	Type:        "string",
 	Description: "Which works to list: illust or manga.",
@@ -241,6 +246,18 @@ var toolDefs = []tool{
 				"limit": listLimitProperty,
 			},
 			Required: []string{"word"},
+		},
+	},
+	{
+		Name:        "novel_comments",
+		Description: "Read comments on a novel, newest first.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":    novelIDProperty,
+				"limit": listLimitProperty,
+			},
+			Required: []string{"id"},
 		},
 	},
 	{
@@ -471,6 +488,22 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 			return failure(err), nil
 		}
 		return novelsResult(limitItems(novels, clampListLimit(args.Limit))), nil
+	case "novel_comments":
+		var args struct {
+			ID    int64 `json:"id"`
+			Limit int   `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID <= 0 {
+			return callResult{}, errors.New("id is required")
+		}
+		comments, err := b.NovelComments(ctx, args.ID)
+		if err != nil {
+			return failure(err), nil
+		}
+		return commentsResult(limitItems(comments, clampListLimit(args.Limit))), nil
 	case "watch_later":
 		var args struct {
 			Limit int `json:"limit"`
@@ -627,6 +660,10 @@ func novelsResult(novels []pixiv.Novel) callResult {
 	return listResult(novels, "no novels found", novelText)
 }
 
+func commentsResult(comments []pixiv.Comment) callResult {
+	return listResult(comments, "no comments found", commentText)
+}
+
 func savedWorksResult(works []SavedWork) callResult {
 	return listResult(works, "nothing saved for later", savedWorkText)
 }
@@ -688,6 +725,20 @@ func novelText(n *pixiv.Novel) string {
 	fmt.Fprintf(&b, "#%d %s — %s\n", n.ID, n.Title, n.User.Name)
 	fmt.Fprintf(&b, "%d bookmarks, %d page(s)\n", n.TotalBookmarks, n.PageCount)
 	fmt.Fprintf(&b, "https://www.pixiv.net/novel/show.php?id=%d", n.ID)
+	return b.String()
+}
+
+// commentText is one comment: its author, date and body.
+func commentText(c *pixiv.Comment) string {
+	if c == nil {
+		return "no comment found"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "#%d %s\n", c.ID, c.User.Name)
+	if !c.CreateDate.IsZero() {
+		fmt.Fprintf(&b, "%s\n", c.CreateDate.Format("2006-01-02 15:04"))
+	}
+	b.WriteString(clip(c.Comment, 500))
 	return b.String()
 }
 
