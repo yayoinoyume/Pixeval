@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
@@ -33,6 +34,10 @@ const mcpAddr = "127.0.0.1:52163"
 type App struct {
 	win    *mygo.Window
 	client *pixiv.Client
+	// loginHTTP is the login exchange's client: OAuth token exchange and
+	// refresh use the shared client's transport, so the saved proxy and domain
+	// fronting apply to them too. Its own timeout bounds a stuck request.
+	loginHTTP *http.Client
 	// images is reserved for the M1 browse page: thumbnails and originals.
 	images *imagex.Loader
 	// downloads runs the download queue, saving under downloadsDir.
@@ -294,6 +299,7 @@ func New() *App {
 	if err := applyNetworkSettings(client, settings); err != nil {
 		log.Printf("settings: network: %v", err)
 	}
+	loginClient := client.NewHTTPClient(loginTimeout)
 	subsStore := &subscription.Store{}
 	if err := loadSubscriptions(subsStore); err != nil {
 		log.Printf("subscriptions: %v", err)
@@ -302,6 +308,7 @@ func New() *App {
 	subs.Store = subsStore
 	a := &App{
 		client:           client,
+		loginHTTP:        loginClient,
 		accounts:         loadAccounts(),
 		subsStore:        subsStore,
 		subs:             subs,
@@ -328,7 +335,7 @@ func New() *App {
 		},
 		bookmarks: &browseState{},
 		refreshTokenFn: func(ctx context.Context, refresh string) (*pixiv.Token, error) {
-			return pixiv.RefreshToken(ctx, loginHTTP, refresh)
+			return pixiv.RefreshToken(ctx, loginClient, refresh)
 		},
 		bookmarksPageFn: func(ctx context.Context, private bool, next string) (*pixiv.Page[pixiv.Illustration], error) {
 			if next != "" {
@@ -630,7 +637,7 @@ func (a *App) restoreSession() {
 	if tok.Expired() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		tok, err = pixiv.RefreshToken(ctx, loginHTTP, tok.RefreshToken)
+		tok, err = pixiv.RefreshToken(ctx, a.loginHTTP, tok.RefreshToken)
 		if err != nil {
 			log.Printf("pixiv session: refresh: %v", err)
 			return

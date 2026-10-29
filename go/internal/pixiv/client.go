@@ -3,6 +3,7 @@ package pixiv
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,11 +38,30 @@ func DefaultImageResolver() []string {
 // DefaultOAuthResolver is the OAuth IP list used when the setting is empty.
 func DefaultOAuthResolver() []string { return []string{"104.18.42.239", "172.64.145.17"} }
 
+// The domain fronting modes. Resolver dials Pixiv's hosts at the resolver IPs
+// and leaves TLS alone. Fragmentation dials the same IPs and also splits the
+// TLS ClientHello's first write, so a middlebox that matches a server name in
+// one TCP segment cannot read it.
+const (
+	DomainFrontingResolver      = "resolver"
+	DomainFrontingFragmentation = "fragmentation"
+)
+
+// NormalizeDomainFrontingType maps a saved mode to one the client implements;
+// anything else reads as fragmentation, the original Pixeval's default.
+func NormalizeDomainFrontingType(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), DomainFrontingResolver) {
+		return DomainFrontingResolver
+	}
+	return DomainFrontingFragmentation
+}
+
 // domainFrontingConfig is one immutable fronting setting plus the round robin
 // position. SetDomainFronting replaces the whole pointer, so a request never
 // reads a half changed list.
 type domainFrontingConfig struct {
 	enabled bool
+	mode    string
 	app     []string
 	image   []string
 	oauth   []string
@@ -121,6 +141,7 @@ func NewClient() *Client {
 		Transport: &http.Transport{
 			Proxy:                 c.proxyFor,
 			DialContext:           c.dialContext,
+			DialTLSContext:        c.dialTLSContext,
 			ForceAttemptHTTP2:     true,
 			MaxIdleConns:          16,
 			MaxIdleConnsPerHost:   8,
@@ -137,8 +158,17 @@ func (c *Client) proxyFor(req *http.Request) (*url.URL, error) {
 	return c.proxy.Load().(func(*http.Request) (*url.URL, error))(req)
 }
 
-// HTTP returns the shared HTTP client, for image downloads and the web login.
+// HTTP returns the shared HTTP client, for image downloads and the other
+// requests the app makes with the same transport.
 func (c *Client) HTTP() *http.Client { return c.hc }
+
+// NewHTTPClient returns a client over this client's transport, so the same
+// proxy, domain fronting and connection pool apply. timeout bounds each
+// request; the login exchange uses it so a stuck request cannot hold the
+// login window.
+func (c *Client) NewHTTPClient(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout, Transport: c.hc.Transport}
+}
 
 // SetProxy makes every request go through raw, or through the environment's
 // proxy again when raw is empty. A URL the transport cannot use is rejected
@@ -166,12 +196,15 @@ func (c *Client) SetProxy(raw string) error {
 
 // SetDomainFronting makes the shared transport dial Pixiv's app API, image and
 // OAuth hosts at the given IPs, round robin, while Host and TLS SNI stay the
-// real names. This is IP resolution, not TLS fragmentation. A proxy set with
-// SetProxy wins: the transport then dials the proxy, so no fronted address is
-// used. Empty lists fall back to the defaults the original Pixeval ships.
-func (c *Client) SetDomainFronting(enabled bool, appIPs, imageIPs, oauthIPs []string) {
+// real names. mode picks what else is done: resolver only dials the IPs,
+// fragmentation also splits the TLS ClientHello. A proxy set with SetProxy
+// wins: the transport then dials the proxy, so no fronted address is used and
+// no ClientHello is split. Empty lists fall back to the defaults the original
+// Pixeval ships.
+func (c *Client) SetDomainFronting(enabled bool, mode string, appIPs, imageIPs, oauthIPs []string) {
 	c.fronting.Store(&domainFrontingConfig{
 		enabled: enabled,
+		mode:    NormalizeDomainFrontingType(mode),
 		app:     resolverIPs(appIPs, DefaultAppAPIResolver()),
 		image:   resolverIPs(imageIPs, DefaultImageResolver()),
 		oauth:   resolverIPs(oauthIPs, DefaultOAuthResolver()),
@@ -210,6 +243,61 @@ func (c *Client) dialContext(ctx context.Context, network, addr string) (net.Con
 		}
 	}
 	return c.dialer.DialContext(ctx, network, dialAddr)
+}
+
+// dialTLSContext dials the fronted address for a Pixiv host, or the original
+// address otherwise, and starts TLS with the real host name. In fragmentation
+// mode the ClientHello's first write is split before it reaches the socket. A
+// proxy set with SetProxy wins: the transport then dials the proxy and never
+// calls this. The returned conn advertises h2 and http/1.1, the same protocols
+// the default transport asks for, so HTTP/2 keeps working.
+func (c *Client) dialTLSContext(ctx context.Context, network, addr string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	dialAddr := addr
+	fragment := false
+	if cfg := c.fronting.Load(); cfg != nil && cfg.enabled {
+		if fronted, ok := frontedAddress(host, port, cfg, cfg.next.Add(1)-1); ok {
+			dialAddr = fronted
+			fragment = cfg.mode == DomainFrontingFragmentation
+		}
+	}
+	raw, err := c.dialer.DialContext(ctx, network, dialAddr)
+	if err != nil {
+		return nil, err
+	}
+	if fragment {
+		raw = &fragmentConn{Conn: raw}
+	}
+	return tls.Client(raw, &tls.Config{
+		ServerName: host,
+		NextProtos: []string{"h2", "http/1.1"},
+	}), nil
+}
+
+// fragmentConn splits the first Write into a one byte segment and the rest, so
+// a middlebox that matches a server name in one TCP segment cannot read the
+// TLS ClientHello. Later writes pass through whole. The TLS layer serializes
+// its writes, so the flag needs no lock.
+type fragmentConn struct {
+	net.Conn
+	first bool
+}
+
+func (c *fragmentConn) Write(p []byte) (int, error) {
+	if c.first || len(p) < 2 {
+		c.first = true
+		return c.Conn.Write(p)
+	}
+	c.first = true
+	n, err := c.Conn.Write(p[:1])
+	if err != nil {
+		return n, err
+	}
+	m, err := c.Conn.Write(p[1:])
+	return n + m, err
 }
 
 // SetImageMirror makes GetImage fetch i.pximg.net images from the mirror's

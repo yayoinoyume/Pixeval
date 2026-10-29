@@ -5,13 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/egoist/mygo"
@@ -20,46 +17,9 @@ import (
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
-// loginHTTP is the client of the login exchange. It has its own timeout so a
-// stuck request cannot hold the login window, and it follows the saved proxy
-// through loginProxy, which is swapped atomically.
-var (
-	loginProxy atomic.Value
-	loginHTTP  = newLoginHTTP()
-)
-
-func newLoginHTTP() *http.Client {
-	loginProxy.Store(http.ProxyFromEnvironment)
-	tr := http.DefaultTransport.(*http.Transport).Clone()
-	tr.Proxy = func(req *http.Request) (*url.URL, error) {
-		return loginProxy.Load().(func(*http.Request) (*url.URL, error))(req)
-	}
-	return &http.Client{Timeout: 30 * time.Second, Transport: tr}
-}
-
-// setLoginProxy points the login exchange at raw, or back at the environment's
-// proxy when raw is empty. A URL the transport cannot dial is rejected and the
-// current proxy stays.
-func setLoginProxy(raw string) error {
-	proxy := http.ProxyFromEnvironment
-	if raw = strings.TrimSpace(raw); raw != "" {
-		u, err := url.Parse(raw)
-		if err != nil {
-			return fmt.Errorf("proxy: %w", err)
-		}
-		switch u.Scheme {
-		case "http", "https", "socks5":
-		default:
-			return fmt.Errorf("proxy: unsupported scheme %q", u.Scheme)
-		}
-		if u.Host == "" {
-			return errors.New("proxy: missing host")
-		}
-		proxy = http.ProxyURL(u)
-	}
-	loginProxy.Store(proxy)
-	return nil
-}
+// loginTimeout bounds each login request, so a stuck exchange cannot hold the
+// login window.
+const loginTimeout = 30 * time.Second
 
 // webViewProxyEnv remembers the process's proxy variables before the login
 // window first changes them, so clearing the proxy restores the user's values.
@@ -271,9 +231,9 @@ func (l *loginWindow) exchange(code string) {
 	// The message is looked up here: the bundle changes on the main thread.
 	saveFailed := l.app.t("login.saveFailed")
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
 		defer cancel()
-		tok, err := pixiv.ExchangeCode(ctx, loginHTTP, code, verifier)
+		tok, err := pixiv.ExchangeCode(ctx, l.app.loginHTTP, code, verifier)
 		if err != nil {
 			l.fail(err)
 			return
@@ -300,9 +260,9 @@ func (l *loginWindow) submitRefresh() {
 	l.win.Invalidate()
 	saveFailed := l.app.t("login.saveFailed")
 	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), loginTimeout)
 		defer cancel()
-		tok, err := pixiv.RefreshToken(ctx, loginHTTP, refresh)
+		tok, err := pixiv.RefreshToken(ctx, l.app.loginHTTP, refresh)
 		if err != nil {
 			l.fail(err)
 			return

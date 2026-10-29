@@ -168,6 +168,7 @@ func TestSettingsPageNetworkAdvanced(t *testing.T) {
 	}
 	tt.Frame()
 	for _, want := range []string{
+		a.t("settings.frontingType"),
 		a.t("settings.appAPIResolver"),
 		a.t("settings.imageResolver"),
 		a.t("settings.oauthResolver"),

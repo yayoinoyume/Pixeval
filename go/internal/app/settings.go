@@ -89,8 +89,11 @@ type Settings struct {
 	// login window.
 	ProxyURL string `json:"proxyUrl"`
 	// PixivDomainFronting dials Pixiv's hosts at the resolver IPs instead of
-	// their DNS names. A proxy wins over it.
-	PixivDomainFronting bool `json:"pixivDomainFronting"`
+	// their DNS names. PixivDomainFrontingType picks how: resolver only dials
+	// the IPs, fragmentation also splits the TLS ClientHello. A proxy wins over
+	// both.
+	PixivDomainFronting     bool   `json:"pixivDomainFronting"`
+	PixivDomainFrontingType string `json:"pixivDomainFrontingType"`
 	// The resolver lists are comma or newline separated IPs. Empty falls back
 	// to the original Pixeval's defaults.
 	PixivAppAPIResolver string `json:"pixivAppAPIResolver"`
@@ -134,9 +137,10 @@ func Default() *Settings {
 
 		ImageCacheLimitMB: imageCacheLimitDefault,
 
-		PixivAppAPIResolver: strings.Join(pixiv.DefaultAppAPIResolver(), "\n"),
-		PixivImageResolver:  strings.Join(pixiv.DefaultImageResolver(), "\n"),
-		PixivOAuthResolver:  strings.Join(pixiv.DefaultOAuthResolver(), "\n"),
+		PixivAppAPIResolver:     strings.Join(pixiv.DefaultAppAPIResolver(), "\n"),
+		PixivImageResolver:      strings.Join(pixiv.DefaultImageResolver(), "\n"),
+		PixivOAuthResolver:      strings.Join(pixiv.DefaultOAuthResolver(), "\n"),
+		PixivDomainFrontingType: pixiv.DomainFrontingFragmentation,
 	}
 }
 
@@ -271,6 +275,7 @@ func (s *Settings) normalize() {
 	s.PixivAppAPIResolver = normalizeResolver(s.PixivAppAPIResolver, pixiv.DefaultAppAPIResolver())
 	s.PixivImageResolver = normalizeResolver(s.PixivImageResolver, pixiv.DefaultImageResolver())
 	s.PixivOAuthResolver = normalizeResolver(s.PixivOAuthResolver, pixiv.DefaultOAuthResolver())
+	s.PixivDomainFrontingType = pixiv.NormalizeDomainFrontingType(s.PixivDomainFrontingType)
 	s.ImageMirror = normalizeImageMirror(s.ImageMirror)
 	s.SauceNAOAPIKey = strings.TrimSpace(s.SauceNAOAPIKey)
 	s.MCPToken = strings.TrimSpace(s.MCPToken)
@@ -356,19 +361,20 @@ func normalizeImageMirror(raw string) string {
 	return strings.TrimRight(raw, "/")
 }
 
-// applyNetworkSettings points the shared client and the login exchange at the
-// saved network preferences. A proxy wins over domain fronting: the transport
-// dials the proxy, so no Pixiv host reaches the fronted address.
+// applyNetworkSettings points the shared client at the saved network
+// preferences. A proxy wins over domain fronting: the transport dials the
+// proxy, so no Pixiv host reaches the fronted address and no ClientHello is
+// split. The login exchange uses the same transport, so it follows both.
 func applyNetworkSettings(client *pixiv.Client, s *Settings) error {
 	if err := client.SetProxy(s.ProxyURL); err != nil {
 		return err
 	}
-	client.SetDomainFronting(s.PixivDomainFronting,
+	client.SetDomainFronting(s.PixivDomainFronting, s.PixivDomainFrontingType,
 		resolverIPs(s.PixivAppAPIResolver, pixiv.DefaultAppAPIResolver()),
 		resolverIPs(s.PixivImageResolver, pixiv.DefaultImageResolver()),
 		resolverIPs(s.PixivOAuthResolver, pixiv.DefaultOAuthResolver()))
 	client.SetImageMirror(s.ImageMirror)
-	return setLoginProxy(s.ProxyURL)
+	return nil
 }
 
 // newMCPToken is a fresh bearer token for the local MCP server: 32 random
