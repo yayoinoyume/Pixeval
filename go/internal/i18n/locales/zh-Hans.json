@@ -118,6 +118,10 @@
     "seriesLabel": "系列：%s",
     "related": "相关作品"
   },
+  "detail": {
+    "showAllTags": "显示全部标签",
+    "showFewerTags": "收起标签"
+  },
   "comments": {
     "title": "评论",
     "login": "登录后查看评论",
@@ -281,7 +285,13 @@
   },
   "series": {
     "open": "系列",
-    "loadFailed": "加载系列失败：%s"
+    "loadFailed": "加载系列失败：%s",
+    "author": "作者",
+    "worksCount": "%d 件作品",
+    "concluded": "已完结",
+    "ongoing": "连载中",
+    "showMore": "显示更多",
+    "showLess": "收起"
   },
   "related": {
     "title": "相关作品",

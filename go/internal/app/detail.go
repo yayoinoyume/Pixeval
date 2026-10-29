@@ -18,9 +18,18 @@ import (
 // so the artwork keeps most of it.
 const viewerDetailWidth = 360
 
-// detailTagLimit is how many of a work's tags the card shows; a long list
-// would push the description and the comments far down.
+// detailTagLimit is how many of a work's tags the card shows before the
+// reader asks for the rest; a long list would push the description and the
+// comments far down.
 const detailTagLimit = 6
+
+// detailTagList is the info card's tag list: the work it was last drawn for,
+// and whether the reader expanded it. The card draws on the main thread only,
+// and another work starts folded.
+var detailTagList struct {
+	workID int64
+	open   bool
+}
 
 // loadViewerDetail fetches the work's full record off the main thread and
 // leaves it to the info card. A result that lands after the viewer closed is
@@ -90,7 +99,7 @@ func (a *App) viewerInfo(c *ui.Context, t tokens, v *viewerState) {
 				a.detailAuthor(c, t, v, info.User)
 				a.detailStats(c, t, info)
 				a.detailMeta(c, t, info)
-				a.detailTags(c, t, info.Tags)
+				a.detailTags(c, t, info)
 				if caption := plainCaption(info.Caption); caption != "" {
 					ui.Text(c, caption).FontSize(t.TextBody).LineHeight(1.7).
 						TextColor(t.Text)
@@ -210,20 +219,39 @@ func (a *App) detailMeta(c *ui.Context, t tokens, w pixiv.Illustration) {
 }
 
 // detailTags is the tag list as quiet linked words, not filled pills. A
-// translation sits under its original in the smallest type.
-func (a *App) detailTags(c *ui.Context, t tokens, tags []pixiv.Tag) {
+// translation sits under its original in the smallest type. A list longer
+// than the card's room shows its first tags until the reader asks for all.
+func (a *App) detailTags(c *ui.Context, t tokens, w pixiv.Illustration) {
+	tags := w.Tags
 	if len(tags) == 0 {
 		return
+	}
+	if detailTagList.workID != w.ID {
+		detailTagList.workID, detailTagList.open = w.ID, false
+	}
+	shown := tags
+	if !detailTagList.open && len(tags) > detailTagLimit {
+		shown = tags[:detailTagLimit]
 	}
 	ui.Column(c).Gap(t.SpaceS).Children(func() {
 		ui.Text(c, a.t("viewer.tags")).FontSize(t.TextTiny).LetterSpacing(0.5).
 			TextColor(t.TextMuted)
 		ui.Row(c).Wrap().Gap(t.SpaceM).Role(ui.RoleGroup).Label(a.t("viewer.tags")).
 			Children(func() {
-				for i := 0; i < len(tags) && i < detailTagLimit; i++ {
-					a.detailTag(c, t, tags[i])
+				for _, tag := range shown {
+					a.detailTag(c, t, tag)
 				}
 			})
+		if len(tags) <= detailTagLimit {
+			return
+		}
+		label := a.t("detail.showAllTags")
+		if detailTagList.open {
+			label = a.t("detail.showFewerTags")
+		}
+		if ui.Button(c, label).FontSize(t.TextTiny).Clicked() {
+			detailTagList.open = !detailTagList.open
+		}
 	})
 }
 
