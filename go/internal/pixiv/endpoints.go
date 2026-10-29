@@ -18,18 +18,27 @@ func (c *Client) Recommended(ctx context.Context) (*Page[Illustration], error) {
 	return c.illustPage(ctx, c.pageURL("/v1/illust/recommended", q))
 }
 
-// NewIllustrations is the site-wide feed of works just posted.
-func (c *Client) NewIllustrations(ctx context.Context) (*Page[Illustration], error) {
+// WorkKind is the content type a works feed asks for: illustrations or manga.
+type WorkKind string
+
+const (
+	Illust WorkKind = "illust"
+	Manga  WorkKind = "manga"
+)
+
+// NewIllustrations is the site-wide feed of works just posted, of one kind.
+func (c *Client) NewIllustrations(ctx context.Context, kind WorkKind) (*Page[Illustration], error) {
 	q := url.Values{}
-	q.Set("content_type", "illust")
+	q.Set("content_type", string(kind))
 	c.setFilter(q)
 	return c.illustPage(ctx, c.pageURL("/v1/illust/new", q))
 }
 
 // MyPixivIllustrations is the feed of works by the users the signed-in user
-// follows.
-func (c *Client) MyPixivIllustrations(ctx context.Context) (*Page[Illustration], error) {
+// follows, of one kind.
+func (c *Client) MyPixivIllustrations(ctx context.Context, kind WorkKind) (*Page[Illustration], error) {
 	q := url.Values{}
+	q.Set("content_type", string(kind))
 	c.setFilter(q)
 	return c.illustPage(ctx, c.pageURL("/v1/illust/mypixiv", q))
 }

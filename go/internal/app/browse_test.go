@@ -588,9 +588,13 @@ func worksJSON(first, n int, next string) string {
 	return b.String()
 }
 
+// feedAPI is a fake app API's handler, which the feed tests point the client
+// at instead of the network.
+type feedAPI interface{ handler() http.Handler }
+
 // newFeedTestApp is a signed-in app whose feeds load from fake, at the design
 // window's narrow width.
-func newFeedTestApp(t *testing.T, fake *feedPixiv) (*App, *ui.Tester) {
+func newFeedTestApp(t *testing.T, fake feedAPI) (*App, *ui.Tester) {
 	t.Helper()
 	srv := httptest.NewServer(fake.handler())
 	t.Cleanup(srv.Close)
@@ -719,6 +723,252 @@ func TestMyPixivEmptyFeed(t *testing.T) {
 			t.Fatalf("empty state missing: %q", tt.Texts())
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// kindPixiv answers the works feeds by content type, so a test can tell which
+// kind a page's feed holds: illustrations are numbered from 1, manga from 500.
+type kindPixiv struct {
+	mu    sync.Mutex
+	paths []string
+	query []url.Values
+	body  func(q url.Values, host string) string
+}
+
+func (p *kindPixiv) handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		p.mu.Lock()
+		p.paths = append(p.paths, r.URL.Path)
+		p.query = append(p.query, q)
+		p.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		io.WriteString(w, p.body(q, r.Host))
+	})
+}
+
+func (p *kindPixiv) requests() (paths []string, query []url.Values) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]string(nil), p.paths...), append([]url.Values(nil), p.query...)
+}
+
+// kindWorksBody is two works of q's kind, titled so a test tells them from the
+// other kind's.
+func kindWorksBody(q url.Values) string {
+	first := 1
+	if q.Get("content_type") == "manga" {
+		first = 500
+	}
+	return worksJSON(first, 2, "")
+}
+
+// TestNewPageKindTabsAskTheirContentType checks the new works page starts on
+// illustrations and its manga tab asks for manga, dropping the works shown.
+func TestNewPageKindTabsAskTheirContentType(t *testing.T) {
+	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the illustrations",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
+	if _, q := fake.requests(); len(q) != 1 || q[0].Get("content_type") != "illust" {
+		t.Fatalf("first requests = %v, want one illust page", q)
+	}
+
+	tt.Frame()
+	if err := tt.Click("漫画"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the manga",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 500 })
+	tt.Frame()
+	if tt.HasText("作品 1") {
+		t.Errorf("the illustration page stayed under the manga tab: %q", tt.Texts())
+	}
+	_, q := fake.requests()
+	if len(q) != 2 {
+		t.Fatalf("requests = %d, want the two first pages", len(q))
+	}
+	if got := q[1]; got.Get("content_type") != "manga" || got.Get("offset") != "" {
+		t.Errorf("manga query = %v, want content_type=manga and no cursor", got)
+	}
+	if a.route != routeNew {
+		t.Errorf("route %q, want the new works page", a.route)
+	}
+	if err := tt.Click("作品 500"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.viewer == nil || a.viewer.work.ID != 500 {
+		t.Fatalf("the manga tile did not open work 500: %+v", a.viewer)
+	}
+}
+
+// TestMyPixivKindTabsAskTheirContentType checks the MyPixiv page's manga tab
+// asks its own feed for manga, dropping the illustrations shown.
+func TestMyPixivKindTabsAskTheirContentType(t *testing.T) {
+	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("MyPixiv"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.myPixivFeed, "load the illustrations",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
+	tt.Frame()
+	if err := tt.Click("漫画"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.myPixivFeed, "load the manga",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 500 })
+	paths, q := fake.requests()
+	if len(paths) != 2 || paths[0] != "/v1/illust/mypixiv" || paths[1] != "/v1/illust/mypixiv" {
+		t.Fatalf("paths = %v, want the MyPixiv feed twice", paths)
+	}
+	if got := q[1]; got.Get("content_type") != "manga" || got.Get("offset") != "" {
+		t.Errorf("manga query = %v, want content_type=manga and no cursor", got)
+	}
+}
+
+// TestNewPageKindSwitchBackRestartsTheFeed checks switching back to
+// illustrations asks their first page again, not the page the manga tab left.
+func TestNewPageKindSwitchBackRestartsTheFeed(t *testing.T) {
+	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the illustrations",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
+	tt.Frame()
+	if err := tt.Click("漫画"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the manga",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 500 })
+	tt.Frame()
+	if err := tt.Click("插画"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the illustrations again",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
+	_, q := fake.requests()
+	if len(q) != 3 {
+		t.Fatalf("requests = %d, want one first page per switch", len(q))
+	}
+	if got := q[2]; got.Get("content_type") != "illust" || got.Get("offset") != "" {
+		t.Errorf("switch-back query = %v, want an illust first page", got)
+	}
+}
+
+// TestNewPageMangaPagesWithCursor checks the manga tab loads its next page
+// from the cursor, keeping content_type=manga.
+func TestNewPageMangaPagesWithCursor(t *testing.T) {
+	fake := &kindPixiv{body: func(q url.Values, host string) string {
+		if q.Get("offset") != "" {
+			return worksJSON(520, 20, "")
+		}
+		return worksJSON(500, 20,
+			"http://"+host+"/v1/illust/new?content_type="+q.Get("content_type")+"&filter=for_android&offset=30")
+	}}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the manga",
+		func(v browseView) bool { return len(v.items) == 20 })
+	tt.Frame()
+	if err := tt.Click("漫画"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the manga first page",
+		func(v browseView) bool { return len(v.items) == 20 && v.items[0].ID == 500 })
+	// loadMore is what the feed runs once the end of the list is reached.
+	a.loadMore(a.newFeed)
+	waitBrowse(t, a.newFeed, "load the manga next page",
+		func(v browseView) bool { return len(v.items) == 40 })
+	_, q := fake.requests()
+	if len(q) != 3 {
+		t.Fatalf("requests = %d, want the illust page then the two manga pages", len(q))
+	}
+	if got := q[2]; got.Get("content_type") != "manga" || got.Get("offset") != "30" {
+		t.Errorf("next page query = %v, want the manga cursor's offset", got)
+	}
+}
+
+// TestNewPageMangaEmptyFeed checks an empty manga page shows the empty state,
+// not an error, once its first page settled.
+func TestNewPageMangaEmptyFeed(t *testing.T) {
+	fake := &kindPixiv{body: func(q url.Values, host string) string { return `{"illusts":[],"next_url":""}` }}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "settle the illustration page",
+		func(v browseView) bool { return v.started })
+	tt.Frame()
+	if err := tt.Click("漫画"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "settle the manga page", func(v browseView) bool { return v.started })
+	tt.Frame()
+	if !tt.HasText("没有作品") {
+		t.Fatalf("empty state missing: %q", tt.Texts())
+	}
+	_, q := fake.requests()
+	if len(q) != 2 || q[1].Get("content_type") != "manga" {
+		t.Errorf("requests = %v, want an illust page then a manga one", q)
+	}
+}
+
+// TestNewPageKindSurvivesLeavingThePage checks the page comes back on the kind
+// it was left on, with its feed, instead of asking for the first kind again.
+func TestNewPageKindSurvivesLeavingThePage(t *testing.T) {
+	fake := &kindPixiv{body: func(q url.Values, host string) string { return kindWorksBody(q) }}
+	a, tt := newFeedTestApp(t, fake)
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the illustrations",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 1 })
+	tt.Frame()
+	if err := tt.Click("漫画"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitBrowse(t, a.newFeed, "load the manga",
+		func(v browseView) bool { return len(v.items) == 2 && v.items[0].ID == 500 })
+	tt.Frame()
+	if err := tt.Click("首页"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if err := tt.Click("新作"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if a.newKind != feedManga {
+		t.Errorf("kind = %d, want the manga tab still chosen", a.newKind)
+	}
+	if v := a.newFeed.snapshot(); len(v.items) != 2 || v.items[0].ID != 500 {
+		t.Errorf("the manga feed was not kept: %+v", v.items)
+	}
+	// The home page loaded a feed of its own on the way back; only the new
+	// works requests say whether its kind was kept.
+	paths, _ := fake.requests()
+	newPages := 0
+	for _, path := range paths {
+		if path == "/v1/illust/new" {
+			newPages++
+		}
+	}
+	if newPages != 2 {
+		t.Errorf("new works requests = %d, want the two first pages only", newPages)
 	}
 }
 

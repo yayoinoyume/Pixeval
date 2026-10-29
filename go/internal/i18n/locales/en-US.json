@@ -44,6 +44,8 @@
     "loadFailed": "Failed to load: %s",
     "coverFailed": "Cover failed to load",
     "noWorks": "No works",
+    "illust": "Illustrations",
+    "manga": "Manga",
     "save": "Save",
     "back": "Back"
   },

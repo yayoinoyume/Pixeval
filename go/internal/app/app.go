@@ -95,9 +95,13 @@ type App struct {
 	// page's ranking tab.
 	rankMode pixiv.RankMode
 	// newFeed is the site-wide new works feed, and myPixivFeed the feed of
-	// works by the users the signed-in user follows.
+	// works by the users the signed-in user follows. newKind and myPixivKind
+	// are the kind each page shows, illust or manga; switching kind restarts
+	// that page's feed, so the other kind's works never show in it.
 	newFeed     *browseState
 	myPixivFeed *browseState
+	newKind     int
+	myPixivKind int
 	// search is the last illustration search's results, searchNovels the last
 	// novel search's and searchUsers the last user search's. searchKind is which
 	// of the three the search page shows.
@@ -618,6 +622,8 @@ func (a *App) resetAccountPages() {
 	a.bookmarks = &browseState{}
 	a.newFeed = &browseState{}
 	a.myPixivFeed = &browseState{}
+	a.newKind = feedIllust
+	a.myPixivKind = feedIllust
 	a.search = &browseState{}
 	a.searchNovels = &novelFeedState{}
 	a.searchUsers = &userListState{}

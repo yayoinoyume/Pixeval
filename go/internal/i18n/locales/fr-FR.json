@@ -44,6 +44,8 @@
     "loadFailed": "Échec du chargement : %s",
     "coverFailed": "Échec du chargement de la couverture",
     "noWorks": "Aucune œuvre",
+    "illust": "Illustrations",
+    "manga": "Mangas",
     "save": "Enregistrer",
     "back": "Retour"
   },
