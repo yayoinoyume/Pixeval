@@ -235,7 +235,16 @@
     "cacheSize": "Taille du cache",
     "cacheClear": "Vider le cache",
     "cacheCleared": "Cache vidé",
-    "groupAbout": "À propos"
+    "groupAbout": "À propos",
+    "groupData": "Données",
+    "clearBrowseHistory": "Effacer l'historique de navigation",
+    "clearDownloadHistory": "Effacer l'historique de téléchargement",
+    "clearSearchHistory": "Effacer l'historique de recherche",
+    "clearNovelProgress": "Effacer la progression de lecture",
+    "resetSettings": "Rétablir les réglages par défaut",
+    "resetHint": "Ne réinitialise que les réglages : comptes, téléchargements et fichiers d'historique sont conservés",
+    "historyCleared": "Effacé",
+    "resetDone": "Réglages rétablis par défaut"
   },
   "history": {
     "empty": "Aucun historique pour l'instant",

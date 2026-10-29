@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -12,6 +13,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
@@ -248,5 +250,154 @@ func TestSettingsPageBlockedTags(t *testing.T) {
 	tt.Frame()
 	if !tt.HasText(a.t("block.tagEmpty")) {
 		t.Errorf("empty text missing: %q", tt.Texts())
+	}
+}
+
+// TestSettingsPageDataCard checks the data card offers every record it can
+// clear, and says a reset keeps the rest.
+func TestSettingsPageDataCard(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 1800)
+	for _, key := range []string{
+		"settings.groupData",
+		"settings.clearBrowseHistory",
+		"settings.clearDownloadHistory",
+		"settings.clearSearchHistory",
+		"settings.clearNovelProgress",
+		"settings.resetHint",
+		"settings.resetSettings",
+	} {
+		if !tt.HasText(a.t(key)) {
+			t.Errorf("%s missing: %q", key, tt.Texts())
+		}
+	}
+}
+
+// TestSettingsPageClearButtons checks each button of the data card empties
+// its own record and leaves the others alone.
+func TestSettingsPageClearButtons(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.history.Add(HistoryEntry{ID: 1, Title: "作品"})
+	a.downloadHistory.Add(download.HistoryEntry{ID: "1_0", IllustID: 1, Title: "作品"})
+	a.searchHistory.Add("猫")
+	a.novelProgress.Set(7, 0.5)
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 1800)
+	click := func(key string) {
+		t.Helper()
+		if err := tt.Click(a.t(key)); err != nil {
+			t.Fatalf("Click %s: %v", key, err)
+		}
+		tt.Frame()
+	}
+
+	click("settings.clearBrowseHistory")
+	if got := a.history.Snapshot(); len(got) != 0 {
+		t.Errorf("history %+v after clearing, want none", got)
+	}
+	if !tt.HasText(a.t("settings.historyCleared")) {
+		t.Errorf("clear not reported: %q", tt.Texts())
+	}
+	if got := a.searchHistory.Snapshot(); len(got) != 1 {
+		t.Errorf("search history %q changed by the browse clear", got)
+	}
+	if got := a.novelProgress.Get(7); got != 0.5 {
+		t.Errorf("novel place %v changed by the browse clear", got)
+	}
+	if got := a.downloadHistory.Snapshot(); len(got) != 1 {
+		t.Errorf("download history %+v changed by the browse clear", got)
+	}
+
+	click("settings.clearDownloadHistory")
+	if got := a.downloadHistory.Snapshot(); len(got) != 0 {
+		t.Errorf("download history %+v after clearing, want none", got)
+	}
+	if !tt.HasText(a.t("download.historyCleared")) {
+		t.Errorf("download clear not reported: %q", tt.Texts())
+	}
+	if got := a.searchHistory.Snapshot(); len(got) != 1 {
+		t.Errorf("search history %q changed by the download clear", got)
+	}
+
+	click("settings.clearSearchHistory")
+	if got := a.searchHistory.Snapshot(); len(got) != 0 {
+		t.Errorf("search history %q after clearing, want none", got)
+	}
+	if got := a.novelProgress.Get(7); got != 0.5 {
+		t.Errorf("novel place %v changed by the search clear", got)
+	}
+
+	click("settings.clearNovelProgress")
+	if got := a.novelProgress.Get(7); got != 0 {
+		t.Errorf("novel place %v after clearing, want none", got)
+	}
+}
+
+// TestSettingsPageResetsSettings checks the reset button saves the defaults
+// while the account, the queue and the records stay.
+func TestSettingsPageResetsSettings(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	a := New()
+	a.settings.Theme = themeDark
+	a.settings.CardWidth = 300
+	a.settings.ShowR18 = true
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	a.downloads.Add([]download.Task{{ID: "1_0", IllustID: 1, Title: "排队中"}})
+	a.history.Add(HistoryEntry{ID: 1, Title: "作品"})
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 1800)
+	if err := tt.Click(a.t("settings.resetSettings")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	waitSettingsSaved(t, a, tt)
+
+	if want := *Default(); *a.settings != want {
+		t.Errorf("settings %+v after reset, want the defaults %+v", *a.settings, want)
+	}
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved Settings
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	if err := json.Unmarshal(data, &saved); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	if want := *Default(); saved != want {
+		t.Errorf("saved settings %+v, want the defaults", saved)
+	}
+	if a.session == nil || a.session.User.Name != "测试用户" {
+		t.Errorf("account %+v lost by the reset", a.session)
+	}
+	if got := a.downloads.Snapshot(); len(got) != 1 {
+		t.Errorf("queue %+v changed by the reset", got)
+	}
+	if got := a.history.Snapshot(); len(got) != 1 {
+		t.Errorf("history %+v changed by the reset", got)
+	}
+	tt.Frame()
+	if !tt.HasText(a.t("settings.resetDone")) {
+		t.Errorf("reset not reported: %q", tt.Texts())
+	}
+}
+
+// waitSettingsSaved frames until the save a click started has landed and
+// been applied.
+func waitSettingsSaved(t *testing.T, a *App, tt *ui.Tester) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for a.settingsResetPending {
+		if time.Now().After(deadline) {
+			t.Fatal("the reset was not saved")
+		}
+		tt.Frame()
+		time.Sleep(time.Millisecond)
 	}
 }

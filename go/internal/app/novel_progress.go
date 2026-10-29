@@ -126,6 +126,23 @@ func (p *NovelProgress) Set(novelID int64, fraction float64) {
 	p.Places[novelID] = fraction
 }
 
+// Clear forgets every novel's place.
+func (p *NovelProgress) Clear() {
+	p.mu.Lock()
+	p.Places = nil
+	p.mu.Unlock()
+}
+
+// clearNovelProgress forgets every reading place and saves them in the
+// background, the way the reader's own scrolls are saved.
+func (a *App) clearNovelProgress() {
+	if a.novelProgress == nil {
+		return
+	}
+	a.novelProgress.Clear()
+	a.saveNovelProgress()
+}
+
 // Get returns the novel's saved place, or 0 when it has none.
 func (p *NovelProgress) Get(novelID int64) float64 {
 	p.mu.Lock()

@@ -139,6 +139,9 @@ type App struct {
 	// applies it in the view.
 	settingsSaved chan error
 	settingsErr   string
+	// settingsResetPending makes the save that follows a reset report the
+	// reset rather than a plain save.
+	settingsResetPending bool
 	// history is the works the user opened, newest first.
 	history *History
 	// historyFailed holds the history covers that did not load, so a broken
