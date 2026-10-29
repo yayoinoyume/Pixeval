@@ -71,6 +71,15 @@ type Backend interface {
 	Works(ctx context.Context, ids []int64) ([]pixiv.Illustration, error)
 	Users(ctx context.Context, ids []int64) ([]pixiv.UserDetail, error)
 	DownloadTasks(ctx context.Context) ([]DownloadTask, error)
+	SetWatchLater(ctx context.Context, id int64, on bool) error
+	FollowUser(ctx context.Context, userID int64, on, private bool) error
+	ControlDownload(ctx context.Context, taskID, action string) error
+	AddSubscription(ctx context.Context, kind string, targetID int64, name string) error
+	RemoveSubscription(ctx context.Context, kind string, targetID int64) error
+	SyncSubscriptions(ctx context.Context) (int, error)
+	AddComment(ctx context.Context, illustID int64, text string) (*pixiv.Comment, error)
+	DeleteComment(ctx context.Context, commentID int64) error
+	SetDownloadMacro(ctx context.Context, text string) error
 }
 
 // Server answers MCP requests for one Backend. It keeps no session state, so a

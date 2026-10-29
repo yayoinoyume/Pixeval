@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/filter"
@@ -155,6 +156,52 @@ var optionalUserIDProperty = property{
 var idsProperty = property{
 	Type:        "array",
 	Description: "Pixiv ids to load; at most 100 are used.",
+}
+
+var watchLaterProperty = property{
+	Type:        "boolean",
+	Description: "True adds the work to watch later, false removes it.",
+	Default:     true,
+}
+
+var followedProperty = property{
+	Type:        "boolean",
+	Description: "True follows the user, false unfollows.",
+	Default:     true,
+}
+
+var privateFollowProperty = property{
+	Type:        "boolean",
+	Description: "True keeps the follow off the user's public profile.",
+	Default:     false,
+}
+
+var subscriptionKindProperty = property{
+	Type:        "string",
+	Description: "What to follow: a Pixiv user or a series.",
+	Enum:        []string{"user", "series"},
+}
+
+var targetIDProperty = property{
+	Type:        "integer",
+	Description: "The Pixiv user id or series id to follow.",
+}
+
+var downloadTaskIDProperty = property{
+	Type:        "string",
+	Description: "The task id from download_tasks.",
+}
+
+var downloadActionProperty = property{
+	Type:        "string",
+	Description: "What to do with the task.",
+	Enum:        []string{"pause", "resume", "cancel"},
+	Default:     "pause",
+}
+
+var commentIDProperty = property{
+	Type:        "integer",
+	Description: "The Pixiv comment id.",
 }
 
 // toolDefs are the tools this server exposes, in the order a client shows them.
@@ -553,6 +600,105 @@ var toolDefs = []tool{
 			Type: "object",
 			Properties: map[string]property{
 				"text": {Type: "string", Description: "The work filter expression to analyze."},
+			},
+			Required: []string{"text"},
+		},
+	},
+	{
+		Name:        "set_watch_later",
+		Description: "Add or remove a work from Pixeval's local watch-later list.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":          idProperty,
+				"watch_later": watchLaterProperty,
+			},
+			Required: []string{"id"},
+		},
+	},
+	{
+		Name:        "follow_user",
+		Description: "Follow or unfollow a Pixiv user for the signed-in account.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"userId":   userIDProperty,
+				"followed": followedProperty,
+				"private":  privateFollowProperty,
+			},
+			Required: []string{"userId"},
+		},
+	},
+	{
+		Name:        "control_download",
+		Description: "Pause, resume or cancel one task in the local download queue.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":     downloadTaskIDProperty,
+				"action": downloadActionProperty,
+			},
+			Required: []string{"id"},
+		},
+	},
+	{
+		Name:        "add_subscription",
+		Description: "Follow a Pixiv user or series for update checks.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"kind":     subscriptionKindProperty,
+				"targetId": targetIDProperty,
+				"name":     {Type: "string", Description: "Optional display name; a default is used when omitted."},
+			},
+			Required: []string{"kind", "targetId"},
+		},
+	},
+	{
+		Name:        "remove_subscription",
+		Description: "Stop following a Pixiv user or series.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"kind":     subscriptionKindProperty,
+				"targetId": targetIDProperty,
+			},
+			Required: []string{"kind", "targetId"},
+		},
+	},
+	{
+		Name:        "sync_subscriptions",
+		Description: "Run one subscription check and report how many new works it found.",
+		InputSchema: schema{Type: "object", Properties: map[string]property{}},
+	},
+	{
+		Name:        "add_comment",
+		Description: "Post a text comment on an illustration for the signed-in account.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":      idProperty,
+				"content": {Type: "string", Description: "The comment text, 1 to 140 characters."},
+			},
+			Required: []string{"id", "content"},
+		},
+	},
+	{
+		Name:        "delete_comment",
+		Description: "Delete one of the signed-in account's comments.",
+		InputSchema: schema{
+			Type:       "object",
+			Properties: map[string]property{"commentId": commentIDProperty},
+			Required:   []string{"commentId"},
+		},
+	},
+	{
+		Name:        "set_download_macro",
+		Description: "Validate and save a new download path macro for the app.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"text": {Type: "string", Description: "The download path macro text."},
 			},
 			Required: []string{"text"},
 		},
@@ -1131,6 +1277,174 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 			return failure(err), nil
 		}
 		return textResult("work filter is valid"), nil
+	case "set_watch_later":
+		var args struct {
+			ID         int64 `json:"id"`
+			WatchLater *bool `json:"watch_later"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID <= 0 {
+			return callResult{}, errors.New("id is required")
+		}
+		on := args.WatchLater == nil || *args.WatchLater
+		if err := b.SetWatchLater(ctx, args.ID, on); err != nil {
+			return failure(err), nil
+		}
+		state := "removed"
+		if on {
+			state = "added"
+		}
+		return textResult(fmt.Sprintf("watch later %s for work %d", state, args.ID)), nil
+	case "follow_user":
+		var args struct {
+			UserID   int64 `json:"userId"`
+			Followed *bool `json:"followed"`
+			Private  bool  `json:"private"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.UserID <= 0 {
+			return callResult{}, errors.New("userId is required")
+		}
+		on := args.Followed == nil || *args.Followed
+		if err := b.FollowUser(ctx, args.UserID, on, args.Private); err != nil {
+			return failure(err), nil
+		}
+		state := "unfollowed"
+		if on {
+			state = "following"
+		}
+		return textResult(fmt.Sprintf("%s user %d", state, args.UserID)), nil
+	case "control_download":
+		var args struct {
+			ID     string `json:"id"`
+			Action string `json:"action"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		id := strings.TrimSpace(args.ID)
+		if id == "" {
+			return callResult{}, errors.New("id is required")
+		}
+		action := args.Action
+		if action == "" {
+			action = "pause"
+		}
+		switch action {
+		case "pause", "resume", "cancel":
+		default:
+			return callResult{}, errors.New(`action must be "pause", "resume" or "cancel"`)
+		}
+		if err := b.ControlDownload(ctx, id, action); err != nil {
+			return failure(err), nil
+		}
+		state := map[string]string{"pause": "paused", "resume": "resumed", "cancel": "canceled"}[action]
+		return textResult(fmt.Sprintf("download task %s %s", id, state)), nil
+	case "add_subscription":
+		var args struct {
+			Kind     string `json:"kind"`
+			TargetID int64  `json:"targetId"`
+			Name     string `json:"name"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.Kind != "user" && args.Kind != "series" {
+			return callResult{}, errors.New(`kind must be "user" or "series"`)
+		}
+		if args.TargetID <= 0 {
+			return callResult{}, errors.New("targetId is required")
+		}
+		if err := b.AddSubscription(ctx, args.Kind, args.TargetID, args.Name); err != nil {
+			return failure(err), nil
+		}
+		return textResult(fmt.Sprintf("subscribed to %s %d", args.Kind, args.TargetID)), nil
+	case "remove_subscription":
+		var args struct {
+			Kind     string `json:"kind"`
+			TargetID int64  `json:"targetId"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.Kind != "user" && args.Kind != "series" {
+			return callResult{}, errors.New(`kind must be "user" or "series"`)
+		}
+		if args.TargetID <= 0 {
+			return callResult{}, errors.New("targetId is required")
+		}
+		if err := b.RemoveSubscription(ctx, args.Kind, args.TargetID); err != nil {
+			return failure(err), nil
+		}
+		return textResult(fmt.Sprintf("unsubscribed from %s %d", args.Kind, args.TargetID)), nil
+	case "sync_subscriptions":
+		var args struct{}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		n, err := b.SyncSubscriptions(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return textResult(fmt.Sprintf("subscriptions synced: %d new work(s)", n)), nil
+	case "add_comment":
+		var args struct {
+			ID      int64  `json:"id"`
+			Content string `json:"content"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID <= 0 {
+			return callResult{}, errors.New("id is required")
+		}
+		text := strings.TrimSpace(args.Content)
+		if text == "" {
+			return callResult{}, errors.New("content is required")
+		}
+		if utf8.RuneCountInString(text) > 140 {
+			return callResult{}, errors.New("content must be 140 characters or less")
+		}
+		c, err := b.AddComment(ctx, args.ID, text)
+		if err != nil {
+			return failure(err), nil
+		}
+		if c == nil {
+			return textResult(fmt.Sprintf("comment added to work %d", args.ID)), nil
+		}
+		return textResult(fmt.Sprintf("comment %d added to work %d\n%s", c.ID, args.ID, clip(c.Comment, 140))), nil
+	case "delete_comment":
+		var args struct {
+			CommentID int64 `json:"commentId"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.CommentID <= 0 {
+			return callResult{}, errors.New("commentId is required")
+		}
+		if err := b.DeleteComment(ctx, args.CommentID); err != nil {
+			return failure(err), nil
+		}
+		return textResult(fmt.Sprintf("comment %d deleted", args.CommentID)), nil
+	case "set_download_macro":
+		var args struct {
+			Text string `json:"text"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if strings.TrimSpace(args.Text) == "" {
+			return callResult{}, errors.New("text is required")
+		}
+		if err := b.SetDownloadMacro(ctx, args.Text); err != nil {
+			return failure(err), nil
+		}
+		return textResult("download macro set: " + strings.TrimSpace(args.Text)), nil
 	default:
 		return callResult{}, fmt.Errorf("unknown tool: %q", name)
 	}
