@@ -20,6 +20,7 @@ const (
 	routeSubs      route = "subscriptions"
 	routeDownloads route = "downloads"
 	routeHistory   route = "history"
+	routeBookmarks route = "bookmarks"
 	routeSettings  route = "settings"
 	routeUser      route = "user"
 	routeSeries    route = "series"
@@ -33,7 +34,7 @@ func (a *App) routeLabel(r route) string {
 
 var (
 	browseRoutes  = []route{routeHome, routeSearch, routeSubs}
-	libraryRoutes = []route{routeDownloads, routeHistory}
+	libraryRoutes = []route{routeDownloads, routeHistory, routeBookmarks}
 )
 
 // View builds the shell: the navigation on the left, the page title and the
@@ -146,7 +147,13 @@ func (a *App) navItem(c *ui.Context, r route) {
 		fg = t.Text
 	}
 	b.Children(func() {
-		ui.Icon(c, navIcon(r)).Size(20, 20).TextColor(fg)
+		glyph := navIcon(r)
+		if r == routeBookmarks {
+			// shortcut: navIcon has no bookmarks case yet; icons.go is out of
+			// this batch, so add it there when that file is next touched.
+			glyph = iconHeart
+		}
+		ui.Icon(c, glyph).Size(20, 20).TextColor(fg)
 		ui.Text(c, label).FontSize(t.TextMicro).FontWeight(500).TextColor(fg).MaxLines(1)
 		bar := t.Accent
 		if !selected {
@@ -212,6 +219,8 @@ func (a *App) page(c *ui.Context) {
 		a.downloadsPage(c)
 	case routeHistory:
 		a.historyPage(c)
+	case routeBookmarks:
+		a.bookmarksPage(c)
 	case routeSettings:
 		a.settingsPage(c)
 	case routeUser:

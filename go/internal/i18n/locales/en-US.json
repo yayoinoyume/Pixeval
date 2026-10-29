@@ -5,6 +5,7 @@
     "subscriptions": "Updates",
     "downloads": "Downloads",
     "history": "History",
+    "bookmarks": "Bookmarks",
     "settings": "Settings",
     "login": "Sign in",
     "logout": "Sign out",
@@ -153,6 +154,14 @@
     "count": "%d entries",
     "clear": "Clear history",
     "openFailed": "Failed to open work: %s"
+  },
+  "bookmarks": {
+    "public": "Public",
+    "private": "Private",
+    "empty": "No bookmarks yet",
+    "emptyHint": "Works you bookmark from their detail page show up here",
+    "unbookmark": "Remove bookmark",
+    "unbookmarkFailed": "Could not remove the bookmark: %s"
   },
   "login": {
     "title": "Sign in to Pixiv",

@@ -5,6 +5,7 @@
     "subscriptions": "追更",
     "downloads": "下载",
     "history": "历史",
+    "bookmarks": "收藏",
     "settings": "设置",
     "login": "登录",
     "logout": "退出",
@@ -153,6 +154,14 @@
     "count": "%d 条记录",
     "clear": "清空历史",
     "openFailed": "打开作品失败：%s"
+  },
+  "bookmarks": {
+    "public": "公开",
+    "private": "私密",
+    "empty": "还没有收藏",
+    "emptyHint": "在作品详情页点「收藏」后，作品会显示在这里",
+    "unbookmark": "取消收藏",
+    "unbookmarkFailed": "取消收藏失败：%s"
   },
   "login": {
     "title": "登录 Pixiv",
