@@ -69,6 +69,25 @@ type fakeBackend struct {
 	commentsID       int64
 	worksIDs         []int64
 	usersIDs         []int64
+
+	watchLaterID   int64
+	watchLaterOn   bool
+	followID       int64
+	followOn       bool
+	followPrivate  bool
+	controlTaskID  string
+	controlAction  string
+	addSubKind     string
+	addSubID       int64
+	addSubName     string
+	removeSubKind  string
+	removeSubID    int64
+	syncCalls      int
+	syncNew        int
+	addCommentID   int64
+	addCommentText string
+	deleteCmtID    int64
+	setMacroText   string
 }
 
 func (f *fakeBackend) Search(_ context.Context, query string, limit int) ([]pixiv.Illustration, error) {
@@ -250,6 +269,54 @@ func (f *fakeBackend) DownloadTasks(_ context.Context) ([]DownloadTask, error) {
 	return f.dlTasks, f.err
 }
 
+func (f *fakeBackend) SetWatchLater(_ context.Context, id int64, on bool) error {
+	f.watchLaterID, f.watchLaterOn = id, on
+	return f.err
+}
+
+func (f *fakeBackend) FollowUser(_ context.Context, userID int64, on, private bool) error {
+	f.followID, f.followOn, f.followPrivate = userID, on, private
+	return f.err
+}
+
+func (f *fakeBackend) ControlDownload(_ context.Context, taskID, action string) error {
+	f.controlTaskID, f.controlAction = taskID, action
+	return f.err
+}
+
+func (f *fakeBackend) AddSubscription(_ context.Context, kind string, targetID int64, name string) error {
+	f.addSubKind, f.addSubID, f.addSubName = kind, targetID, name
+	return f.err
+}
+
+func (f *fakeBackend) RemoveSubscription(_ context.Context, kind string, targetID int64) error {
+	f.removeSubKind, f.removeSubID = kind, targetID
+	return f.err
+}
+
+func (f *fakeBackend) SyncSubscriptions(_ context.Context) (int, error) {
+	f.syncCalls++
+	return f.syncNew, f.err
+}
+
+func (f *fakeBackend) AddComment(_ context.Context, illustID int64, text string) (*pixiv.Comment, error) {
+	f.addCommentID, f.addCommentText = illustID, text
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &pixiv.Comment{ID: 77, Comment: text}, nil
+}
+
+func (f *fakeBackend) DeleteComment(_ context.Context, commentID int64) error {
+	f.deleteCmtID = commentID
+	return f.err
+}
+
+func (f *fakeBackend) SetDownloadMacro(_ context.Context, text string) error {
+	f.setMacroText = text
+	return f.err
+}
+
 // reply is a response with the fields a test checks left raw.
 type reply struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -367,6 +434,9 @@ func TestToolsList(t *testing.T) {
 		"capabilities", "help", "download_macro", "analyze_download_macro",
 		"history", "extensions", "novel_content", "recommended_users", "comments",
 		"works", "users", "download_tasks", "analyze_work_filter",
+		"set_watch_later", "follow_user", "control_download",
+		"add_subscription", "remove_subscription", "sync_subscriptions",
+		"add_comment", "delete_comment", "set_download_macro",
 	}
 	if len(got.Tools) != len(want) {
 		t.Fatalf("%d tools, want %d", len(got.Tools), len(want))
@@ -1065,5 +1135,120 @@ func TestAnalyzeWorkFilterReportsSyntaxError(t *testing.T) {
 	decodeResult(t, r, &got)
 	if !got.IsError || !strings.Contains(got.Content[0].Text, "expected") {
 		t.Fatalf("result %+v", got)
+	}
+}
+
+func TestWriteToolsCallBackend(t *testing.T) {
+	b := &fakeBackend{}
+	h := newTestServer(b)
+
+	if text := callToolText(t, h, "set_watch_later", `{"id":101,"watch_later":false}`); !strings.Contains(text, "removed") {
+		t.Errorf("set_watch_later text %q", text)
+	}
+	if b.watchLaterID != 101 || b.watchLaterOn {
+		t.Errorf("set_watch_later got id %d on %t", b.watchLaterID, b.watchLaterOn)
+	}
+	callToolText(t, h, "set_watch_later", `{"id":101}`)
+	if !b.watchLaterOn {
+		t.Error("set_watch_later default did not add")
+	}
+
+	if text := callToolText(t, h, "follow_user", `{"userId":7,"followed":false}`); !strings.Contains(text, "unfollowed") {
+		t.Errorf("follow_user text %q", text)
+	}
+	if b.followID != 7 || b.followOn {
+		t.Errorf("follow_user got id %d on %t", b.followID, b.followOn)
+	}
+	callToolText(t, h, "follow_user", `{"userId":7,"private":true}`)
+	if !b.followOn || !b.followPrivate {
+		t.Errorf("follow_user private got on %t private %t", b.followOn, b.followPrivate)
+	}
+
+	if text := callToolText(t, h, "control_download", `{"id":"t1","action":"resume"}`); !strings.Contains(text, "resumed") {
+		t.Errorf("control_download text %q", text)
+	}
+	if b.controlTaskID != "t1" || b.controlAction != "resume" {
+		t.Errorf("control_download got %q %q", b.controlTaskID, b.controlAction)
+	}
+	callToolText(t, h, "control_download", `{"id":"t1"}`)
+	if b.controlAction != "pause" {
+		t.Errorf("control_download default action %q", b.controlAction)
+	}
+
+	callToolText(t, h, "add_subscription", `{"kind":"series","targetId":9,"name":"Rain"}`)
+	if b.addSubKind != "series" || b.addSubID != 9 || b.addSubName != "Rain" {
+		t.Errorf("add_subscription got %q %d %q", b.addSubKind, b.addSubID, b.addSubName)
+	}
+	callToolText(t, h, "remove_subscription", `{"kind":"user","targetId":7}`)
+	if b.removeSubKind != "user" || b.removeSubID != 7 {
+		t.Errorf("remove_subscription got %q %d", b.removeSubKind, b.removeSubID)
+	}
+
+	b.syncNew = 2
+	if text := callToolText(t, h, "sync_subscriptions", `{}`); !strings.Contains(text, "2 new work(s)") {
+		t.Errorf("sync_subscriptions text %q", text)
+	}
+	if b.syncCalls != 1 {
+		t.Errorf("sync_subscriptions calls %d", b.syncCalls)
+	}
+
+	if text := callToolText(t, h, "add_comment", `{"id":101,"content":"  hi  "}`); !strings.Contains(text, "comment 77 added to work 101") {
+		t.Errorf("add_comment text %q", text)
+	}
+	if b.addCommentID != 101 || b.addCommentText != "hi" {
+		t.Errorf("add_comment got id %d text %q", b.addCommentID, b.addCommentText)
+	}
+	if text := callToolText(t, h, "delete_comment", `{"commentId":55}`); !strings.Contains(text, "deleted") {
+		t.Errorf("delete_comment text %q", text)
+	}
+	if b.deleteCmtID != 55 {
+		t.Errorf("delete_comment got %d", b.deleteCmtID)
+	}
+
+	if text := callToolText(t, h, "set_download_macro", `{"text":"@{artist_name}/@{id}.@{ext}"}`); !strings.Contains(text, "download macro set") {
+		t.Errorf("set_download_macro text %q", text)
+	}
+	if b.setMacroText != "@{artist_name}/@{id}.@{ext}" {
+		t.Errorf("set_download_macro got %q", b.setMacroText)
+	}
+}
+
+func TestWriteToolsReportBackendFailure(t *testing.T) {
+	b := &fakeBackend{err: errors.New("boom")}
+	r := call(t, newTestServer(b),
+		`{"jsonrpc":"2.0","id":50,"method":"tools/call","params":{"name":"set_watch_later","arguments":{"id":1}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if !got.IsError || !strings.Contains(got.Content[0].Text, "boom") {
+		t.Fatalf("result %+v", got)
+	}
+}
+
+func TestWriteToolsRejectBadArguments(t *testing.T) {
+	h := newTestServer(&fakeBackend{})
+	cases := []struct {
+		name string
+		args string
+	}{
+		{"set_watch_later", `{}`},
+		{"follow_user", `{}`},
+		{"control_download", `{}`},
+		{"control_download", `{"id":"t1","action":"boom"}`},
+		{"add_subscription", `{"kind":"tag","targetId":1}`},
+		{"add_subscription", `{"kind":"user"}`},
+		{"remove_subscription", `{"kind":"tag","targetId":1}`},
+		{"remove_subscription", `{"kind":"user"}`},
+		{"sync_subscriptions", `5`},
+		{"add_comment", `{"id":1,"content":" "}`},
+		{"add_comment", `{"id":1,"content":"` + strings.Repeat("a", 141) + `"}`},
+		{"delete_comment", `{}`},
+		{"set_download_macro", `{"text":" "}`},
+	}
+	for _, tc := range cases {
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":51,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, tc.name, tc.args)
+		r := call(t, h, body)
+		if r.Error == nil || r.Error.Code != codeInvalidParams {
+			t.Errorf("%s %s reply %+v", tc.name, tc.args, r)
+		}
 	}
 }
