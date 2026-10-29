@@ -42,6 +42,16 @@ type Backend interface {
 	SetBookmark(ctx context.Context, id int64, on bool) error
 	QueueDownload(ctx context.Context, id int64) (int, error)
 	Status() string
+	SearchUsers(ctx context.Context, word string) ([]pixiv.UserPreview, error)
+	UserDetail(ctx context.Context, id int64) (*pixiv.UserDetail, error)
+	UserIllusts(ctx context.Context, id int64, kind string) ([]pixiv.Illustration, error)
+	UserBookmarks(ctx context.Context, userID int64, private bool) ([]pixiv.Illustration, error)
+	SearchNovels(ctx context.Context, word string) ([]pixiv.Novel, error)
+	WatchLater(ctx context.Context) ([]SavedWork, error)
+	DownloadHistory(ctx context.Context) ([]DownloadedWork, error)
+	Subscriptions(ctx context.Context) ([]SubscriptionInfo, error)
+	RelatedIllusts(ctx context.Context, id int64) ([]pixiv.Illustration, error)
+	Spotlight(ctx context.Context) ([]pixiv.SpotlightArticle, error)
 }
 
 // Server answers MCP requests for one Backend. It keeps no session state, so a

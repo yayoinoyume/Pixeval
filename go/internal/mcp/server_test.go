@@ -4,18 +4,27 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 // fakeBackend answers the tools without the network and records the calls.
 type fakeBackend struct {
-	works []pixiv.Illustration
-	err   error
+	works     []pixiv.Illustration
+	users     []pixiv.UserPreview
+	user      *pixiv.UserDetail
+	novels    []pixiv.Novel
+	saved     []SavedWork
+	downloads []DownloadedWork
+	subs      []SubscriptionInfo
+	articles  []pixiv.SpotlightArticle
+	err       error
 
 	searchQuery string
 	searchLimit int
@@ -27,6 +36,15 @@ type fakeBackend struct {
 	queuedID    int64
 	queued      int
 	status      string
+
+	searchUsersWord  string
+	userDetailID     int64
+	userIllustsID    int64
+	userIllustsKind  string
+	bookmarksID      int64
+	bookmarksPrivate bool
+	novelsWord       string
+	relatedID        int64
 }
 
 func (f *fakeBackend) Search(_ context.Context, query string, limit int) ([]pixiv.Illustration, error) {
@@ -67,6 +85,58 @@ func (f *fakeBackend) QueueDownload(_ context.Context, id int64) (int, error) {
 }
 
 func (f *fakeBackend) Status() string { return f.status }
+
+func (f *fakeBackend) SearchUsers(_ context.Context, word string) ([]pixiv.UserPreview, error) {
+	f.searchUsersWord = word
+	return f.users, f.err
+}
+
+func (f *fakeBackend) UserDetail(_ context.Context, id int64) (*pixiv.UserDetail, error) {
+	f.userDetailID = id
+	if f.err != nil {
+		return nil, f.err
+	}
+	if f.user == nil {
+		return nil, errors.New("no user")
+	}
+	return f.user, nil
+}
+
+func (f *fakeBackend) UserIllusts(_ context.Context, id int64, kind string) ([]pixiv.Illustration, error) {
+	f.userIllustsID, f.userIllustsKind = id, kind
+	return f.works, f.err
+}
+
+func (f *fakeBackend) UserBookmarks(_ context.Context, userID int64, private bool) ([]pixiv.Illustration, error) {
+	f.bookmarksID, f.bookmarksPrivate = userID, private
+	return f.works, f.err
+}
+
+func (f *fakeBackend) SearchNovels(_ context.Context, word string) ([]pixiv.Novel, error) {
+	f.novelsWord = word
+	return f.novels, f.err
+}
+
+func (f *fakeBackend) WatchLater(_ context.Context) ([]SavedWork, error) {
+	return f.saved, f.err
+}
+
+func (f *fakeBackend) DownloadHistory(_ context.Context) ([]DownloadedWork, error) {
+	return f.downloads, f.err
+}
+
+func (f *fakeBackend) Subscriptions(_ context.Context) ([]SubscriptionInfo, error) {
+	return f.subs, f.err
+}
+
+func (f *fakeBackend) RelatedIllusts(_ context.Context, id int64) ([]pixiv.Illustration, error) {
+	f.relatedID = id
+	return f.works, f.err
+}
+
+func (f *fakeBackend) Spotlight(_ context.Context) ([]pixiv.SpotlightArticle, error) {
+	return f.articles, f.err
+}
 
 // reply is a response with the fields a test checks left raw.
 type reply struct {
@@ -176,6 +246,9 @@ func TestToolsList(t *testing.T) {
 	want := []string{
 		"search_illustrations", "recommended", "illustration_detail", "ranking",
 		"set_bookmark", "queue_download", "status",
+		"search_users", "user_detail", "user_illusts", "user_bookmarks",
+		"search_novels", "watch_later", "download_history", "subscriptions",
+		"related_illustrations", "spotlight",
 	}
 	if len(got.Tools) != len(want) {
 		t.Fatalf("%d tools, want %d", len(got.Tools), len(want))
@@ -280,6 +353,140 @@ func TestGetIsMethodNotAllowed(t *testing.T) {
 	newTestServer(&fakeBackend{}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status %d", rec.Code)
+	}
+}
+
+// callToolText runs a tool and returns its text, failing on an isError result.
+func callToolText(t *testing.T, h http.Handler, name, args string) string {
+	t.Helper()
+	body := fmt.Sprintf(`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, name, args)
+	var got toolResult
+	decodeResult(t, call(t, h, body), &got)
+	if got.IsError {
+		t.Fatalf("%s returned an error: %+v", name, got.Content)
+	}
+	if len(got.Content) != 1 || got.Content[0].Type != "text" {
+		t.Fatalf("%s content %+v", name, got.Content)
+	}
+	return got.Content[0].Text
+}
+
+func TestReadToolsCallBackend(t *testing.T) {
+	savedAt := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	b := &fakeBackend{
+		works: sampleWorks(),
+		users: []pixiv.UserPreview{{User: pixiv.User{ID: 7, Name: "Ame", Account: "ame", Comment: "hello"}}},
+		user: &pixiv.UserDetail{
+			User: pixiv.User{ID: 7, Name: "Ame", Account: "ame"},
+			Profile: pixiv.Profile{
+				TotalIllusts: 2, TotalManga: 1, TotalNovels: 2,
+				TotalIllustBookmarksPublic: 5, Webpage: "https://ame.example",
+			},
+		},
+		novels: []pixiv.Novel{{
+			ID: 9, Title: "Rain Story", User: pixiv.User{Name: "Ame"},
+			TotalBookmarks: 3, PageCount: 4,
+		}},
+		saved: []SavedWork{{ID: 101, Title: "Rain", Artist: "Ame", SavedAt: savedAt}},
+		downloads: []DownloadedWork{{
+			IllustID: 101, Title: "Rain", Artist: "Ame", Dest: "/tmp/rain.png",
+			Page: 1, CompletedAt: savedAt,
+		}},
+		subs: []SubscriptionInfo{{
+			Kind: "user", TargetID: 7, TargetName: "Ame", LastChecked: savedAt,
+		}},
+		articles: []pixiv.SpotlightArticle{{
+			ID: "1", Title: "Article", ArticleURL: "https://www.pixivision.net/a/1",
+			PublishDate: "2026-10-01",
+		}},
+	}
+	h := newTestServer(b)
+
+	if text := callToolText(t, h, "search_users", `{"word":"ame","limit":3}`); b.searchUsersWord != "ame" || !strings.Contains(text, "#7 Ame (@ame)") {
+		t.Errorf("search_users word %q text %q", b.searchUsersWord, text)
+	}
+	if text := callToolText(t, h, "user_detail", `{"id":7}`); b.userDetailID != 7 ||
+		!strings.Contains(text, "3 works, 2 novels, 5 public bookmarks") ||
+		!strings.Contains(text, "https://ame.example") {
+		t.Errorf("user_detail id %d text %q", b.userDetailID, text)
+	}
+	if text := callToolText(t, h, "user_illusts", `{"id":7,"kind":"manga","limit":2}`); b.userIllustsID != 7 || b.userIllustsKind != "manga" || !strings.Contains(text, "#101") {
+		t.Errorf("user_illusts id %d kind %q text %q", b.userIllustsID, b.userIllustsKind, text)
+	}
+	if text := callToolText(t, h, "user_illusts", `{"id":7}`); b.userIllustsKind != "illust" || !strings.Contains(text, "#101") {
+		t.Errorf("user_illusts default kind %q text %q", b.userIllustsKind, text)
+	}
+	if text := callToolText(t, h, "user_bookmarks", `{"private":true,"limit":2}`); b.bookmarksID != 0 || !b.bookmarksPrivate || !strings.Contains(text, "#101") {
+		t.Errorf("user_bookmarks id %d private %v text %q", b.bookmarksID, b.bookmarksPrivate, text)
+	}
+	if text := callToolText(t, h, "search_novels", `{"word":"rain"}`); b.novelsWord != "rain" ||
+		!strings.Contains(text, "#9 Rain Story — Ame") {
+		t.Errorf("search_novels word %q text %q", b.novelsWord, text)
+	}
+	if text := callToolText(t, h, "watch_later", `{}`); !strings.Contains(text, "#101 Rain — Ame") ||
+		!strings.Contains(text, "saved 2026-10-01T12:00:00Z") {
+		t.Errorf("watch_later text %q", text)
+	}
+	if text := callToolText(t, h, "download_history", `{}`); !strings.Contains(text, "page 2 → /tmp/rain.png") {
+		t.Errorf("download_history text %q", text)
+	}
+	if text := callToolText(t, h, "subscriptions", `{}`); !strings.Contains(text, "user: Ame (#7)") {
+		t.Errorf("subscriptions text %q", text)
+	}
+	if text := callToolText(t, h, "related_illustrations", `{"id":101}`); b.relatedID != 101 || !strings.Contains(text, "#101") {
+		t.Errorf("related_illustrations id %d text %q", b.relatedID, text)
+	}
+	if text := callToolText(t, h, "spotlight", `{}`); !strings.Contains(text, "Article") ||
+		!strings.Contains(text, "https://www.pixivision.net/a/1") {
+		t.Errorf("spotlight text %q", text)
+	}
+}
+
+func usersWithIDs(n int) []pixiv.UserPreview {
+	users := make([]pixiv.UserPreview, n)
+	for i := range users {
+		users[i] = pixiv.UserPreview{User: pixiv.User{ID: int64(i + 1), Name: "u"}}
+	}
+	return users
+}
+
+func TestReadToolDefaultLimit(t *testing.T) {
+	text := callToolText(t, newTestServer(&fakeBackend{users: usersWithIDs(30)}),
+		"search_users", `{"word":"u"}`)
+	if !strings.Contains(text, "#20 ") {
+		t.Errorf("text misses item 20: %q", text)
+	}
+	if strings.Contains(text, "#21 ") {
+		t.Errorf("text has item 21: %q", text)
+	}
+}
+
+func TestReadToolLimitCapped(t *testing.T) {
+	text := callToolText(t, newTestServer(&fakeBackend{users: usersWithIDs(60)}),
+		"search_users", `{"word":"u","limit":999}`)
+	if !strings.Contains(text, "#50 ") {
+		t.Errorf("text misses item 50: %q", text)
+	}
+	if strings.Contains(text, "#51 ") {
+		t.Errorf("text has item 51: %q", text)
+	}
+}
+
+func TestReadToolErrorIsResult(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{err: errors.New("boom")}),
+		`{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"search_users","arguments":{"word":"u"}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if !got.IsError || !strings.Contains(got.Content[0].Text, "boom") {
+		t.Errorf("result %+v", got)
+	}
+}
+
+func TestUserIllustsRejectsUnknownKind(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"user_illusts","arguments":{"id":7,"kind":"novel"}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
 	}
 }
 
