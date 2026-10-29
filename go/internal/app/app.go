@@ -114,6 +114,10 @@ type App struct {
 	// settings page. shortcutsOpen shows the shortcut hint in its About card.
 	settings      *Settings
 	shortcutsOpen bool
+	// cacheUsage is the image cache size the settings page shows, measured at
+	// cacheUsageAt so a redraw every frame does not scan the cache directory.
+	cacheUsage   int64
+	cacheUsageAt time.Time
 	// cardText is the card title-and-author height for the current text scale,
 	// read on the main thread before a load goroutine uses it.
 	cardText float64
@@ -319,6 +323,8 @@ func New() *App {
 	}
 	// The check probes the install directory, so the settings page asks once.
 	a.updateSt.off = !a.updater.Enabled()
+	// The saved limit applies before the first image loads.
+	a.images.SetDiskLimit(imageCacheLimitBytes(settings))
 	// The check runs on the timer goroutine, so it hands the works to the main
 	// thread; the subscription page toasts the result when it next draws.
 	subs.OnNew = a.onNewSubscriptions

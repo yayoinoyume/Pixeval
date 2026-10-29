@@ -37,6 +37,8 @@ func TestSettingsRoundTrip(t *testing.T) {
 		NovelWidth:      900,
 
 		ProxyURL: "socks5://127.0.0.1:1080",
+
+		ImageCacheLimitMB: 1024,
 	}
 	if err := Save(path, want); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -89,6 +91,9 @@ func TestDefaultSettings(t *testing.T) {
 	if s.NovelFontSize != novelFontSizeDefault || s.NovelLineHeight != novelLineHeightDefault || s.NovelWidth != novelWidthDefault {
 		t.Errorf("novel typography %d/%v/%v, want the defaults", s.NovelFontSize, s.NovelLineHeight, s.NovelWidth)
 	}
+	if s.ImageCacheLimitMB != imageCacheLimitDefault {
+		t.Errorf("image cache limit %d, want %d", s.ImageCacheLimitMB, imageCacheLimitDefault)
+	}
 }
 
 func TestLoadBadJSON(t *testing.T) {
@@ -130,6 +135,9 @@ func TestLoadFillsMissingFields(t *testing.T) {
 	}
 	if s.NovelFontSize != novelFontSizeDefault || s.NovelLineHeight != novelLineHeightDefault || s.NovelWidth != novelWidthDefault {
 		t.Errorf("missing novel typography not defaulted: %+v", *s)
+	}
+	if s.ImageCacheLimitMB != imageCacheLimitDefault {
+		t.Errorf("missing image cache limit not defaulted: %d", s.ImageCacheLimitMB)
 	}
 }
 
@@ -294,6 +302,37 @@ func TestAppFallsBackToDefaults(t *testing.T) {
 	}
 }
 
+// TestLoadNormalizesImageCacheLimit checks a hand edited limit outside the
+// settings page's range falls back to the default, and the range's ends stay.
+func TestLoadNormalizesImageCacheLimit(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		in   int
+		want int
+	}{
+		{"zero", 0, imageCacheLimitDefault},
+		{"below", imageCacheLimitMin - 1, imageCacheLimitDefault},
+		{"above", imageCacheLimitMax + 1, imageCacheLimitDefault},
+		{"lowest", imageCacheLimitMin, imageCacheLimitMin},
+		{"highest", imageCacheLimitMax, imageCacheLimitMax},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "settings.json")
+			data := []byte(`{"imageCacheLimitMB":` + strconv.Itoa(tt.in) + `}`)
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			s, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if s.ImageCacheLimitMB != tt.want {
+				t.Errorf("limit %d, want %d", s.ImageCacheLimitMB, tt.want)
+			}
+		})
+	}
+}
+
 // TestLoadNormalizesProxy checks a saved proxy keeps an accepted URL, trims
 // surrounding space and drops one the transport cannot dial.
 func TestLoadNormalizesProxy(t *testing.T) {
@@ -350,13 +389,66 @@ func TestAppliesSavedProxy(t *testing.T) {
 	}
 }
 
+// TestAppliesSavedImageCacheLimit checks starting the app with a saved limit
+// gives it to the image loader.
+func TestAppliesSavedImageCacheLimit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	s := Default()
+	s.ImageCacheLimitMB = 1024
+	if err := Save(path, s); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	a := New()
+	if got, want := a.images.DiskLimit(), int64(1024)<<20; got != want {
+		t.Errorf("disk limit %d, want %d", got, want)
+	}
+}
+
+// TestSettingsPageSavesImageCacheLimit checks a save gives the new limit to
+// the image loader and writes it back.
+func TestSettingsPageSavesImageCacheLimit(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	a.settings.ImageCacheLimitMB = 256
+	tt := ui.NewTester(a.View, 1000, 1200)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil && got.ImageCacheLimitMB == 256 && a.images.DiskLimit() == int64(256)<<20 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("limit not applied and saved: settings %d, loader %d, err %v",
+				got.ImageCacheLimitMB, a.images.DiskLimit(), err)
+		}
+		tt.Frame()
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // TestSettingsPageShowsFields checks the page draws all five preferences.
 func TestSettingsPageShowsFields(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := New()
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽", "网络", "代理地址"} {
+	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽", "网络", "代理地址",
+		"缓存", "图片缓存上限（MB）", "当前缓存大小", "清理缓存"} {
 		if !tt.HasText(label) {
 			t.Errorf("label %q missing: %q", label, tt.Texts())
 		}

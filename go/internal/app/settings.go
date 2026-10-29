@@ -32,6 +32,13 @@ const (
 	subscriptionIntervalMax     = 1440
 )
 
+// The image cache's size limit the settings page offers, in megabytes.
+const (
+	imageCacheLimitDefault = 512
+	imageCacheLimitMin     = 64
+	imageCacheLimitMax     = 4096
+)
+
 // The reading page's typography, and how far a control moves it per press.
 const (
 	novelFontSizeDefault = 17
@@ -72,6 +79,8 @@ type Settings struct {
 	// ProxyURL routes the app's requests through a proxy; empty follows the
 	// environment's proxy settings.
 	ProxyURL string `json:"proxyUrl"`
+	// ImageCacheLimitMB is how many megabytes the image cache may take on disk.
+	ImageCacheLimitMB int `json:"imageCacheLimitMB"`
 }
 
 // Default is the settings of a first run.
@@ -95,6 +104,8 @@ func Default() *Settings {
 		NovelFontSize:   novelFontSizeDefault,
 		NovelLineHeight: novelLineHeightDefault,
 		NovelWidth:      novelWidthDefault,
+
+		ImageCacheLimitMB: imageCacheLimitDefault,
 	}
 }
 
@@ -219,6 +230,9 @@ func (s *Settings) normalize() {
 		s.SubscriptionIntervalMinutes > subscriptionIntervalMax {
 		s.SubscriptionIntervalMinutes = subscriptionIntervalDefault
 	}
+	if s.ImageCacheLimitMB < imageCacheLimitMin || s.ImageCacheLimitMB > imageCacheLimitMax {
+		s.ImageCacheLimitMB = imageCacheLimitDefault
+	}
 	s.ProxyURL = strings.TrimSpace(s.ProxyURL)
 	if !validProxyURL(s.ProxyURL) {
 		s.ProxyURL = ""
@@ -296,4 +310,12 @@ func settingsDownloadDir(s *Settings) string {
 		return s.DownloadDir
 	}
 	return downloadDir()
+}
+
+// imageCacheLimitBytes is the disk limit the settings ask for.
+func imageCacheLimitBytes(s *Settings) int64 {
+	if s == nil || s.ImageCacheLimitMB <= 0 {
+		return int64(imageCacheLimitDefault) << 20
+	}
+	return int64(s.ImageCacheLimitMB) << 20
 }

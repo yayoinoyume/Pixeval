@@ -116,6 +116,13 @@ func (l *Loader) SetDiskLimit(bytes int64) {
 	l.diskMu.Unlock()
 }
 
+// DiskLimit is the disk the cached bytes may take.
+func (l *Loader) DiskLimit() int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.diskLimit
+}
+
 // Thumb returns the illustration at key scaled down to fit w×h, never up. A
 // w or h of zero or less asks for the original size. It returns nil while the
 // image loads and calls onReady once it is there.

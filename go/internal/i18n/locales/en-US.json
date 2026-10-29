@@ -210,6 +210,12 @@
     "proxy": "Proxy address",
     "proxyHint": "Empty follows the system or environment proxy; http://, https:// and socks5:// are supported",
     "proxyInvalid": "The proxy address is not valid, nothing was saved",
+    "groupCache": "Cache",
+    "cacheLimit": "Image cache limit (MB)",
+    "cacheHint": "Cached images beyond the limit are deleted, the least recently used first",
+    "cacheSize": "Cache size",
+    "cacheClear": "Clear cache",
+    "cacheCleared": "Cache cleared",
     "groupAbout": "About"
   },
   "history": {

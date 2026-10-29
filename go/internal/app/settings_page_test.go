@@ -1,7 +1,10 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -10,6 +13,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
+	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
@@ -40,7 +44,7 @@ func newUpdatesApp(t *testing.T, f *fakeUpdater) (*App, *ui.Tester) {
 	a.updater = f
 	a.updateSt.off = !f.enabled
 	a.route = routeSettings
-	return a, ui.NewTester(a.View, 1000, 940)
+	return a, ui.NewTester(a.View, 1000, 1200)
 }
 
 // waitUpdate waits for the check to land as want says.
@@ -153,4 +157,62 @@ func tabToLabel(t *testing.T, tt *ui.Tester, label string) {
 		tt.Key(0, ui.KeyTab)
 	}
 	t.Fatalf("tab did not reach %q: %q", label, tt.Texts())
+}
+
+// TestCacheSizeText checks a cache size reads in the unit a person expects.
+func TestCacheSizeText(t *testing.T) {
+	for _, tt := range []struct {
+		bytes int64
+		want  string
+	}{
+		{0, "0 B"},
+		{512, "512 B"},
+		{4 << 10, "4 KB"},
+		{3 << 20, "3.0 MB"},
+		{2 << 30, "2.0 GB"},
+	} {
+		if got := cacheSizeText(tt.bytes); got != tt.want {
+			t.Errorf("cacheSizeText(%d) = %q, want %q", tt.bytes, got, tt.want)
+		}
+	}
+}
+
+// TestSettingsPageClearsImageCache checks the cache card shows the cached
+// size and its button deletes the cached images, leaving other files alone.
+func TestSettingsPageClearsImageCache(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	dir := t.TempDir()
+	a.images = imagex.New(nil, dir)
+	cached := filepath.Join(dir, "imagex-0123456789abcdef")
+	if err := os.WriteFile(cached, bytes.Repeat([]byte("x"), 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	other := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(other, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 1200)
+	tt.Frame()
+	if !tt.HasText("4 KB") {
+		t.Fatalf("cache size missing: %q", tt.Texts())
+	}
+
+	if err := tt.Click("清理缓存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if _, err := os.Stat(cached); !os.IsNotExist(err) {
+		t.Errorf("cache file: err %v, want it deleted", err)
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("other file: %v, want it left alone", err)
+	}
+	tt.Frame()
+	if !tt.HasText("0 B") {
+		t.Errorf("cache size not refreshed: %q", tt.Texts())
+	}
+	if !tt.HasText("缓存已清理") {
+		t.Errorf("clear not reported: %q", tt.Texts())
+	}
 }

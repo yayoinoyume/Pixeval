@@ -414,3 +414,55 @@ func TestConcurrentLimit(t *testing.T) {
 		t.Errorf("%d downloads at once, want the limit used", max)
 	}
 }
+
+// TestDiskUsageCountsCache checks the reported size covers the cached files
+// and nothing beside them.
+func TestDiskUsageCountsCache(t *testing.T) {
+	f := &fakeDownload{data: map[string][]byte{"u": testJPEG(t, 120, 120)}}
+	l := newTestLoader(t, f)
+
+	if got := l.DiskUsage(); got != 0 {
+		t.Fatalf("usage %d on an empty cache, want 0", got)
+	}
+	thumb(t, l, "u", 60, 60)
+	info, err := os.Stat(l.diskPath("u"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := l.DiskUsage(); got != info.Size() {
+		t.Errorf("usage %d, want the cached file's %d", got, info.Size())
+	}
+	if err := os.WriteFile(filepath.Join(l.dir, "notes.txt"), []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := l.DiskUsage(); got != info.Size() {
+		t.Errorf("usage %d after an outside file, want %d", got, info.Size())
+	}
+}
+
+// TestClearDiskRemovesOnlyCache checks clearing leaves a file the user put in
+// the cache directory alone, and that a loader without one does nothing.
+func TestClearDiskRemovesOnlyCache(t *testing.T) {
+	f := &fakeDownload{data: map[string][]byte{"u": testJPEG(t, 120, 120)}}
+	l := newTestLoader(t, f)
+	thumb(t, l, "u", 60, 60)
+
+	other := filepath.Join(l.dir, "notes.txt")
+	if err := os.WriteFile(other, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	l.ClearDisk()
+
+	if _, ok := l.diskGet("u"); ok {
+		t.Error("cache file kept, want it cleared")
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Errorf("other file: %v, want it left alone", err)
+	}
+	if got := l.DiskUsage(); got != 0 {
+		t.Errorf("usage %d after clearing, want 0", got)
+	}
+
+	// A loader without a cache directory has nothing to clear.
+	New(nil, "").ClearDisk()
+}
