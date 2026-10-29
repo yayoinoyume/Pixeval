@@ -295,6 +295,45 @@ func (a *App) tf(key string, args ...any) string {
 	return a.bundle.Tf(key, args...)
 }
 
+// downloadsPath is where the unfinished download queue lives: the user's
+// config directory, like the settings.
+func downloadsPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "pixeval-go", "downloads.json"), nil
+}
+
+// restoreDownloads brings back the queue an earlier run left unfinished. A
+// missing or broken file starts empty instead of blocking the start.
+func (a *App) restoreDownloads() {
+	path, err := downloadsPath()
+	if err != nil {
+		log.Printf("downloads: %v", err)
+		return
+	}
+	tasks, err := download.Load(path)
+	if err != nil {
+		log.Printf("downloads: %v", err)
+		return
+	}
+	a.downloads.Restore(tasks)
+}
+
+// saveDownloads writes the unfinished queue; the manager skips the write when
+// only progress changed.
+func (a *App) saveDownloads() {
+	path, err := downloadsPath()
+	if err != nil {
+		log.Printf("downloads: %v", err)
+		return
+	}
+	if err := a.downloads.Save(path); err != nil {
+		log.Printf("downloads: save: %v", err)
+	}
+}
+
 // imageDir is the image cache under the user's cache directory, created when
 // it is missing. An empty result turns the disk cache off.
 func imageDir() string {
@@ -326,9 +365,13 @@ func (a *App) Start() {
 	// A refresh can take a network round trip: the window opens first and
 	// applySession fills in the session when it lands.
 	go a.restoreSession()
-	// The queue downloads on its own goroutines and redraws the download
-	// page on every change.
-	a.downloads.OnChange(func() { a.update(func() {}) })
+	// The queue an earlier run left unfinished comes back as queued tasks,
+	// then downloads on its own goroutines and redraws the page on change.
+	a.restoreDownloads()
+	a.downloads.OnChange(func() {
+		a.saveDownloads()
+		a.update(func() {})
+	})
 	go a.downloads.Start(context.Background())
 	// A busy port or a failed listen leaves the app running without MCP.
 	go func() {

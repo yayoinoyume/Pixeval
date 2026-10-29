@@ -66,6 +66,11 @@ type Manager struct {
 	ctx         context.Context
 	onChange    func()
 	wg          sync.WaitGroup
+	// saveMu serializes Save and guards the last saved queue, so a progress
+	// update can skip the write.
+	saveMu    sync.Mutex
+	savedPath string
+	savedData []byte
 }
 
 // entry is the mutable side of a task that Snapshot does not expose.
@@ -108,21 +113,7 @@ func (m *Manager) SetConcurrency(n int) {
 // Add appends tasks as Queued and skips IDs that are already present,
 // reporting how many it took.
 func (m *Manager) Add(tasks []Task) int {
-	var added []*entry
-	m.mu.Lock()
-	for _, t := range tasks {
-		if m.findLocked(t.ID) != nil {
-			continue
-		}
-		t.State = Queued
-		t.Err = ""
-		t.Attempts = 0
-		t.Skipped = false
-		e := &entry{task: t}
-		m.entries = append(m.entries, e)
-		added = append(added, e)
-	}
-	m.mu.Unlock()
+	added := m.enqueue(tasks)
 	for _, e := range added {
 		m.launch(e)
 	}
@@ -130,6 +121,37 @@ func (m *Manager) Add(tasks []Task) int {
 		m.changed()
 	}
 	return len(added)
+}
+
+// Restore appends saved tasks as Queued without starting them, so the caller
+// can call Start next. A task whose ID is already present is skipped.
+func (m *Manager) Restore(tasks []Task) int {
+	added := m.enqueue(tasks)
+	if len(added) > 0 {
+		m.changed()
+	}
+	return len(added)
+}
+
+// enqueue appends tasks as Queued and skips IDs that are already present.
+func (m *Manager) enqueue(tasks []Task) []*entry {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var added []*entry
+	for _, t := range tasks {
+		if m.findLocked(t.ID) != nil {
+			continue
+		}
+		t.State = Queued
+		t.Err = ""
+		t.Attempts = 0
+		t.Bytes, t.Total = 0, 0
+		t.Skipped = false
+		e := &entry{task: t}
+		m.entries = append(m.entries, e)
+		added = append(added, e)
+	}
+	return added
 }
 
 // Start begins downloading. A canceled run is restarted by the next call, which

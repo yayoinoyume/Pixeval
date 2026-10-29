@@ -52,6 +52,54 @@ func TestDownloadsList(t *testing.T) {
 	}
 }
 
+// TestDownloadsRestoreSavedQueue checks the start brings back the unfinished
+// queue the previous run saved.
+func TestDownloadsRestoreSavedQueue(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	want := download.Task{
+		ID:       "1_0",
+		IllustID: 1,
+		Title:    "上次没下完",
+		Artist:   "画师",
+		URL:      "https://example.invalid/1.jpg",
+		Dest:     filepath.Join(t.TempDir(), "1.jpg"),
+	}
+	if err := download.Save(filepath.Join(dir, "pixeval-go", "downloads.json"), []download.Task{want}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	a := newDownloadApp(t)
+	a.restoreDownloads()
+	tasks := a.downloads.Snapshot()
+	if len(tasks) != 1 {
+		t.Fatalf("restored %d tasks, want 1: %+v", len(tasks), tasks)
+	}
+	if tasks[0] != want {
+		t.Fatalf("restored task %+v, want %+v", tasks[0], want)
+	}
+}
+
+// TestDownloadsRestoreBrokenQueue checks a damaged file starts an empty queue
+// instead of blocking the start.
+func TestDownloadsRestoreBrokenQueue(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	path := filepath.Join(dir, "pixeval-go", "downloads.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newDownloadApp(t)
+	a.restoreDownloads()
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Fatalf("restored %d tasks from a broken file, want none", len(tasks))
+	}
+}
+
 // TestDownloadsPauseResume checks the pause button marks the task paused in
 // the list, and the resume button takes the mark away.
 func TestDownloadsPauseResume(t *testing.T) {
