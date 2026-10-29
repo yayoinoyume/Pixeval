@@ -118,6 +118,10 @@
     "seriesLabel": "Série : %s",
     "related": "Œuvres similaires"
   },
+  "detail": {
+    "showAllTags": "Afficher tous les tags",
+    "showFewerTags": "Afficher moins de tags"
+  },
   "comments": {
     "title": "Commentaires",
     "login": "Connectez-vous pour voir les commentaires",
@@ -291,7 +295,13 @@
   },
   "series": {
     "open": "Série",
-    "loadFailed": "Impossible de charger la série : %s"
+    "loadFailed": "Impossible de charger la série : %s",
+    "author": "Auteur",
+    "worksCount": "%d œuvres",
+    "concluded": "Terminée",
+    "ongoing": "En cours",
+    "showMore": "Afficher plus",
+    "showLess": "Afficher moins"
   },
   "related": {
     "title": "Œuvres similaires",

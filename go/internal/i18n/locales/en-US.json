@@ -118,6 +118,10 @@
     "seriesLabel": "Series: %s",
     "related": "Related works"
   },
+  "detail": {
+    "showAllTags": "Show all tags",
+    "showFewerTags": "Show fewer tags"
+  },
   "comments": {
     "title": "Comments",
     "login": "Sign in to view comments",
@@ -291,7 +295,13 @@
   },
   "series": {
     "open": "Series",
-    "loadFailed": "Cannot load the series: %s"
+    "loadFailed": "Cannot load the series: %s",
+    "author": "Author",
+    "worksCount": "%d works",
+    "concluded": "Completed",
+    "ongoing": "Ongoing",
+    "showMore": "Show more",
+    "showLess": "Show less"
   },
   "related": {
     "title": "Related works",

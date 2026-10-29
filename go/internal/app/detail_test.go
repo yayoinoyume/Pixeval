@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -210,6 +211,66 @@ func TestViewerTagSearch(t *testing.T) {
 	}
 	if a.viewer != nil {
 		t.Error("the viewer stayed open")
+	}
+}
+
+// TestViewerTagsExpand checks a long tag list shows its first tags until the
+// reader asks for all of them, folds back, and still searches on a click.
+func TestViewerTagsExpand(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.session = &pixiv.Token{}
+	a.fetchCommentPage = noCommentPages
+	// The search itself must not reach the network either.
+	a.client.HTTP().Transport = newImageTransport(nil)
+	detail := viewerDetail()
+	detail.Tags = nil
+	for i := 1; i <= 9; i++ {
+		detail.Tags = append(detail.Tags, pixiv.Tag{Name: fmt.Sprintf("标签%d", i)})
+	}
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		return &detail, nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	waitViewerDetail(t, a, "load", func(d *pixiv.Illustration, _ string) bool { return d != nil })
+
+	tt := ui.NewTester(a.View, 1280, 1200)
+	if !tt.HasText("标签6") {
+		t.Fatalf("the sixth tag is missing: %q", tt.Texts())
+	}
+	if tt.HasText("标签7") {
+		t.Fatalf("the seventh tag shows before expanding: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("detail.showAllTags")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText("标签9") {
+		t.Fatalf("the last tag does not show after expanding: %q", tt.Texts())
+	}
+	if !tt.HasText(a.t("detail.showFewerTags")) {
+		t.Fatalf("no fold control after expanding: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("detail.showFewerTags")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if tt.HasText("标签7") {
+		t.Fatalf("the seventh tag still shows after folding: %q", tt.Texts())
+	}
+
+	if err := tt.Click(a.t("detail.showAllTags")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if err := tt.Click("标签9"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.route != routeSearch {
+		t.Errorf("route %q after the tag click, want %q", a.route, routeSearch)
+	}
+	if a.search.query != "标签9" {
+		t.Errorf("search query %q, want %q", a.search.query, "标签9")
 	}
 }
 
