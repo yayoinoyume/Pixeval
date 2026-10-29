@@ -38,6 +38,8 @@ func TestSettingsRoundTrip(t *testing.T) {
 
 		ProxyURL: "socks5://127.0.0.1:1080",
 
+		SauceNAOAPIKey: "secret-key",
+
 		ImageCacheLimitMB: 1024,
 	}
 	if err := Save(path, want); err != nil {
@@ -333,6 +335,22 @@ func TestLoadNormalizesImageCacheLimit(t *testing.T) {
 	}
 }
 
+// TestLoadTrimsSauceNAOKey checks a saved key loses the space around it.
+func TestLoadTrimsSauceNAOKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	data := `{"sauceNaoApiKey":"  secret-key  "}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.SauceNAOAPIKey != "secret-key" {
+		t.Errorf("key %q, want secret-key", s.SauceNAOAPIKey)
+	}
+}
+
 // TestLoadNormalizesProxy checks a saved proxy keeps an accepted URL, trims
 // surrounding space and drops one the transport cannot dial.
 func TestLoadNormalizesProxy(t *testing.T) {
@@ -447,7 +465,7 @@ func TestSettingsPageShowsFields(t *testing.T) {
 	a := New()
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽", "网络", "代理地址",
+	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽", "网络", "代理地址", "SauceNAO API Key",
 		"缓存", "图片缓存上限（MB）", "当前缓存大小", "清理缓存"} {
 		if !tt.HasText(label) {
 			t.Errorf("label %q missing: %q", label, tt.Texts())
@@ -583,6 +601,35 @@ func TestSettingsPageRejectsInvalidMacro(t *testing.T) {
 	}
 	if _, err := os.Stat(path); err == nil {
 		t.Fatal("settings saved with an invalid macro")
+	}
+}
+
+// TestSettingsPageSavesSauceNAOKey checks a save writes the trimmed key, so
+// the reverse image search can use it after a restart.
+func TestSettingsPageSavesSauceNAOKey(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	a.settings.SauceNAOAPIKey = "  secret-key  "
+	tt := ui.NewTester(a.View, 1000, 820)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil && got.SauceNAOAPIKey == "secret-key" {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("key not saved: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

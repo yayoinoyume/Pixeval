@@ -81,7 +81,14 @@
     "minHeight": "最小高度",
     "maxHeight": "最大高度",
     "invalidDate": "日期格式应为 YYYY-MM-DD",
-    "invalidSize": "尺寸必须是 0 或正整数"
+    "invalidSize": "尺寸必须是 0 或正整数",
+    "sauce": "以图搜图",
+    "sauceHint": "粘贴图片直链（http 或 https），查找它的来源",
+    "sauceURL": "图片 URL",
+    "sauceSearch": "查找来源",
+    "sauceNoKey": "先在设置中填写 SauceNAO API Key",
+    "sauceEmpty": "没有找到匹配的来源",
+    "sauceFailed": "查找失败：%s"
   },
   "spotlight": {
     "empty": "暂无特辑",
@@ -235,6 +242,8 @@
     "proxy": "代理地址",
     "proxyHint": "留空则跟随系统或环境变量；支持 http://、https://、socks5://",
     "proxyInvalid": "代理地址无效，未保存",
+    "sauceKey": "SauceNAO API Key",
+    "sauceKeyHint": "用于以图搜图，留空则关闭该功能",
     "groupCache": "缓存",
     "cacheLimit": "图片缓存上限（MB）",
     "cacheHint": "超出上限时按最久未使用删除图片缓存",

@@ -81,7 +81,14 @@
     "minHeight": "Hauteur min.",
     "maxHeight": "Hauteur max.",
     "invalidDate": "Utilisez une date au format AAAA-MM-JJ",
-    "invalidSize": "Les dimensions doivent être 0 ou un entier positif"
+    "invalidSize": "Les dimensions doivent être 0 ou un entier positif",
+    "sauce": "Recherche par image",
+    "sauceHint": "Collez l’URL directe d’une image (http ou https) pour trouver sa source",
+    "sauceURL": "URL de l’image",
+    "sauceSearch": "Trouver la source",
+    "sauceNoKey": "Ajoutez d’abord une clé API SauceNAO dans les réglages",
+    "sauceEmpty": "Aucune source correspondante",
+    "sauceFailed": "Échec de la recherche : %s"
   },
   "spotlight": {
     "empty": "Aucun article à la une",
@@ -235,6 +242,8 @@
     "proxy": "Adresse du proxy",
     "proxyHint": "Vide suit le proxy du système ou des variables d'environnement ; http://, https:// et socks5:// sont acceptés",
     "proxyInvalid": "L'adresse du proxy n'est pas valide, rien n'a été enregistré",
+    "sauceKey": "Clé API SauceNAO",
+    "sauceKeyHint": "Utilisée par la recherche par image ; laissez vide pour désactiver",
     "groupCache": "Cache",
     "cacheLimit": "Limite du cache d'images (Mo)",
     "cacheHint": "Au-delà de la limite, les images les moins récemment utilisées sont supprimées",
