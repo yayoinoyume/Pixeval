@@ -11,6 +11,8 @@ import (
 	"image/png"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -1027,5 +1029,260 @@ func TestRelatedBackReturnsToViewer(t *testing.T) {
 	}
 	if a.related != nil {
 		t.Error("related page still open after back")
+	}
+}
+
+// waitExport waits for the viewer's copy or save to finish. The notice is
+// written before the mark clears, so a test that waits here also sees it.
+func waitExport(t *testing.T, v *viewerState) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		v.mu.Lock()
+		busy := v.exporting
+		v.mu.Unlock()
+		if !busy {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the export did not finish")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// exportRecorder records what an export fetched and put on the clipboard,
+// standing in for the network and the system clipboard.
+type exportRecorder struct {
+	mu       sync.Mutex
+	urls     []string
+	clip     []byte
+	fetchErr error
+	clipErr  error
+	// gate holds a fetch until the test closes it, so the click's own frames
+	// finish before the export lands.
+	gate chan struct{}
+}
+
+func (r *exportRecorder) fetch(_ context.Context, url string) ([]byte, error) {
+	r.mu.Lock()
+	gate := r.gate
+	r.urls = append(r.urls, url)
+	r.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.fetchErr != nil {
+		return nil, r.fetchErr
+	}
+	return testPNG, nil
+}
+
+func (r *exportRecorder) writeClipboard(png []byte) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.clipErr != nil {
+		return r.clipErr
+	}
+	r.clip = append([]byte(nil), png...)
+	return nil
+}
+
+func (r *exportRecorder) got() (urls []string, clip []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.urls...), append([]byte(nil), r.clip...)
+}
+
+// TestViewerCopyImage checks copying a still fetches the page's original and
+// puts it on the clipboard as PNG.
+func TestViewerCopyImage(t *testing.T) {
+	w := viewerWork()
+	rec := &exportRecorder{gate: make(chan struct{})}
+	a := newViewerApp(newImageTransport(nil))
+	a.fetchImageBytes, a.clipboardWriteImage = rec.fetch, rec.writeClipboard
+	a.openViewer(&w, 1)
+
+	tt := ui.NewTester(a.View, 1280, 820)
+	if err := tt.Click("复制图片"); err != nil {
+		t.Fatalf("Click copy image: %v", err)
+	}
+	close(rec.gate)
+	waitExport(t, a.viewer)
+
+	urls, clip := rec.got()
+	if len(urls) != 1 || urls[0] != w.PageURL(1) {
+		t.Fatalf("fetched %v, want the page 2 original %q", urls, w.PageURL(1))
+	}
+	img, err := png.Decode(bytes.NewReader(clip))
+	if err != nil {
+		t.Fatalf("clipboard holds no PNG: %v", err)
+	}
+	if b := img.Bounds(); b.Dx() != 4 || b.Dy() != 6 {
+		t.Errorf("copied image %vx%v, want 4x6", b.Dx(), b.Dy())
+	}
+	if want := a.t("viewer.imageCopied"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
+// TestViewerSaveImage checks saving a still writes the original's bytes into
+// the download directory under a name the work and the page make, and that
+// saving without a directory says so.
+func TestViewerSaveImage(t *testing.T) {
+	w := viewerWork()
+	rec := &exportRecorder{gate: make(chan struct{})}
+	dir := t.TempDir()
+	a := newViewerApp(newImageTransport(nil))
+	a.fetchImageBytes, a.clipboardWriteImage = rec.fetch, rec.writeClipboard
+	a.downloadsDir = dir
+	a.openViewer(&w, 1)
+
+	tt := ui.NewTester(a.View, 1280, 820)
+	if err := tt.Click("保存图片"); err != nil {
+		t.Fatalf("Click save image: %v", err)
+	}
+	close(rec.gate)
+	waitExport(t, a.viewer)
+
+	urls, clip := rec.got()
+	if len(urls) != 1 || urls[0] != w.PageURL(1) {
+		t.Errorf("fetched %v, want %q", urls, w.PageURL(1))
+	}
+	if clip != nil {
+		t.Error("saving wrote the clipboard")
+	}
+	name := "42_p2.jpg"
+	if want := a.tf("viewer.imageSaved", name); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, name))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !bytes.Equal(got, testPNG) {
+		t.Error("the saved file is not the original's bytes")
+	}
+
+	a.downloadsDir = ""
+	a.saveViewerImage(a.viewer)
+	if want := a.t("viewer.noDownloadDir"); a.notice != want {
+		t.Errorf("notice %q without a directory, want %q", a.notice, want)
+	}
+}
+
+// TestViewerCopyUgoiraFrame checks copying an animation copies the frame shown,
+// encoded as PNG, without fetching anything.
+func TestViewerCopyUgoiraFrame(t *testing.T) {
+	tr := &ugoiraTransport{frames: 3, zipData: ugoiraZip(t, 3)}
+	rec := &exportRecorder{fetchErr: errors.New("网络错误")}
+	a := newViewerApp(tr)
+	a.fetchImageBytes, a.clipboardWriteImage = rec.fetch, rec.writeClipboard
+	w := ugoiraWork()
+	a.openViewer(&w, 0)
+	waitUgoira(t, a.viewer, "load", func(frames *animated.Frames, _ int, playing, _, _ bool) bool {
+		return frames != nil && playing
+	})
+	// Pausing keeps the frame the copy takes where the test found it.
+	a.toggleUgoira(a.viewer)
+	_, frame, _, _, _ := a.viewer.ugoiraState()
+
+	a.copyViewerImage(a.viewer)
+	waitExport(t, a.viewer)
+
+	urls, clip := rec.got()
+	if len(urls) != 0 {
+		t.Errorf("fetched %v for an animation's frame, want none", urls)
+	}
+	img, err := png.Decode(bytes.NewReader(clip))
+	if err != nil {
+		t.Fatalf("clipboard holds no PNG: %v", err)
+	}
+	r, _, _, _ := img.At(0, 0).RGBA()
+	if want := uint32(40 + 40*frame); r>>8 != want {
+		t.Errorf("copied frame %d has red %d, want %d", frame, r>>8, want)
+	}
+	if want := a.t("viewer.imageCopied"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+
+	// The same frame saves as a PNG of its own.
+	dir := t.TempDir()
+	a.downloadsDir = dir
+	a.saveViewerImage(a.viewer)
+	waitExport(t, a.viewer)
+	if _, err := os.Stat(filepath.Join(dir, "77_p1.png")); err != nil {
+		t.Errorf("the frame was not saved as PNG: %v", err)
+	}
+}
+
+// TestViewerCopyImageFailed checks a failed fetch leaves the reason as the
+// notice instead of copying.
+func TestViewerCopyImageFailed(t *testing.T) {
+	w := viewerWork()
+	rec := &exportRecorder{fetchErr: errors.New("网络错误")}
+	a := newViewerApp(newImageTransport(nil))
+	a.fetchImageBytes, a.clipboardWriteImage = rec.fetch, rec.writeClipboard
+	a.openViewer(&w, 0)
+
+	a.copyViewerImage(a.viewer)
+	waitExport(t, a.viewer)
+
+	if _, clip := rec.got(); clip != nil {
+		t.Error("a failed fetch still wrote the clipboard")
+	}
+	if want := a.tf("viewer.copyImageFailed", "网络错误"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+
+	// The clipboard refusing the picture reads as the same failure.
+	bad := &exportRecorder{clipErr: errors.New("没有剪贴板")}
+	a.fetchImageBytes, a.clipboardWriteImage = bad.fetch, bad.writeClipboard
+	a.copyViewerImage(a.viewer)
+	waitExport(t, a.viewer)
+	if want := a.tf("viewer.copyImageFailed", "没有剪贴板"); a.notice != want {
+		t.Errorf("notice %q for a clipboard failure, want %q", a.notice, want)
+	}
+}
+
+// TestViewerCopyImageWithoutPicture checks a page with no picture says it has
+// none instead of fetching or touching the clipboard.
+func TestViewerCopyImageWithoutPicture(t *testing.T) {
+	rec := &exportRecorder{}
+	a := newViewerApp(newImageTransport(nil))
+	a.fetchImageBytes, a.clipboardWriteImage = rec.fetch, rec.writeClipboard
+	v := &viewerState{work: pixiv.Illustration{ID: 9, Title: "无图"}, zoom: 1}
+
+	a.copyViewerImage(v)
+
+	if urls, clip := rec.got(); len(urls) != 0 || clip != nil {
+		t.Errorf("fetched %v and copied %d bytes, want neither", urls, len(clip))
+	}
+	if want := a.tf("viewer.copyImageFailed", a.t("viewer.imageFailed")); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
+// TestViewerSaveImageFailed checks a failed save leaves the reason as the
+// notice and writes no file.
+func TestViewerSaveImageFailed(t *testing.T) {
+	w := viewerWork()
+	rec := &exportRecorder{fetchErr: errors.New("网络错误")}
+	dir := t.TempDir()
+	a := newViewerApp(newImageTransport(nil))
+	a.fetchImageBytes, a.clipboardWriteImage = rec.fetch, rec.writeClipboard
+	a.downloadsDir = dir
+	a.openViewer(&w, 0)
+
+	a.saveViewerImage(a.viewer)
+	waitExport(t, a.viewer)
+
+	if want := a.tf("viewer.saveImageFailed", "网络错误"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Errorf("a failed save left %d files (err %v), want none", len(entries), err)
 	}
 }
