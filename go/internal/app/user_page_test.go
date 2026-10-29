@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -298,8 +299,8 @@ func TestUserPageNovelOpensReader(t *testing.T) {
 	}
 }
 
-// TestUserPageFollow checks the follow button follows the user and shows the
-// new state.
+// TestUserPageFollow checks the follow button follows the user publicly and
+// shows the new state.
 func TestUserPageFollow(t *testing.T) {
 	a := newPageApp()
 	calls := make(chan string, 2)
@@ -307,10 +308,14 @@ func TestUserPageFollow(t *testing.T) {
 		calls <- fmt.Sprintf("%d:%v", id, on)
 		return nil
 	}
+	a.followPrivateFn = func(_ context.Context, id int64) error {
+		calls <- fmt.Sprintf("private %d", id)
+		return nil
+	}
 	a.openUser(7)
 	waitUser(t, a, func(v userPageView) bool { return !v.loading })
 	tt := ui.NewTester(a.View, 1000, 700)
-	if err := tt.Click("关注"); err != nil {
+	if err := tt.Click(a.t("user.follow")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
 	select {
@@ -323,8 +328,139 @@ func TestUserPageFollow(t *testing.T) {
 	}
 	waitUser(t, a, func(v userPageView) bool { return v.user.IsFollowed })
 	tt.Frame()
-	if !tt.HasText("已关注") {
-		t.Errorf("followed state missing: %q", tt.Texts())
+	if _, ok := tt.Find(a.t("user.unfollow")); !ok {
+		t.Errorf("unfollow button missing: %q", tt.Texts())
+	}
+	if _, ok := tt.Find(a.t("user.followPrivate")); ok {
+		t.Errorf("the private follow is still offered: %q", tt.Texts())
+	}
+}
+
+// TestUserPagePrivateFollow checks the private follow button sends a private
+// follow and shows the new state.
+func TestUserPagePrivateFollow(t *testing.T) {
+	a := newPageApp()
+	calls := make(chan string, 2)
+	a.followFn = func(_ context.Context, id int64, on bool) error {
+		calls <- fmt.Sprintf("%d:%v", id, on)
+		return nil
+	}
+	a.followPrivateFn = func(_ context.Context, id int64) error {
+		calls <- fmt.Sprintf("private %d", id)
+		return nil
+	}
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click(a.t("user.followPrivate")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	select {
+	case got := <-calls:
+		if got != "private 7" {
+			t.Errorf("call %q, want a private follow of 7", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the private follow button did not request a follow")
+	}
+	waitUser(t, a, func(v userPageView) bool { return v.user.IsFollowed })
+	tt.Frame()
+	if _, ok := tt.Find(a.t("user.unfollow")); !ok {
+		t.Errorf("unfollow button missing: %q", tt.Texts())
+	}
+}
+
+// TestUserPageUnfollow checks a followed user's button unfollows and offers
+// both follows again.
+func TestUserPageUnfollow(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/user/detail"] = `{"user":{"id":7,"name":"画师七","account":"painter7","is_followed":true},` +
+		`"profile":{"total_illusts":1}}`
+	a := newPageAppWithBodies(bodies)
+	calls := make(chan string, 2)
+	a.followFn = func(_ context.Context, id int64, on bool) error {
+		calls <- fmt.Sprintf("%d:%v", id, on)
+		return nil
+	}
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading && v.user.IsFollowed })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if err := tt.Click(a.t("user.unfollow")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	select {
+	case got := <-calls:
+		if got != "7:false" {
+			t.Errorf("unfollow call %q, want 7:false", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the unfollow button did not request an unfollow")
+	}
+	waitUser(t, a, func(v userPageView) bool { return !v.user.IsFollowed })
+	tt.Frame()
+	for _, want := range []string{a.t("user.follow"), a.t("user.followPrivate")} {
+		if _, ok := tt.Find(want); !ok {
+			t.Errorf("%q missing: %q", want, tt.Texts())
+		}
+	}
+}
+
+// TestUserPageFollowFailure checks a failed follow keeps the state and leaves
+// the reason as a notice.
+func TestUserPageFollowFailure(t *testing.T) {
+	a := newPageApp()
+	release := make(chan struct{})
+	a.followFn = func(context.Context, int64, bool) error {
+		<-release
+		return errors.New("网络错误")
+	}
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click(a.t("user.follow")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	close(release)
+	waitUser(t, a, func(v userPageView) bool { return !v.followBusy })
+	if a.userView.snapshot().user.IsFollowed {
+		t.Error("a failed follow left the user followed")
+	}
+	if want := a.tf("user.followFailed", "网络错误"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	tt.Frame()
+	if _, ok := tt.Find(a.t("user.follow")); !ok {
+		t.Errorf("follow button missing after failure: %q", tt.Texts())
+	}
+}
+
+// TestUserPagePrivateFollowFailure checks a failed private follow keeps the
+// state and leaves the reason as a notice.
+func TestUserPagePrivateFollowFailure(t *testing.T) {
+	a := newPageApp()
+	release := make(chan struct{})
+	a.followPrivateFn = func(context.Context, int64) error {
+		<-release
+		return errors.New("网络错误")
+	}
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click(a.t("user.followPrivate")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	close(release)
+	waitUser(t, a, func(v userPageView) bool { return !v.followBusy })
+	if a.userView.snapshot().user.IsFollowed {
+		t.Error("a failed private follow left the user followed")
+	}
+	if want := a.tf("user.followPrivateFailed", "网络错误"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	tt.Frame()
+	if _, ok := tt.Find(a.t("user.followPrivate")); !ok {
+		t.Errorf("private follow button missing after failure: %q", tt.Texts())
 	}
 }
 
