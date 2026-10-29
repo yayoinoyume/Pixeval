@@ -59,6 +59,7 @@
     "action": "Rechercher",
     "illust": "Illustrations",
     "novel": "Novels",
+    "user": "Utilisateurs",
     "hint": "Saisissez un mot-clé pour lancer la recherche",
     "sort": "Trier par",
     "sortDateDesc": "Plus récentes",
@@ -243,6 +244,7 @@
     "noNovels": "Aucun roman pour cet utilisateur",
     "noFollowing": "Cet utilisateur ne suit personne",
     "noFollowers": "Cet utilisateur n'a aucun abonné",
+    "noSearchResults": "Aucun utilisateur trouvé",
     "followingLoadFailed": "Impossible de charger les abonnements : %s",
     "followersLoadFailed": "Impossible de charger les abonnés : %s"
   },

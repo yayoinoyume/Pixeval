@@ -59,6 +59,7 @@
     "action": "搜索",
     "illust": "插画",
     "novel": "小说",
+    "user": "用户",
     "hint": "输入关键词开始搜索",
     "sort": "排序",
     "sortDateDesc": "按时间（新到旧）",
@@ -243,6 +244,7 @@
     "noNovels": "这个用户还没有小说",
     "noFollowing": "这个用户还没有关注任何人",
     "noFollowers": "这个用户还没有粉丝",
+    "noSearchResults": "没有找到用户",
     "followingLoadFailed": "加载关注列表失败：%s",
     "followersLoadFailed": "加载粉丝列表失败：%s"
   },

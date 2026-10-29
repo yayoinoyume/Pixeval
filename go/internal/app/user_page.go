@@ -177,9 +177,12 @@ type userListState struct {
 	// started is set once a page loaded, so an empty next ends the list
 	// instead of asking for the first page again.
 	started bool
-	err     string
-	fetch   func(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error)
-	armed   bool
+	// gen identifies the list the load in flight belongs to: a new search
+	// starts the next one and drops the results of the old.
+	gen   int
+	err   string
+	fetch func(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error)
+	armed bool
 	// failed holds the avatars that did not load, which are not asked for
 	// again.
 	failed map[string]bool
@@ -238,6 +241,20 @@ func (st *userListState) arm() {
 	st.mu.Unlock()
 }
 
+// restart starts the list over, dropping the pages loaded until now and the
+// results of a load in flight.
+func (st *userListState) restart() {
+	st.mu.Lock()
+	st.gen++
+	st.users = nil
+	st.next = ""
+	st.started = false
+	st.err = ""
+	st.loading = false
+	st.armed = true
+	st.mu.Unlock()
+}
+
 // canLoad reports whether another page may be fetched: not while one loads,
 // not after a failure (the retry button clears it), and not once the list
 // ended.
@@ -279,7 +296,7 @@ func (a *App) loadMoreUsers(st *userListState) {
 		return
 	}
 	st.loading = true
-	fetch := st.fetch
+	gen, fetch := st.gen, st.fetch
 	st.mu.Unlock()
 
 	go func() {
@@ -288,6 +305,11 @@ func (a *App) loadMoreUsers(st *userListState) {
 		page, err := fetch(ctx)
 
 		st.mu.Lock()
+		if gen != st.gen {
+			// A new search replaced this list; its page is not wanted.
+			st.mu.Unlock()
+			return
+		}
 		st.loading = false
 		switch {
 		case errors.Is(err, pixiv.ErrNoMore):

@@ -56,6 +56,14 @@ func (c *Client) UserFollowers(ctx context.Context, userID int64) (*Page[UserPre
 	return c.userPreviewPage(ctx, c.pageURL("/v1/user/follower", q))
 }
 
+// SearchUsers searches users by word.
+func (c *Client) SearchUsers(ctx context.Context, word string) (*Page[UserPreview], error) {
+	q := url.Values{}
+	q.Set("word", word)
+	c.setFilter(q)
+	return c.userPreviewPage(ctx, c.pageURL("/v1/search/user", q))
+}
+
 // NextUserPreviews loads the page a NextURL from a user list points to.
 func (c *Client) NextUserPreviews(ctx context.Context, nextURL string) (*Page[UserPreview], error) {
 	return c.userPreviewPage(ctx, nextURL)

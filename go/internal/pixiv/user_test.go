@@ -245,6 +245,92 @@ func TestUserListPagingPassesNextURL(t *testing.T) {
 	}
 }
 
+const userSearchBody = `{"user_previews":[{"user":{"id":9,"name":"猫画师",` +
+	`"account":"cat"},"illusts":[{"id":7,"title":"work"}]}],` +
+	`"next_url":"https://app-api.pixiv.net/v1/search/user?word=x&offset=30"}`
+
+func TestSearchUsersRequestsWordAndFilter(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, userSearchBody))
+
+	page, err := c.SearchUsers(context.Background(), "猫")
+	if err != nil {
+		t.Fatalf("SearchUsers: %v", err)
+	}
+	if got.method != http.MethodGet {
+		t.Errorf("method = %q, want GET", got.method)
+	}
+	if got.path != "/v1/search/user" {
+		t.Errorf("path = %q", got.path)
+	}
+	if q := got.query; q.Get("word") != "猫" || q.Get("filter") != "for_android" {
+		t.Errorf("query = %v", q)
+	}
+	if got.auth != "Bearer test-token" {
+		t.Errorf("Authorization = %q, want a Bearer token", got.auth)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items = %+v, want one user", page.Items)
+	}
+	p := page.Items[0]
+	if p.User.ID != 9 || p.User.Name != "猫画师" || p.User.Account != "cat" ||
+		len(p.Illusts) != 1 || p.Illusts[0].ID != 7 {
+		t.Errorf("preview = %+v", p)
+	}
+	if page.NextURL == "" {
+		t.Error("next_url is empty")
+	}
+}
+
+func TestSearchUsersFilterFollowsAllowR18(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		var got recordedRequest
+		c := newWriteClient(t, recordInto(&got, userSearchBody))
+		c.SetAllowR18(allow)
+
+		if _, err := c.SearchUsers(context.Background(), "猫"); err != nil {
+			t.Fatalf("SearchUsers (AllowR18=%v): %v", allow, err)
+		}
+		want := "for_android"
+		if allow {
+			want = ""
+		}
+		if filter := got.query.Get("filter"); filter != want {
+			t.Errorf("filter = %q (AllowR18=%v), want %q", filter, allow, want)
+		}
+	}
+}
+
+func TestSearchUsersPagingPassesNextURL(t *testing.T) {
+	var paths []string
+	var words []string
+	c := newWriteClient(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		words = append(words, r.URL.Query().Get("word"))
+		io.WriteString(w, `{"user_previews":[],"next_url":"http://`+r.Host+
+			`/v1/search/user?word=猫&offset=30"}`)
+	})
+	ctx := context.Background()
+
+	first, err := c.SearchUsers(ctx, "猫")
+	if err != nil {
+		t.Fatalf("SearchUsers: %v", err)
+	}
+	second, err := c.NextUserPreviews(ctx, first.NextURL)
+	if err != nil {
+		t.Fatalf("NextUserPreviews: %v", err)
+	}
+	if len(paths) != 2 || paths[0] != "/v1/search/user" || paths[1] != "/v1/search/user" {
+		t.Errorf("paths = %v", paths)
+	}
+	if len(words) != 2 || words[0] != "猫" || words[1] != "猫" {
+		t.Errorf("words = %v", words)
+	}
+	if len(first.Items) != 0 || len(second.Items) != 0 {
+		t.Errorf("empty lists decoded as %+v / %+v", first.Items, second.Items)
+	}
+}
+
 const seriesBody = `{
   "illust_series_detail": {
     "id": 77,
