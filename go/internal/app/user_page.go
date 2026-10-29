@@ -432,6 +432,9 @@ func (a *App) userPage(c *ui.Context) {
 					ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
 						a.followButton(c, v, s)
 						a.subscriptionButton(c, subscription.KindUser, s.user.ID, s.user.Name)
+						if ui.Button(c, a.t("user.relatedUsers")).Clicked() {
+							a.openRelatedUsers(s.user.ID)
+						}
 					})
 				}
 			})

@@ -53,6 +53,10 @@ type App struct {
 	commentsOpen bool
 	// userView is the user page shown, nil until one opens.
 	userView *userViewState
+	// relatedUsers is the related-users page shown, nil until one opens.
+	relatedUsers *relatedUsersViewState
+	// recommendedUsers is the recommended-authors page's list.
+	recommendedUsers *userListState
 	// seriesView is the series page shown, nil until one opens.
 	seriesView *seriesViewState
 	// related is the related-works page shown, nil until one opens.
@@ -262,20 +266,21 @@ func New() *App {
 			}
 			return client.SpotlightArticles(ctx)
 		},
-		openExternalFn: mygo.Shell.OpenExternal,
-		route:          routeHome,
-		cardText:       60,
-		homeFeeds:      newHomeFeeds(),
-		newFeed:        &browseState{},
-		myPixivFeed:    &browseState{},
-		rankMode:       pixiv.Day,
-		search:         &browseState{},
-		searchNovels:   &novelFeedState{},
-		searchUsers:    &userListState{},
-		spotlight:      &spotlightState{},
-		searchSort:     searchSortDateDesc,
-		searchTarget:   searchTargetPartial,
-		updater:        mygoUpdater{},
+		openExternalFn:   mygo.Shell.OpenExternal,
+		route:            routeHome,
+		cardText:         60,
+		homeFeeds:        newHomeFeeds(),
+		newFeed:          &browseState{},
+		myPixivFeed:      &browseState{},
+		rankMode:         pixiv.Day,
+		search:           &browseState{},
+		searchNovels:     &novelFeedState{},
+		searchUsers:      &userListState{},
+		recommendedUsers: &userListState{},
+		spotlight:        &spotlightState{},
+		searchSort:       searchSortDateDesc,
+		searchTarget:     searchTargetPartial,
+		updater:          mygoUpdater{},
 	}
 	// The check probes the install directory, so the settings page asks once.
 	a.updateSt.off = !a.updater.Enabled()
