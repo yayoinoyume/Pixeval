@@ -98,9 +98,9 @@ func (a *App) escape() {
 // You draws a navigation rail.
 func (a *App) nav(c *ui.Context) {
 	t := themeOf(c)
-	ui.Column(c).Width(navWidth).FillHeight().Padding(t.SpaceXL, t.SpaceM, t.SpaceL, t.SpaceM).
-		Gap(t.SpaceXS).Background(t.Surface).Shrink(0).AlignItems(ui.Center).
-		Radius(0, t.RadiusXL, t.RadiusXL, 0).
+	ui.Column(c).Width(navWidth).FillHeight().Padding(t.SpaceXL, t.SpaceS, t.SpaceL, t.SpaceS).
+		Gap(t.SpaceXS).Background(t.Bg).Shrink(0).AlignItems(ui.Center).
+		BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
 		Role(ui.RoleGroup).Label(a.t("nav.region")).Children(func() {
 		a.brand(c)
 		for _, r := range browseRoutes {
@@ -118,14 +118,11 @@ func (a *App) nav(c *ui.Context) {
 func (a *App) brand(c *ui.Context) {
 	t := themeOf(c)
 	ui.Column(c).AlignItems(ui.Center).Gap(t.SpaceXS).Padding(0, 0, t.SpaceM, 0).Children(func() {
-		ui.Box(c).Size(40, 40).Radius(t.RadiusM).Background(t.AccentSoft).Center().
-			Tooltip("Pixeval Go " + appVersion()).Children(func() {
-			ui.Icon(c, iconLogo).Size(22, 22).TextColor(t.Accent)
+		ui.Box(c).Size(30, 30).Radius(t.RadiusXS).Background(t.Text).Center().
+			Label("Pixeval Go").Tooltip("Pixeval Go " + appVersion()).Children(func() {
+			ui.Icon(c, iconLogo).Size(18, 18).TextColor(t.Bg)
 		})
-		ui.RichText(c,
-			ui.Span{Text: "Pixeval ", Size: t.TextTiny, Weight: 600, Color: t.Text},
-			ui.Span{Text: "Go", Size: t.TextTiny, Weight: 600, Color: t.Accent},
-		)
+		ui.Text(c, "Pixeval Go").FontSize(9).LetterSpacing(0.3).TextColor(t.TextMuted)
 	})
 }
 
@@ -135,29 +132,27 @@ func (a *App) navItem(c *ui.Context, r route) {
 	t := themeOf(c)
 	selected := a.route == r
 	label := a.routeLabel(r)
-	b := ui.ButtonBase(c).Key("nav."+string(r)).Width(64).
-		Radius(t.RadiusL).Padding(t.SpaceS, 0, t.SpaceXS, 0).Gap(2).
+	b := ui.ButtonBase(c).Key("nav."+string(r)).Width(64).Height(56).
+		Radius(t.RadiusS).Padding(t.SpaceS, 0, t.SpaceXS, 0).Gap(2).
 		Column().AlignItems(ui.Center).Justify(ui.Center).
 		Label(label).Tooltip(label)
 	if b.Hovered() {
-		b = b.Background(t.SurfaceHover)
+		b = b.Background(t.SurfaceAlt)
 	}
-	iconFg, labelFg, weight := t.TextMuted, t.TextMuted, 500
-	switch {
-	case selected:
-		iconFg, labelFg, weight = t.OnPrimaryContainer, t.Text, 600
-	case b.Hovered():
-		iconFg, labelFg = t.Text, t.Text
+	fg := t.TextMuted
+	if selected {
+		fg = t.Text
+	} else if b.Hovered() {
+		fg = t.Text
 	}
 	b.Children(func() {
-		pill := ui.Box(c).Size(56, 30).Radius(t.RadiusFull).Center()
-		if selected {
-			pill = pill.Background(t.AccentSoft)
+		ui.Icon(c, navIcon(r)).Size(20, 20).TextColor(fg)
+		ui.Text(c, label).FontSize(10).FontWeight(500).TextColor(fg).MaxLines(1)
+		bar := t.Accent
+		if !selected {
+			bar = ui.Transparent
 		}
-		pill.Children(func() {
-			ui.Icon(c, navIcon(r)).Size(22, 22).TextColor(iconFg)
-		})
-		ui.Text(c, label).FontSize(t.TextTiny).FontWeight(weight).TextColor(labelFg).MaxLines(1)
+		ui.Box(c).Width(14).Height(2).Background(bar)
 	})
 	if b.Clicked() {
 		a.goRoute(r)
@@ -168,17 +163,18 @@ func (a *App) navItem(c *ui.Context, r route) {
 // the page.
 func (a *App) header(c *ui.Context) {
 	t := themeOf(c)
-	ui.Row(c).Height(60).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).Children(func() {
+	ui.Row(c).Height(84).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
+		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		if a.route == routeUser || a.route == routeSeries {
-			if iconButton(c, iconLeft, a.t("common.back"), 40, t.TextMuted, t.SurfaceHover).Clicked() {
+			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
 		}
-		ui.Text(c, a.routeLabel(a.route)).FontSize(t.TextTitle).FontWeight(600).
-			LineHeight(1.2).TextColor(t.Text).Grow(1).MaxLines(1).MinWidth(0)
+		displayText(c, a.routeLabel(a.route)).FontSize(t.TextDisplay).FontWeight(500).
+			LineHeight(1.12).TextColor(t.Text).Grow(1).MaxLines(1).MinWidth(0)
 		if a.session == nil {
-			if ui.PrimaryButton(c, a.t("nav.login")).Height(40).Radius(t.RadiusFull).
-				Padding(0, t.SpaceXL).Clicked() {
+			if ui.PrimaryButton(c, a.t("nav.login")).Height(36).Radius(t.RadiusS).
+				Padding(0, t.SpaceL).Clicked() {
 				a.ShowLogin()
 			}
 			return
@@ -192,14 +188,13 @@ func (a *App) header(c *ui.Context) {
 func (a *App) userBadge(c *ui.Context) {
 	t := themeOf(c)
 	name := a.userName()
-	ui.Row(c).Height(40).Padding(t.SpaceXS, t.SpaceS, t.SpaceXS, t.SpaceXS).
-		Gap(t.SpaceS).AlignItems(ui.Center).Radius(t.RadiusFull).
-		Background(t.Surface).Children(func() {
-		ui.Box(c).Size(32, 32).Radius(t.RadiusFull).Background(t.SecondaryContainer).Center().Children(func() {
-			ui.Text(c, initialOf(name)).FontSize(t.TextSmall).FontWeight(600).TextColor(t.OnSecondaryContainer)
+	ui.Row(c).Height(36).Padding(t.SpaceXS).Gap(t.SpaceS).AlignItems(ui.Center).
+		Radius(t.RadiusS).Children(func() {
+		ui.Box(c).Size(28, 28).Radius(t.RadiusFull).Background(t.AccentSoft).Center().Children(func() {
+			ui.Text(c, initialOf(name)).FontSize(t.TextTiny).FontWeight(600).TextColor(t.Accent)
 		})
 		ui.Text(c, name).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text).MaxLines(1)
-		if iconButton(c, iconLogout, a.t("nav.logout"), 32, t.TextMuted, t.SurfaceHover).Clicked() {
+		if iconButton(c, iconLogout, a.t("nav.logout"), 28, t.TextMuted, t.SurfaceAlt).Clicked() {
 			a.logout()
 		}
 	})
@@ -285,13 +280,46 @@ func (a *App) applyTheme(c *ui.Context) {
 	}
 }
 
+// textTabs is the app's tab line: quiet words with one accent rule under the
+// chosen tab. It replaces the pill segmented control with the same states.
+func textTabs(c *ui.Context, t tokens, selected *int, labels ...string) bool {
+	changed := false
+	ui.Row(c).Gap(t.SpaceXL).AlignItems(ui.End).Children(func() {
+		for i, label := range labels {
+			idx := i
+			b := ui.ButtonBase(c).Height(40).Radius(0).Padding(0).Gap(t.SpaceS).
+				Column().AlignItems(ui.Start).Label(label)
+			fg := t.TextMuted
+			if *selected == idx {
+				fg = t.Text
+			} else if b.Hovered() {
+				fg = t.Text
+			}
+			b.Children(func() {
+				ui.Text(c, label).FontSize(t.TextSmall).FontWeight(500).TextColor(fg)
+				ui.Box(c).FillWidth().Height(2).Background(func() ui.Color {
+					if *selected == idx {
+						return t.Accent
+					}
+					return ui.Transparent
+				}())
+			})
+			if b.Clicked() && *selected != idx {
+				*selected = idx
+				changed = true
+			}
+		}
+	})
+	return changed
+}
+
 // homePage draws the home tabs above the feed of the one chosen. Pixiv's
 // recommendation also needs a token, so every tab asks a signed-out user to
 // sign in instead of fetching.
 func (a *App) homePage(c *ui.Context) {
 	t := themeOf(c)
-	ui.Row(c).Padding(t.SpaceL, contentPadding, 0, contentPadding).Children(func() {
-		if ui.Segmented(c, &a.homeTab, a.t("home.recommended"), a.t("home.following"), a.t("home.ranking")).Changed() {
+	ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+		if textTabs(c, t, &a.homeTab, a.t("home.recommended"), a.t("home.following"), a.t("home.ranking")) {
 			a.armHome(a.homeTab)
 		}
 	})
@@ -325,8 +353,8 @@ func (a *App) searchPage(c *ui.Context) {
 				a.startSearch(st)
 			}
 		})
-		ui.Row(c).Padding(t.SpaceM, contentPadding, 0, contentPadding).Children(func() {
-			ui.Segmented(c, &a.searchKind, a.t("search.illust"), a.t("search.novel"))
+		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+			textTabs(c, t, &a.searchKind, a.t("search.illust"), a.t("search.novel"))
 		})
 		if !a.searchArmed() {
 			emptyState(c, iconSearch, a.t("search.hint"), "", nil)
@@ -375,11 +403,36 @@ func (a *App) startSearch(st *browseState) {
 // expression, so switching tabs or searching again keeps it.
 func (a *App) filterBar(c *ui.Context, st *browseState) {
 	t := themeOf(c)
-	ui.Column(c).Gap(t.SpaceXS).Padding(t.SpaceL, contentPadding, 0, contentPadding).Children(func() {
+	if !st.filterOpen {
+		ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Justify(ui.End).Children(func() {
+			b := ui.ButtonBase(c).Height(28).Radius(t.RadiusS).Padding(0, t.SpaceS).
+				Label(a.t("filter.title"))
+			fg := t.TextMuted
+			if b.Hovered() {
+				fg = t.Text
+			}
+			if b.Clicked() {
+				st.filterOpen = true
+			}
+			b.Children(func() {
+				ui.Icon(c, iconSearch).Size(13, 13).TextColor(fg)
+				ui.Text(c, a.t("filter.title")).FontSize(t.TextTiny).TextColor(fg)
+			})
+		})
+		return
+	}
+	ui.Column(c).Gap(t.SpaceXS).Padding(0, contentPadding, 0, contentPadding).Children(func() {
 		ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
-			ui.TextInput(c, &st.filterText).Grow(1).Placeholder(a.t("filter.placeholder"))
+			ui.TextInput(c, &st.filterText).Width(300).
+				Placeholder(a.t("filter.placeholder")).Label(a.t("filter.placeholder"))
 			if ui.Button(c, a.t("filter.action")).Clicked() {
 				st.applyFilter()
+				if st.filterErr == "" {
+					st.filterOpen = false
+				}
+			}
+			if iconButton(c, iconClose, a.t("viewer.close"), 28, t.TextMuted, t.SurfaceAlt).Clicked() {
+				st.filterOpen = false
 			}
 		})
 		if st.filterErr != "" {
@@ -440,7 +493,7 @@ func (a *App) loginPrompt(c *ui.Context) {
 		hint = a.t("login.noWebView")
 	}
 	emptyState(c, iconUser, a.t("login.prompt"), hint, func() {
-		if ui.PrimaryButton(c, a.t("login.title")).Radius(themeOf(c).RadiusFull).Clicked() {
+		if ui.PrimaryButton(c, a.t("login.title")).Radius(themeOf(c).RadiusS).Clicked() {
 			a.ShowLogin()
 		}
 	})

@@ -206,7 +206,8 @@
   "filter": {
     "placeholder": "过滤表达式，如 bookmarks>100",
     "action": "应用",
-    "invalid": "过滤表达式无效：%s"
+    "invalid": "过滤表达式无效：%s",
+    "title": "筛选"
   },
   "shortcuts": {
     "hint": "快捷键：Ctrl+K 搜索，Ctrl+, 设置，Ctrl+H 历史，Ctrl+D 下载，Esc 返回（macOS 用 Command 代替 Ctrl）"

@@ -19,7 +19,7 @@ const browseTimeout = 30 * time.Second
 
 const (
 	cardWidth   = 240
-	cardGap     = 16
+	cardGap     = 20
 	coverWidth  = 480
 	coverHeight = 720
 )
@@ -71,6 +71,7 @@ type browseState struct {
 	filterText string
 	filterExpr filter.Expr
 	filterErr  string
+	filterOpen bool
 
 	// masonry is the feed's place, touched only by the view.
 	masonry widgets.MasonryState
@@ -332,13 +333,17 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 }
 
 // browseCard draws one tile: the cover, its title and the author. A cover not
-// loaded yet, or one that failed, is a plain tonal block. The card takes a
-// higher container and a soft shadow when the pointer is over it.
+// loaded yet, or one that failed, is a plain block. There is no card box:
+// the picture and two quiet lines are the whole tile.
 func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustration, i int) {
 	work := items[i]
 	key := work.ThumbURL()
 	t := themeOf(c)
 	card, cover := cardShell(c)
+	titleColor := t.Text
+	if card.Hovered() {
+		titleColor = t.Accent
+	}
 	card = card.Fill().Focusable().
 		Label(a.tf("a11y.card", work.Title, work.User.Name)).
 		Cursor(ui.CursorPointer).OnClick(func() {
@@ -361,8 +366,9 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 		}
 	})
 	card.Children(func() {
-		ui.Column(c).Padding(t.SpaceM).Gap(2).Children(func() {
-			ui.Text(c, work.Title).FontSize(t.TextSmall).FontWeight(600).TextColor(t.Text).MaxLines(1)
+		ui.Column(c).Gap(2).Children(func() {
+			ui.Text(c, work.Title).FontSize(t.TextSmall).FontWeight(500).
+				TextColor(titleColor).MaxLines(1)
 			ui.Text(c, work.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 		})
 	})

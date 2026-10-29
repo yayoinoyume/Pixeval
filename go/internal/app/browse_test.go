@@ -392,6 +392,12 @@ func newFilterFeed(t *testing.T) (*App, *browseState, *ui.Tester) {
 // runFilter types expr in the box and clicks apply.
 func runFilter(t *testing.T, st *browseState, tt *ui.Tester, expr string) {
 	t.Helper()
+	if !st.filterOpen {
+		if err := tt.Click("筛选"); err != nil {
+			t.Fatalf("open filter: %v", err)
+		}
+		tt.Frame()
+	}
 	st.filterText = expr
 	if err := tt.Click("应用"); err != nil {
 		t.Fatalf("Click: %v", err)
@@ -465,13 +471,13 @@ func TestBrowseCardMetrics(t *testing.T) {
 	if cardWidth != 240 {
 		t.Errorf("card width %v, want the default 240", cardWidth)
 	}
-	if cardGap != 16 {
-		t.Errorf("card gap %v, want 16", cardGap)
+	if cardGap != 20 {
+		t.Errorf("card gap %v, want 20", cardGap)
 	}
 	if coverWidth != 480 || coverHeight != 720 {
 		t.Errorf("cover %vx%v, want 480x720", coverWidth, coverHeight)
 	}
-	if contentPadding != 28 {
-		t.Errorf("content padding %v, want 28", contentPadding)
+	if contentPadding != 40 {
+		t.Errorf("content padding %v, want 40", contentPadding)
 	}
 }

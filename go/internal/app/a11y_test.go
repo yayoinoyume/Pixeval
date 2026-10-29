@@ -84,11 +84,12 @@ func TestBrowseCardLabels(t *testing.T) {
 	if _, ok := tt.Find(card); !ok {
 		t.Fatalf("card label %q missing: %q", card, tt.Texts())
 	}
-	// The filter box and its button come first, then the works.
-	tt.Key(0, ui.KeyTab)
-	tt.Key(0, ui.KeyTab)
-	tt.Key(0, ui.KeyTab)
-	if !tt.Focused(card) {
-		t.Errorf("the first card does not take the focus: %q", tt.Texts())
+	// The quiet filter control comes before the works.
+	for i := 0; i < 6; i++ {
+		tt.Key(0, ui.KeyTab)
+		if tt.Focused(card) {
+			return
+		}
 	}
+	t.Errorf("the first card does not take the focus: %q", tt.Texts())
 }

@@ -4,14 +4,21 @@ import (
 	"math"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/yayoinoyume/pixeval-go/internal/artcolor"
 )
 
 // The window's design tokens: one palette and one scale for every view. A view
 // reads them with themeOf(c); applyTheme installs the same values into the
 // widgets' ui.Theme, so stock controls and hand-built parts share one look.
+//
+// The direction is an editorial gallery, not Material You: warm paper and ink,
+// hairlines instead of floating cards, two radii for pictures and four for
+// controls, and a serif for the few display lines. The artwork supplies the
+// color on its own page; the rest of the app stays quiet.
 const (
-	navWidth       = 88
-	contentPadding = 28
+	navWidth       = 80
+	contentPadding = 40
 )
 
 // tokens is one theme's palette, spacing, radii and type scale.
@@ -28,9 +35,8 @@ type tokens struct {
 	Text           ui.Color
 	TextMuted      ui.Color
 
-	// The Material You roles a view may name instead of one of the older
-	// aliases above: Bg is the surface, Surface the container-low role, and
-	// so on, so a new view can say which role it means.
+	// The old Material role names remain as aliases for the pages that were
+	// written against them. New code should use the role it means above.
 	Primary                 ui.Color
 	OnPrimary               ui.Color
 	PrimaryContainer        ui.Color
@@ -68,8 +74,13 @@ type tokens struct {
 	Inverse     ui.Color
 	InverseText ui.Color
 
-	// The viewer is a dark room in either theme, so its chrome has its own
-	// tokens instead of following the window.
+	// WashTop and WashBottom are the two ends of the work page's room: the
+	// artwork's hue at a low chroma over paper or ink.
+	WashTop    ui.Color
+	WashBottom ui.Color
+
+	// The viewer's chrome follows the window, but keeps its own names so a
+	// work page can tint it from the artwork without changing the shell.
 	ViewerBg        ui.Color
 	ViewerBar       ui.Color
 	ViewerBarBorder ui.Color
@@ -84,6 +95,7 @@ type tokens struct {
 	SpaceXL  float32
 	Space2XL float32
 
+	RadiusXS   float32
 	RadiusS    float32
 	RadiusM    float32
 	RadiusL    float32
@@ -91,6 +103,7 @@ type tokens struct {
 	Radius2XL  float32
 	RadiusFull float32
 
+	TextMicro   float32
 	TextDetail  float32
 	TextDisplay float32
 	TextTitle   float32
@@ -99,104 +112,102 @@ type tokens struct {
 	TextTiny    float32
 }
 
-// designTokens returns the dark or the light set. Both are Material You
-// roles from one seed, #9b7bb8: the dark set is the light one's roles in the
-// dark scheme, not a separate palette.
+// designTokens returns the dark or the light set. These are quiet, warm
+// neutrals; the accent is terracotta, and a work page replaces it with the
+// artwork's own color.
 func designTokens(dark bool) tokens {
 	t := tokens{
 		Dark: dark,
 
 		SpaceXS: 4, SpaceS: 8, SpaceM: 12, SpaceL: 16, SpaceXL: 24, Space2XL: 32,
-		RadiusS: 8, RadiusM: 12, RadiusL: 16, RadiusXL: 24, Radius2XL: 32, RadiusFull: 999,
-		TextDetail: 36, TextDisplay: 30, TextTitle: 20, TextBody: 14, TextSmall: 13, TextTiny: 11,
-
-		ViewerBg:        ui.Hex("#0a0b0e"),
-		ViewerBar:       ui.RGBA(22, 25, 32, 0.9),
-		ViewerBarBorder: ui.RGBA(255, 255, 255, 0.1),
-		ViewerBarHover:  ui.RGBA(255, 255, 255, 0.09),
-		ViewerBarText:   ui.Hex("#f2f4f8"),
-		ViewerBarMuted:  ui.Hex("#a6adbb"),
+		// Two radii are enough for pictures and rules (2), four for controls
+		// (4), eight for a panel that truly needs an edge. Nothing else is
+		// rounded; avatars alone are circles.
+		RadiusXS: 2, RadiusS: 4, RadiusM: 6, RadiusL: 8, RadiusXL: 8, Radius2XL: 8, RadiusFull: 999,
+		TextMicro: 10, TextDetail: 36, TextDisplay: 30, TextTitle: 22, TextBody: 15, TextSmall: 13, TextTiny: 11,
 	}
 	if dark {
-		t.Bg = ui.Hex("#151217")             // surface
-		t.Surface = ui.Hex("#1d1a20")        // surface-container-low
-		t.SurfaceAlt = ui.Hex("#211e24")     // surface-container
-		t.SurfaceHover = ui.Hex("#2c282e")   // surface-container-high
-		t.SurfacePressed = ui.Hex("#373339") // surface-container-highest
-		t.Border = ui.Hex("#4a454e")         // outline-variant
-		t.BorderStrong = ui.Hex("#958e99")   // outline
-		t.Text = ui.Hex("#e8e1e8")           // on-surface
-		t.TextMuted = ui.Hex("#cbc4cf")      // on-surface-variant
+		t.Bg = ui.Hex("#12100e")
+		t.Surface = ui.Hex("#1a1714")
+		t.SurfaceAlt = ui.Hex("#211d19")
+		t.SurfaceHover = ui.Hex("#2a2520")
+		t.SurfacePressed = ui.Hex("#342e28")
+		t.Border = ui.Hex("#332c25")
+		t.BorderStrong = ui.Hex("#5c5146")
+		t.Text = ui.Hex("#f3ede4")
+		t.TextMuted = ui.Hex("#a89c8d")
 
-		t.Accent = ui.Hex("#dcb8ff")     // primary
-		t.AccentSoft = ui.Hex("#573471") // primary-container
-		t.AccentFill = ui.Hex("#dcb8ff") // primary
-		t.AccentHover = ui.Hex("#e9ccff")
-		t.AccentPressed = ui.Hex("#c9a2ea")
-		t.AccentText = ui.Hex("#3f1d5a") // on-primary
+		t.Accent = ui.Hex("#e2a17f")
+		t.AccentSoft = ui.Hex("#38241a")
+		t.AccentFill = ui.Hex("#c97a52")
+		t.AccentHover = ui.Hex("#da8a61")
+		t.AccentPressed = ui.Hex("#b56a46")
+		t.AccentText = ui.Hex("#21130c")
 
-		t.OnPrimaryContainer = ui.Hex("#f2dbff")
-		t.Secondary = ui.Hex("#d3c0dd")
-		t.OnSecondary = ui.Hex("#382e41")
-		t.SecondaryContainer = ui.Hex("#4f4459")
-		t.OnSecondaryContainer = ui.Hex("#eedcf8")
-		t.Tertiary = ui.Hex("#eeb8cd")
-		t.OnTertiary = ui.Hex("#472635")
-		t.TertiaryContainer = ui.Hex("#5f3b4a")
-		t.OnTertiaryContainer = ui.Hex("#ffd8e6")
-
-		t.Danger = ui.Hex("#ffb4ab") // error
-		t.Warning = ui.Hex("#f2b35b")
-		t.Success = ui.Hex("#5ddc9a")
-		t.Selection = ui.RGBA(220, 184, 255, 0.3)
-		t.Focus = ui.RGBA(220, 184, 255, 0.75)
+		t.Danger = ui.Hex("#f2b8b5")
+		t.Warning = ui.Hex("#e0b36a")
+		t.Success = ui.Hex("#8fd3b0")
+		t.Selection = ui.RGBA(201, 122, 82, 0.26)
+		t.Focus = ui.RGBA(226, 161, 127, 0.75)
 		t.Scrollbar = ui.RGBA(255, 255, 255, 0.22)
 		t.Shadow = ui.RGBA(0, 0, 0, 0.55)
-		t.Inverse = ui.Hex("#e8e1e8")     // inverse-surface
-		t.InverseText = ui.Hex("#322f35") // inverse-on-surface
+		t.Inverse = ui.Hex("#f3ede4")
+		t.InverseText = ui.Hex("#12100e")
+
+		t.WashTop = ui.Hex("#171411")
+		t.WashBottom = ui.Hex("#0b0908")
 	} else {
-		t.Bg = ui.Hex("#fdf7ff")             // surface
-		t.Surface = ui.Hex("#f7f0fa")        // surface-container-low
-		t.SurfaceAlt = ui.Hex("#f1eaf4")     // surface-container
-		t.SurfaceHover = ui.Hex("#ebe4ee")   // surface-container-high
-		t.SurfacePressed = ui.Hex("#e5dee9") // surface-container-highest
-		t.Border = ui.Hex("#ccc4d0")         // outline-variant
-		t.BorderStrong = ui.Hex("#7b7582")   // outline
-		t.Text = ui.Hex("#1c1a1f")           // on-surface
-		t.TextMuted = ui.Hex("#4a4550")      // on-surface-variant
+		t.Bg = ui.Hex("#f7f3ed")
+		t.Surface = ui.Hex("#fffdfa")
+		t.SurfaceAlt = ui.Hex("#f0eae1")
+		t.SurfaceHover = ui.Hex("#e8e1d6")
+		t.SurfacePressed = ui.Hex("#dfd7ca")
+		t.Border = ui.Hex("#ded6ca")
+		t.BorderStrong = ui.Hex("#b8aea0")
+		t.Text = ui.Hex("#191613")
+		t.TextMuted = ui.Hex("#675f54")
 
-		t.Accent = ui.Hex("#6b4a86")     // primary
-		t.AccentSoft = ui.Hex("#eedbff") // primary-container
-		t.AccentFill = ui.Hex("#6b4a86") // primary
-		t.AccentHover = ui.Hex("#5a3c74")
-		t.AccentPressed = ui.Hex("#4a305f")
-		t.AccentText = ui.Hex("#ffffff") // on-primary
+		t.Accent = ui.Hex("#8c4a2f")
+		t.AccentSoft = ui.Hex("#f1e2d6")
+		t.AccentFill = ui.Hex("#7c3e27")
+		t.AccentHover = ui.Hex("#68331f")
+		t.AccentPressed = ui.Hex("#542818")
+		t.AccentText = ui.Hex("#fff8f2")
 
-		t.OnPrimaryContainer = ui.Hex("#2a0f42")
-		t.Secondary = ui.Hex("#63596e")
-		t.OnSecondary = ui.Hex("#ffffff")
-		t.SecondaryContainer = ui.Hex("#eadcf2")
-		t.OnSecondaryContainer = ui.Hex("#201a26")
-		t.Tertiary = ui.Hex("#7c5265")
-		t.OnTertiary = ui.Hex("#ffffff")
-		t.TertiaryContainer = ui.Hex("#ffd8e6")
-		t.OnTertiaryContainer = ui.Hex("#31101f")
+		t.Danger = ui.Hex("#b42318")
+		t.Warning = ui.Hex("#8a5a00")
+		t.Success = ui.Hex("#2f6b4f")
+		t.Selection = ui.RGBA(124, 62, 39, 0.18)
+		t.Focus = ui.RGBA(124, 62, 39, 0.65)
+		t.Scrollbar = ui.RGBA(25, 22, 19, 0.24)
+		t.Shadow = ui.RGBA(40, 30, 20, 0.12)
+		t.Inverse = ui.Hex("#191613")
+		t.InverseText = ui.Hex("#f7f3ed")
 
-		t.Danger = ui.Hex("#ba1a1a") // error
-		t.Warning = ui.Hex("#a85f00")
-		t.Success = ui.Hex("#0f7b4f")
-		t.Selection = ui.RGBA(107, 74, 134, 0.22)
-		t.Focus = ui.RGBA(107, 74, 134, 0.65)
-		t.Scrollbar = ui.RGBA(28, 26, 31, 0.26)
-		t.Shadow = ui.RGBA(43, 34, 49, 0.14)
-		t.Inverse = ui.Hex("#322f35")     // inverse-surface
-		t.InverseText = ui.Hex("#f5eef7") // inverse-on-surface
+		t.WashTop = ui.Hex("#f7f3ed")
+		t.WashBottom = ui.Hex("#efe7dc")
 	}
-	// The older names are the same roles: a view keeps its spelling while a
-	// new one names the Material role it means.
+	t.ViewerBg = t.Bg
+	t.ViewerBar = t.Surface
+	t.ViewerBarBorder = t.Border
+	t.ViewerBarHover = t.SurfaceHover
+	t.ViewerBarText = t.Text
+	t.ViewerBarMuted = t.TextMuted
+
+	// The aliases keep the pages that still speak Material's role names in
+	// the same palette. They are the same colors, not a second theme.
 	t.Primary = t.Accent
 	t.OnPrimary = t.AccentText
 	t.PrimaryContainer = t.AccentSoft
+	t.OnPrimaryContainer = t.Text
+	t.Secondary = t.TextMuted
+	t.OnSecondary = t.Bg
+	t.SecondaryContainer = t.SurfaceAlt
+	t.OnSecondaryContainer = t.Text
+	t.Tertiary = t.Accent
+	t.OnTertiary = t.AccentText
+	t.TertiaryContainer = t.AccentSoft
+	t.OnTertiaryContainer = t.Text
 	t.SurfaceContainerLow = t.Surface
 	t.SurfaceContainer = t.SurfaceAlt
 	t.SurfaceContainerHigh = t.SurfaceHover
@@ -221,20 +232,89 @@ func tokensFor(dark bool) tokens {
 	return lightTokens
 }
 
+// withPalette overrides the interface colors with one artwork's palette. The
+// scale, radii and type stay the window's.
+func (t tokens) withPalette(p artcolor.Palette) tokens {
+	t.Bg = p.Bg
+	t.Surface = p.Surface
+	t.SurfaceAlt = p.SurfaceAlt
+	t.SurfaceHover = p.SurfaceHover
+	t.SurfacePressed = p.SurfacePressed
+	t.Border = p.Border
+	t.BorderStrong = p.BorderStrong
+	t.Text = p.Text
+	t.TextMuted = p.TextMuted
+
+	t.Accent = p.Accent
+	t.AccentSoft = p.AccentSoft
+	t.AccentFill = p.Accent
+	t.AccentHover = p.AccentHover
+	t.AccentPressed = p.AccentPressed
+	t.AccentText = p.AccentText
+
+	t.WashTop = p.WashTop
+	t.WashBottom = p.WashBottom
+	t.Shadow = p.Shadow
+
+	t.ViewerBg = p.WashBottom
+	t.ViewerBar = p.Surface.Alpha(0.92)
+	t.ViewerBarBorder = p.Border
+	t.ViewerBarHover = p.SurfaceHover
+	t.ViewerBarText = p.Text
+	t.ViewerBarMuted = p.TextMuted
+
+	t.Primary = t.Accent
+	t.OnPrimary = t.AccentText
+	t.PrimaryContainer = t.AccentSoft
+	t.OnPrimaryContainer = t.Text
+	t.Secondary = t.TextMuted
+	t.OnSecondary = t.Bg
+	t.SecondaryContainer = t.SurfaceAlt
+	t.OnSecondaryContainer = t.Text
+	t.Tertiary = t.Accent
+	t.OnTertiary = t.AccentText
+	t.TertiaryContainer = t.AccentSoft
+	t.OnTertiaryContainer = t.Text
+	t.SurfaceContainerLow = t.Surface
+	t.SurfaceContainer = t.SurfaceAlt
+	t.SurfaceContainerHigh = t.SurfaceHover
+	t.SurfaceContainerHighest = t.SurfacePressed
+	t.OutlineVariant = t.Border
+	t.InverseSurface = t.Inverse
+	t.InverseOnSurface = t.InverseText
+	return t
+}
+
+// scaled returns the tokens with their text sizes at the desktop's scale.
+func (t tokens) scaled(scale float32) tokens {
+	if scale <= 0 || scale == 1 {
+		return t
+	}
+	t.TextMicro *= scale
+	t.TextDetail *= scale
+	t.TextDisplay *= scale
+	t.TextTitle *= scale
+	t.TextBody *= scale
+	t.TextSmall *= scale
+	t.TextTiny *= scale
+	return t
+}
+
+// highContrast strengthens a set of tokens for the desktop's high contrast
+// setting: stronger rules, darker secondary text and an opaque focus ring.
+func (t tokens) highContrast() tokens {
+	t.Border = t.BorderStrong
+	t.TextMuted = t.TextMuted.Mix(t.Text, 0.45)
+	t.Focus = t.Accent
+	return t
+}
+
 // themeOf returns the tokens the current frame draws with, adjusted for the
 // desktop's high contrast setting.
 func themeOf(c *ui.Context) tokens {
-	t := tokensFor(c.Theme().Dark)
-	if s := textScale(c); s != 1 {
-		t.TextDetail *= s
-		t.TextDisplay *= s
-		t.TextTitle *= s
-		t.TextBody *= s
-		t.TextSmall *= s
-		t.TextTiny *= s
-	}
-	// A system accent replaces the design's blue in every custom part, so
-	// the navigation, brand and buttons do not show two accents at once.
+	t := tokensFor(c.Theme().Dark).scaled(textScale(c))
+	// A system accent replaces the design's terracotta in every custom part,
+	// so the navigation, brand and buttons do not show two accents at once.
 	// designTheme leaves our own fill in place for an explicit theme.
 	if a := c.Theme().Accent; a.A != 0 && (a.R != t.AccentFill.R || a.G != t.AccentFill.G || a.B != t.AccentFill.B) {
 		t.Accent = readableAccent(a, t.Text, t.Surface)
@@ -245,9 +325,7 @@ func themeOf(c *ui.Context) tokens {
 		t.AccentSoft = a.Alpha(0.16)
 	}
 	if c.Preferences().HighContrast {
-		t.Border = t.BorderStrong
-		t.TextMuted = t.TextMuted.Mix(t.Text, 0.45)
-		t.Focus = t.Accent
+		t = t.highContrast()
 	}
 	return t
 }
@@ -311,12 +389,17 @@ func textScale(c *ui.Context) float32 {
 // surface so they stand out on a card, and the accent fill is the primary
 // button's face. FontSize follows the desktop's text scale.
 func designTheme(dark bool, scale float32) *ui.Theme {
-	t := tokensFor(dark)
+	return themeFromTokens(tokensFor(dark), scale)
+}
+
+// themeFromTokens makes the stock widgets follow a token set, including a
+// work page's artwork palette.
+func themeFromTokens(t tokens, scale float32) *ui.Theme {
 	if scale <= 0 {
 		scale = 1
 	}
 	return &ui.Theme{
-		Dark:           dark,
+		Dark:           t.Dark,
 		Background:     t.Bg,
 		Surface:        t.SurfaceAlt,
 		SurfaceHover:   t.SurfaceHover,
@@ -337,17 +420,18 @@ func designTheme(dark bool, scale float32) *ui.Theme {
 		InverseText:    t.InverseText,
 		Scrollbar:      t.Scrollbar,
 		ScrollbarWidth: 8,
-		Radius:         t.RadiusM,
+		Radius:         t.RadiusS,
 		Spacing:        4,
 		FontSize:       t.TextBody * scale,
+		Font:           uiFont(),
 	}
 }
 
 // applyHighContrast strengthens a theme for the desktop's high contrast
 // setting: darker borders and secondary text, and an opaque focus ring.
 func applyHighContrast(theme *ui.Theme, dark bool) {
-	t := tokensFor(dark)
-	theme.Border = t.BorderStrong
-	theme.TextMuted = t.TextMuted.Mix(t.Text, 0.45)
-	theme.Focus = t.Accent
+	t := tokensFor(dark).highContrast()
+	theme.Border = t.Border
+	theme.TextMuted = t.TextMuted
+	theme.Focus = t.Focus
 }

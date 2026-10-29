@@ -21,6 +21,8 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/ui"
+
+	"github.com/yayoinoyume/pixeval-go/internal/artcolor"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 
 	// Decoders for the formats Pixiv serves. GIF decodes its first frame.
@@ -54,6 +56,7 @@ type Loader struct {
 	budget    int64
 	diskLimit int64
 	inflight  map[string][]func() // memory key -> callbacks of the load in progress
+	seeds     map[string]ui.Color // image URL -> its characteristic color
 
 	diskMu sync.Mutex // serializes disk writes and eviction
 	sem    chan struct{}
@@ -76,6 +79,7 @@ func New(client *pixiv.Client, diskDir string) *Loader {
 		budget:    defaultBudget,
 		diskLimit: defaultDiskLimit,
 		inflight:  map[string][]func(){},
+		seeds:     map[string]ui.Color{},
 		sem:       make(chan struct{}, maxDownloads),
 	}
 	if client != nil {
@@ -125,6 +129,16 @@ func (l *Loader) Thumb(key string, w, h int, onReady func()) *ui.Bitmap {
 // while the image loads and calls onReady once it is there.
 func (l *Loader) Original(key string, onReady func()) *ui.Bitmap {
 	return l.bitmap(key+"@original", key, onReady, nil)
+}
+
+// Seed returns the characteristic color the last decoded image at url had.
+// It is false while the image has not loaded. A caller that uses it to tint a
+// page can redraw from an image callback and ask again.
+func (l *Loader) Seed(url string) (ui.Color, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	c, ok := l.seeds[url]
+	return c, ok
 }
 
 // Cached returns the original of key already decoded in memory, without
@@ -198,11 +212,24 @@ func (l *Loader) decode(memKey, url string, scale func(image.Image) image.Image)
 	if !fromDisk {
 		l.diskPut(url, data)
 	}
+	seed := artcolor.Extract(img)
 	if scale != nil {
 		img = scale(img)
 	}
 	b := img.Bounds()
 	l.put(memKey, ui.NewBitmap(img), int64(b.Dx())*int64(b.Dy())*4)
+	if seed.A != 0 {
+		l.mu.Lock()
+		if l.seeds == nil {
+			l.seeds = map[string]ui.Color{}
+		}
+		// The cover and the original are separate URLs; the first decode
+		// of each decides its seed, so a smaller rendition cannot drift.
+		if _, ok := l.seeds[url]; !ok {
+			l.seeds[url] = seed
+		}
+		l.mu.Unlock()
+	}
 }
 
 // fetch returns the image data from the disk cache, or downloads it. Only a

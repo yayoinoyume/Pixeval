@@ -206,7 +206,8 @@
   "filter": {
     "placeholder": "Filtrer les œuvres, p. ex. bookmarks>100",
     "action": "Appliquer",
-    "invalid": "Filtre invalide : %s"
+    "invalid": "Filtre invalide : %s",
+    "title": "Filtrer"
   },
   "shortcuts": {
     "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
