@@ -194,6 +194,9 @@ type App struct {
 	// openExternalFn opens a URL in the default browser; tests replace it so a
 	// click does not leave the app.
 	openExternalFn func(url string) error
+	// notifyFn shows a desktop notification; tests replace it so a check never
+	// reaches the system's notification center.
+	notifyFn func(title, body string) error
 	// subsStore holds the followed users and series, loaded at start, and subs
 	// checks them on demand and every subscriptionInterval.
 	subsStore *subscription.Store
@@ -338,6 +341,14 @@ func New() *App {
 	}
 	// The check probes the install directory, so the settings page asks once.
 	a.updateSt.off = !a.updater.Enabled()
+	// A notification needs the window's main loop, which a test binary has
+	// none of, and Show would wait for one forever.
+	a.notifyFn = func(title, body string) error {
+		if a.win == nil {
+			return nil
+		}
+		return mygo.NewNotification(mygo.NotificationOptions{Title: title, Body: body}).Show()
+	}
 	// The saved limit applies before the first image loads.
 	a.images.SetDiskLimit(imageCacheLimitBytes(settings))
 	// The check runs on the timer goroutine, so it hands the works to the main

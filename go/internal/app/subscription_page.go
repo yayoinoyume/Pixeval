@@ -230,14 +230,30 @@ func (a *App) downloadNewWorks(works []pixiv.Illustration) {
 	a.update(func() {})
 }
 
-// showNewWorks records the works a check found and, when the setting is on,
-// queues their pages. It runs on the main thread, so the download directory is
-// read where a settings save writes it.
+// notify shows a desktop notification when the setting is on. A missing
+// backend or a refused permission is logged: it must not stop the check.
+func (a *App) notify(title, body string) {
+	if a.settings == nil || !a.settings.NotificationsEnabled || a.notifyFn == nil {
+		return
+	}
+	if err := a.notifyFn(title, body); err != nil {
+		log.Printf("notification: %v", err)
+	}
+}
+
+// showNewWorks records the works a check found, notifies them and, when the
+// setting is on, queues their pages. It runs on the main thread, so the
+// download directory is read where a settings save writes it. One check is
+// one call, so it notifies once however many works it found.
 func (a *App) showNewWorks(works []pixiv.Illustration) {
 	a.subsMu.Lock()
 	a.newWorks = append(a.newWorks, works...)
 	a.subsMsg = a.tf("subs.newFound", len(works))
 	a.subsMu.Unlock()
+	if len(works) == 0 {
+		return
+	}
+	a.notify(a.t("notify.newWorksTitle"), a.tf("notify.newWorksBody", len(works), works[0].Title))
 	if a.settings == nil || !a.settings.AutoDownloadSubscriptions {
 		return
 	}
@@ -251,6 +267,7 @@ func (a *App) showNewWorks(works []pixiv.Illustration) {
 		pages += n
 	}
 	a.notice = a.tf("subs.autoQueued", pages)
+	a.notify(a.t("notify.autoQueuedTitle"), a.tf("notify.autoQueuedBody", pages))
 }
 
 // onNewSubscriptions is the background check's callback: it hands the works to

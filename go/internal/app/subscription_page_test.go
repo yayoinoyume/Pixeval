@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -167,6 +168,18 @@ func newWork(id int64, pages int) pixiv.Illustration {
 	return pixiv.Illustration{ID: id, Title: "新作", PageCount: pages, User: pixiv.User{Name: "画师"}}
 }
 
+// notifyCall is one desktop notification the app asked the system to show.
+type notifyCall struct{ title, body string }
+
+// stubNotify records the notifications instead of showing them, and returns
+// err so a failing backend can be tested.
+func stubNotify(calls *[]notifyCall, err error) func(title, body string) error {
+	return func(title, body string) error {
+		*calls = append(*calls, notifyCall{title, body})
+		return err
+	}
+}
+
 // TestAutoDownloadQueuesNewWorks checks a background check queues the pages
 // when the setting is on.
 func TestAutoDownloadQueuesNewWorks(t *testing.T) {
@@ -243,6 +256,76 @@ func TestAutoDownloadWithoutDownloadDir(t *testing.T) {
 		t.Fatalf("%d tasks queued without a directory, want 0", len(tasks))
 	}
 	if want := a.t("subs.autoNoDir"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
+// TestNewWorksNotification checks a check that finds works notifies them, and
+// a second notification when it queues them for download.
+func TestNewWorksNotification(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a, _ := newSubsTest(t, stubFetcher{})
+	a.downloadsDir = t.TempDir()
+	a.settings.AutoDownloadSubscriptions = true
+	var calls []notifyCall
+	a.notifyFn = stubNotify(&calls, nil)
+	a.subs.OnNew = a.onNewSubscriptions
+	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2), newWork(2, 1)})
+
+	if len(calls) != 2 {
+		t.Fatalf("%d notifications, want 2: %+v", len(calls), calls)
+	}
+	if want := (notifyCall{a.t("notify.newWorksTitle"), a.tf("notify.newWorksBody", 2, "新作")}); calls[0] != want {
+		t.Errorf("new works notification %+v, want %+v", calls[0], want)
+	}
+	if want := (notifyCall{a.t("notify.autoQueuedTitle"), a.tf("notify.autoQueuedBody", 3)}); calls[1] != want {
+		t.Errorf("queued notification %+v, want %+v", calls[1], want)
+	}
+}
+
+// TestNewWorksNotificationOff checks the switch keeps the check silent while
+// its works still show and queue.
+func TestNewWorksNotificationOff(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a, _ := newSubsTest(t, stubFetcher{})
+	a.downloadsDir = t.TempDir()
+	a.settings.NotificationsEnabled = false
+	a.settings.AutoDownloadSubscriptions = true
+	var calls []notifyCall
+	a.notifyFn = stubNotify(&calls, nil)
+	a.subs.OnNew = a.onNewSubscriptions
+	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+
+	if len(calls) != 0 {
+		t.Errorf("notifications with the switch off: %+v", calls)
+	}
+	if works, _, _ := a.subsSnapshot(); len(works) != 1 {
+		t.Errorf("%d new works shown, want 1", len(works))
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 2 {
+		t.Errorf("%d tasks queued, want 2", len(tasks))
+	}
+}
+
+// TestNotificationFailureKeepsQueuing checks a backend that fails only logs,
+// leaving the works queued for download.
+func TestNotificationFailureKeepsQueuing(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a, _ := newSubsTest(t, stubFetcher{})
+	a.downloadsDir = t.TempDir()
+	a.settings.AutoDownloadSubscriptions = true
+	var calls []notifyCall
+	a.notifyFn = stubNotify(&calls, errors.New("no notification backend"))
+	a.subs.OnNew = a.onNewSubscriptions
+	a.subs.OnNew([]pixiv.Illustration{newWork(1, 2)})
+
+	if len(calls) != 2 {
+		t.Errorf("%d notifications attempted, want 2", len(calls))
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 2 {
+		t.Errorf("%d tasks queued after a failed notification, want 2", len(tasks))
+	}
+	if want := a.tf("subs.autoQueued", 2); a.notice != want {
 		t.Errorf("notice %q, want %q", a.notice, want)
 	}
 }

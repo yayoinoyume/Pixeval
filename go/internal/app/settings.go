@@ -69,6 +69,9 @@ type Settings struct {
 	CardWidth           float64 `json:"cardWidth"`
 	// AutoDownloadSubscriptions queues the works a background check finds.
 	AutoDownloadSubscriptions bool `json:"autoDownloadSubscriptions"`
+	// NotificationsEnabled shows a desktop notification when a check finds new
+	// works. It defaults to on, so a file older than the setting keeps it on.
+	NotificationsEnabled bool `json:"notificationsEnabled"`
 	// SubscriptionIntervalMinutes is how often the check runs.
 	SubscriptionIntervalMinutes int `json:"subscriptionIntervalMinutes"`
 	// NovelFontSize is the reading page's body text size, NovelLineHeight its
@@ -99,6 +102,7 @@ func Default() *Settings {
 		CardWidth:           cardWidth,
 
 		AutoDownloadSubscriptions:   false,
+		NotificationsEnabled:        true,
 		SubscriptionIntervalMinutes: subscriptionIntervalDefault,
 
 		NovelFontSize:   novelFontSizeDefault,

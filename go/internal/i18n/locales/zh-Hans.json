@@ -200,6 +200,8 @@
     "showR18": "显示 R18",
     "showR18Hint": "关闭时推荐、关注、排行与搜索都会过滤掉 R18 作品",
     "cardWidth": "瀑布流列宽",
+    "notifications": "桌面通知",
+    "notificationsHint": "追更检查发现新作时发送一条桌面通知",
     "language": "语言",
     "langSystem": "跟随系统",
     "langZh": "中文",
@@ -344,6 +346,12 @@
     "intervalHint": "5 到 1440 分钟，默认 15",
     "autoQueued": "已自动把 %d 页加入下载队列",
     "autoNoDir": "没有下载目录，无法自动下载新作品"
+  },
+  "notify": {
+    "newWorksTitle": "Pixiv 新作",
+    "newWorksBody": "发现 %d 个新作，最新：%s",
+    "autoQueuedTitle": "已自动加入下载队列",
+    "autoQueuedBody": "已把 %d 页加入下载队列"
   },
   "novel": {
     "loadFailed": "加载小说失败：%s",

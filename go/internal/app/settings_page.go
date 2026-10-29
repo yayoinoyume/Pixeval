@@ -193,6 +193,9 @@ func (a *App) settingsPage(c *ui.Context) {
 						row(a.t("settings.cardWidth"), "", func() {
 							a.numberStepper(c, &s.CardWidth, 180, 360, 10, a.t("settings.cardWidth"))
 						})
+						row(a.t("settings.notifications"), a.t("settings.notificationsHint"), func() {
+							switchControl(c, &s.NotificationsEnabled, a.t("settings.notifications"))
+						})
 					})
 
 					a.settingsGroup(c, a.t("settings.groupAbout"), func(row settingsRow) {
