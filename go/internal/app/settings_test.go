@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"encoding/base64"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -40,11 +41,12 @@ func TestSettingsRoundTrip(t *testing.T) {
 
 		ProxyURL: "socks5://127.0.0.1:1080",
 
-		PixivDomainFronting: true,
-		PixivAppAPIResolver: "203.0.113.1\n203.0.113.2",
-		PixivImageResolver:  "198.51.100.7",
-		PixivOAuthResolver:  "203.0.113.9",
-		ImageMirror:         "https://mirror.example",
+		PixivDomainFronting:     true,
+		PixivDomainFrontingType: pixiv.DomainFrontingResolver,
+		PixivAppAPIResolver:     "203.0.113.1\n203.0.113.2",
+		PixivImageResolver:      "198.51.100.7",
+		PixivOAuthResolver:      "203.0.113.9",
+		ImageMirror:             "https://mirror.example",
 
 		SauceNAOAPIKey: "secret-key",
 
@@ -165,6 +167,9 @@ func TestDefaultSettings(t *testing.T) {
 	}
 	if s.PixivDomainFronting {
 		t.Error("domain fronting on by default")
+	}
+	if s.PixivDomainFrontingType != pixiv.DomainFrontingFragmentation {
+		t.Errorf("fronting type %q, want %q", s.PixivDomainFrontingType, pixiv.DomainFrontingFragmentation)
 	}
 	if s.PixivAppAPIResolver != strings.Join(pixiv.DefaultAppAPIResolver(), "\n") ||
 		s.PixivImageResolver != strings.Join(pixiv.DefaultImageResolver(), "\n") ||
@@ -513,14 +518,40 @@ func TestLoadNormalizesImageMirror(t *testing.T) {
 	}
 }
 
-// TestLoginHTTPProxy checks the login exchange follows the saved proxy and
-// falls back to the environment's when it is cleared.
-func TestLoginHTTPProxy(t *testing.T) {
-	t.Cleanup(func() { _ = setLoginProxy("") })
-	if err := setLoginProxy("socks5://127.0.0.1:1080"); err != nil {
-		t.Fatalf("setLoginProxy: %v", err)
+// TestLoadNormalizesFrontingType checks a saved mode the page cannot produce
+// falls back to fragmentation, the original default.
+func TestLoadNormalizesFrontingType(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"", pixiv.DomainFrontingFragmentation},
+		{"resolver", pixiv.DomainFrontingResolver},
+		{"fragmentation", pixiv.DomainFrontingFragmentation},
+		{"desync", pixiv.DomainFrontingFragmentation},
+	} {
+		path := filepath.Join(t.TempDir(), "settings.json")
+		data := `{"pixivDomainFrontingType":` + strconv.Quote(tt.in) + `}`
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		s, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if s.PixivDomainFrontingType != tt.want {
+			t.Errorf("fronting type %q, want %q", s.PixivDomainFrontingType, tt.want)
+		}
 	}
-	tr, ok := loginHTTP.Transport.(*http.Transport)
+}
+
+// TestLoginClientUsesSharedTransport checks the OAuth exchange uses the app
+// client's transport, so the saved proxy and domain fronting apply to token
+// requests too. Nothing here reaches the network.
+func TestLoginClientUsesSharedTransport(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	if a.loginHTTP.Transport != a.client.HTTP().Transport {
+		t.Fatal("login client does not share the app transport")
+	}
+	tr, ok := a.loginHTTP.Transport.(*http.Transport)
 	if !ok {
 		t.Fatal("login transport is not *http.Transport")
 	}
@@ -528,23 +559,60 @@ func TestLoginHTTPProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// A proxy wins over domain fronting, for the login exchange too.
+	s := Default()
+	s.ProxyURL = "socks5://127.0.0.1:1080"
+	s.PixivDomainFronting = true
+	if err := applyNetworkSettings(a.client, s); err != nil {
+		t.Fatalf("applyNetworkSettings: %v", err)
+	}
 	got, err := tr.Proxy(req)
-	if err != nil || got == nil || got.String() != "socks5://127.0.0.1:1080" {
-		t.Errorf("login proxy = %v, %v, want socks5://127.0.0.1:1080", got, err)
+	if err != nil || got == nil || got.String() != s.ProxyURL {
+		t.Errorf("login proxy = %v, %v, want %s", got, err, s.ProxyURL)
 	}
-	if err := setLoginProxy(""); err != nil {
-		t.Fatalf("setLoginProxy empty: %v", err)
+	// Without a proxy the same transport dials the fronted IP and starts TLS
+	// itself, so the login exchange gets the same domain fronting.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
 	}
-	got, err = tr.Proxy(req)
-	want, wantErr := http.ProxyFromEnvironment(req)
-	if (err != nil) != (wantErr != nil) || (got == nil) != (want == nil) ||
-		(got != nil && want != nil && got.String() != want.String()) {
-		t.Errorf("login proxy = %v, %v, want the environment's %v, %v", got, err, want, wantErr)
+	defer ln.Close()
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+	accepted := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			conn.Close()
+		}
+		accepted <- err
+	}()
+	s.ProxyURL = ""
+	s.PixivDomainFrontingType = pixiv.DomainFrontingFragmentation
+	s.PixivAppAPIResolver = "127.0.0.1"
+	s.PixivImageResolver = "198.51.100.7"
+	s.PixivOAuthResolver = "203.0.113.9"
+	if err := applyNetworkSettings(a.client, s); err != nil {
+		t.Fatalf("applyNetworkSettings: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := tr.DialTLSContext(ctx, "tcp", net.JoinHostPort("app-api.pixiv.net", port))
+	if err != nil {
+		t.Fatalf("login DialTLSContext: %v", err)
+	}
+	conn.Close()
+	if err := <-accepted; err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+	if a.loginHTTP.Transport != a.client.HTTP().Transport {
+		t.Error("login client stopped sharing the app transport")
 	}
 }
 func TestAppliesSavedProxy(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	t.Cleanup(func() { _ = setLoginProxy("") })
 	path, err := settingsPath()
 	if err != nil {
 		t.Fatalf("settingsPath: %v", err)
@@ -801,7 +869,6 @@ func TestSettingsPageSavesProxy(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	t.Cleanup(func() {
 		applyWebViewProxy("")
-		_ = setLoginProxy("")
 	})
 	a := New()
 	a.route = routeSettings
@@ -857,6 +924,7 @@ func TestSettingsPageSavesNetwork(t *testing.T) {
 	a := New()
 	a.route = routeSettings
 	a.settings.PixivDomainFronting = true
+	a.settings.PixivDomainFrontingType = pixiv.DomainFrontingResolver
 	a.settings.PixivAppAPIResolver = "203.0.113.1, 203.0.113.2\nnot-an-ip"
 	a.settings.PixivImageResolver = "198.51.100.7"
 	a.settings.PixivOAuthResolver = "not-an-ip"
@@ -876,6 +944,9 @@ func TestSettingsPageSavesNetwork(t *testing.T) {
 		if err == nil && got.ImageMirror == "https://mirror.example" {
 			if !got.PixivDomainFronting {
 				t.Error("domain fronting not saved")
+			}
+			if got.PixivDomainFrontingType != pixiv.DomainFrontingResolver {
+				t.Errorf("fronting type %q, want %q", got.PixivDomainFrontingType, pixiv.DomainFrontingResolver)
 			}
 			if want := "203.0.113.1\n203.0.113.2"; got.PixivAppAPIResolver != want {
 				t.Errorf("app resolver %q, want %q", got.PixivAppAPIResolver, want)

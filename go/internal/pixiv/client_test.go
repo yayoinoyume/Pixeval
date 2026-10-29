@@ -1,7 +1,9 @@
 package pixiv
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"sync"
@@ -49,10 +51,13 @@ func TestFrontedAddress(t *testing.T) {
 // original Pixeval's IPs and invalid entries are dropped.
 func TestSetDomainFrontingDefaults(t *testing.T) {
 	c := NewClient()
-	c.SetDomainFronting(true, nil, []string{"not-an-ip", "198.51.100.7"}, nil)
+	c.SetDomainFronting(true, DomainFrontingFragmentation, nil, []string{"not-an-ip", "198.51.100.7"}, nil)
 	cfg := c.fronting.Load()
 	if cfg == nil || !cfg.enabled {
 		t.Fatal("fronting not enabled")
+	}
+	if cfg.mode != DomainFrontingFragmentation {
+		t.Errorf("mode %q, want %q", cfg.mode, DomainFrontingFragmentation)
 	}
 	if len(cfg.app) != len(DefaultAppAPIResolver()) {
 		t.Errorf("app list %q, want the default %q", cfg.app, DefaultAppAPIResolver())
@@ -62,6 +67,75 @@ func TestSetDomainFrontingDefaults(t *testing.T) {
 	}
 	if len(cfg.oauth) != len(DefaultOAuthResolver()) {
 		t.Errorf("oauth list %q, want the default %q", cfg.oauth, DefaultOAuthResolver())
+	}
+}
+
+// TestNormalizeDomainFrontingType checks the saved mode picks one the client
+// implements, and anything else falls back to the original default.
+func TestNormalizeDomainFrontingType(t *testing.T) {
+	for _, tt := range []struct{ in, want string }{
+		{"", DomainFrontingFragmentation},
+		{"fragmentation", DomainFrontingFragmentation},
+		{" Fragmentation ", DomainFrontingFragmentation},
+		{"resolver", DomainFrontingResolver},
+		{"RESOLVER", DomainFrontingResolver},
+		{"desync", DomainFrontingFragmentation},
+	} {
+		if got := NormalizeDomainFrontingType(tt.in); got != tt.want {
+			t.Errorf("NormalizeDomainFrontingType(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+// TestSetDomainFrontingMode checks the mode reaches the config, normalized.
+func TestSetDomainFrontingMode(t *testing.T) {
+	c := NewClient()
+	c.SetDomainFronting(true, DomainFrontingResolver, nil, nil, nil)
+	if got := c.fronting.Load().mode; got != DomainFrontingResolver {
+		t.Errorf("mode %q, want %q", got, DomainFrontingResolver)
+	}
+	c.SetDomainFronting(true, "not-a-mode", nil, nil, nil)
+	if got := c.fronting.Load().mode; got != DomainFrontingFragmentation {
+		t.Errorf("mode %q, want %q", got, DomainFrontingFragmentation)
+	}
+}
+
+// recordingConn records each Write as its own segment.
+type recordingConn struct {
+	net.Conn
+	writes [][]byte
+}
+
+func (c *recordingConn) Write(p []byte) (int, error) {
+	c.writes = append(c.writes, append([]byte(nil), p...))
+	return len(p), nil
+}
+
+// TestFragmentConnSplitsFirstWrite checks the first write leaves in more than
+// one segment with every byte intact, and later writes are not split.
+func TestFragmentConnSplitsFirstWrite(t *testing.T) {
+	rec := &recordingConn{}
+	c := &fragmentConn{Conn: rec}
+	first := []byte("the client hello")
+	n, err := c.Write(first)
+	if err != nil || n != len(first) {
+		t.Fatalf("Write = %d, %v, want %d, nil", n, err, len(first))
+	}
+	if len(rec.writes) < 2 {
+		t.Fatalf("first write made %d segments, want at least 2", len(rec.writes))
+	}
+	if got := bytes.Join(rec.writes, nil); !bytes.Equal(got, first) {
+		t.Errorf("segments carry %q, want %q", got, first)
+	}
+	second := []byte("application data")
+	if _, err := c.Write(second); err != nil {
+		t.Fatalf("second Write: %v", err)
+	}
+	if len(rec.writes) != 3 {
+		t.Fatalf("later write made %d segments, want 1", len(rec.writes)-2)
+	}
+	if got := rec.writes[2]; !bytes.Equal(got, second) {
+		t.Errorf("later segment carries %q, want %q", got, second)
 	}
 }
 
@@ -136,7 +210,7 @@ func TestClientDialAddress(t *testing.T) {
 	}()
 
 	c := NewClient()
-	c.SetDomainFronting(true, []string{"127.0.0.1"}, nil, nil)
+	c.SetDomainFronting(true, DomainFrontingResolver, []string{"127.0.0.1"}, nil, nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	conn, err := c.dialContext(ctx, "tcp", net.JoinHostPort(pixivAppAPIHost, port))
@@ -148,6 +222,46 @@ func TestClientDialAddress(t *testing.T) {
 		t.Fatalf("Accept: %v", err)
 	}
 }
+
+// TestClientDialTLSFronted checks a fronted TLS dial reaches the resolver IP
+// and returns a TLS conn that keeps the real host name. The listener is local,
+// so no real network is reached.
+func TestClientDialTLSFronted(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer ln.Close()
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	if err != nil {
+		t.Fatalf("SplitHostPort: %v", err)
+	}
+	accepted := make(chan error, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err == nil {
+			conn.Close()
+		}
+		accepted <- err
+	}()
+
+	c := NewClient()
+	c.SetDomainFronting(true, DomainFrontingFragmentation, []string{"127.0.0.1"}, nil, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	conn, err := c.dialTLSContext(ctx, "tcp", net.JoinHostPort(pixivAppAPIHost, port))
+	if err != nil {
+		t.Fatalf("dialTLSContext: %v", err)
+	}
+	if _, ok := conn.(*tls.Conn); !ok {
+		t.Errorf("conn is %T, want *tls.Conn", conn)
+	}
+	conn.Close()
+	if err := <-accepted; err != nil {
+		t.Fatalf("Accept: %v", err)
+	}
+}
+
 func TestClientTransportPool(t *testing.T) {
 	tr, ok := NewClient().HTTP().Transport.(*http.Transport)
 	if !ok {
@@ -164,6 +278,9 @@ func TestClientTransportPool(t *testing.T) {
 	}
 	if tr.Proxy == nil {
 		t.Error("Proxy is nil, want the environment proxy")
+	}
+	if tr.DialTLSContext == nil {
+		t.Error("DialTLSContext is nil, want the domain fronting TLS dialer")
 	}
 }
 

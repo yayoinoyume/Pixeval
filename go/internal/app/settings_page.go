@@ -106,6 +106,27 @@ func (a *App) languageValue(label string) string {
 	}
 }
 
+// frontingChoices are the domain fronting modes the settings page shows.
+func (a *App) frontingChoices() []string {
+	return []string{a.t("settings.frontingResolver"), a.t("settings.frontingFragmentation")}
+}
+
+// frontingLabel is the label the settings page shows for a saved mode.
+func (a *App) frontingLabel(mode string) string {
+	if mode == pixiv.DomainFrontingResolver {
+		return a.t("settings.frontingResolver")
+	}
+	return a.t("settings.frontingFragmentation")
+}
+
+// frontingValue is the mode a settings page label stands for.
+func (a *App) frontingValue(label string) string {
+	if label == a.t("settings.frontingResolver") {
+		return pixiv.DomainFrontingResolver
+	}
+	return pixiv.DomainFrontingFragmentation
+}
+
 // settingsRow draws one preference: its name and explanation on the left,
 // its control on the right.
 type settingsRow func(label, hint string, control func())
@@ -182,6 +203,18 @@ func (a *App) settingsPage(c *ui.Context) {
 							ui.Text(c, a.t("settings.domainFrontingHint")).FontSize(t.TextTiny).
 								TextColor(t.TextMuted).MaxLines(3).
 								Padding(t.SpaceS, settingsPad, t.SpaceM, settingsPad)
+							row(a.t("settings.frontingType"), "", func() {
+								mode := a.frontingLabel(s.PixivDomainFrontingType)
+								if ui.Select(c, &mode, a.frontingChoices()).Width(200).Height(36).
+									Label(a.t("settings.frontingType")).Changed() {
+									s.PixivDomainFrontingType = a.frontingValue(mode)
+								}
+							})
+							if s.PixivDomainFrontingType == pixiv.DomainFrontingFragmentation {
+								ui.Text(c, a.t("settings.frontingFragmentationHint")).FontSize(t.TextTiny).
+									TextColor(t.TextMuted).MaxLines(3).
+									Padding(t.SpaceS, settingsPad, t.SpaceM, settingsPad)
+							}
 							row(a.t("settings.appAPIResolver"), "", func() {
 								ui.TextArea(c, &s.PixivAppAPIResolver).Width(360).Height(64).
 									Label(a.t("settings.appAPIResolver"))
@@ -771,6 +804,7 @@ func (a *App) saveSettings() {
 	a.settings.PixivAppAPIResolver = normalizeResolver(a.settings.PixivAppAPIResolver, pixiv.DefaultAppAPIResolver())
 	a.settings.PixivImageResolver = normalizeResolver(a.settings.PixivImageResolver, pixiv.DefaultImageResolver())
 	a.settings.PixivOAuthResolver = normalizeResolver(a.settings.PixivOAuthResolver, pixiv.DefaultOAuthResolver())
+	a.settings.PixivDomainFrontingType = pixiv.NormalizeDomainFrontingType(a.settings.PixivDomainFrontingType)
 	a.settings.ImageMirror = normalizeImageMirror(a.settings.ImageMirror)
 	a.settings.SauceNAOAPIKey = strings.TrimSpace(a.settings.SauceNAOAPIKey)
 	if a.settingsSaved == nil {
