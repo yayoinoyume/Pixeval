@@ -104,14 +104,11 @@ type App struct {
 	// novelProgress the place each novel was left at.
 	novelView     *novelViewState
 	novelProgress *NovelProgress
-	// homeTab is the home feed shown: recommended, following or ranking.
-	homeTab int
-	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
-	// so switching tabs loses nothing.
-	homeFeeds [homeTabCount]*browseState
-	// rankMode is the ranking feed's period and audience, chosen on the home
-	// page's ranking tab.
-	rankMode pixiv.RankMode
+	// homeCards are the home page's cards, in the order they draw, each with
+	// the one page its preview loaded.
+	homeCards []homeCard
+	// feed is the full feed a card's "view all" opened, nil on the home page.
+	feed *homeFeedView
 	// newFeed is the site-wide new works feed, and myPixivFeed the feed of
 	// works by the users the signed-in user follows. newKind and myPixivKind
 	// are the kind each page shows, illust or manga; switching kind restarts
@@ -389,10 +386,9 @@ func New() *App {
 		openPathFn:       mygo.Shell.OpenPath,
 		route:            routeHome,
 		cardText:         60,
-		homeFeeds:        newHomeFeeds(),
+		homeCards:        loadHomeLayout(),
 		newFeed:          &browseState{},
 		myPixivFeed:      &browseState{},
-		rankMode:         pixiv.Day,
 		search:           &browseState{},
 		searchNovels:     &novelFeedState{},
 		searchUsers:      &userListState{},
@@ -701,10 +697,17 @@ func (a *App) applySession(tok *pixiv.Token) {
 // resetAccountPages drops the pages that held the signed-in account's works,
 // so the next account never shows them.
 func (a *App) resetAccountPages() {
-	a.homeFeeds = newHomeFeeds()
-	// A signed-out start never draws the feed, so the home tab it shows is
-	// armed here before the next frame loads it.
-	a.armHome(a.homeTab)
+	// The layout is the person's, not the account's: keep the cards and drop
+	// the works the account before them loaded.
+	for i := range a.homeCards {
+		a.homeCards[i].feed = &browseState{}
+	}
+	a.feed = nil
+	if a.session != nil {
+		// The home page arms its cards as it draws them; arming here lets the
+		// next frame load without a blank one in between.
+		a.armHomeCards()
+	}
 	a.bookmarks = &browseState{}
 	a.newFeed = &browseState{}
 	a.myPixivFeed = &browseState{}
@@ -724,7 +727,7 @@ func (a *App) resetAccountPages() {
 	a.related = nil
 	a.novelView = nil
 	switch a.route {
-	case routeUser, routeUserRelated, routeUserMyPixiv, routeSeries, routeRelated, routeNovel:
+	case routeUser, routeUserRelated, routeUserMyPixiv, routeSeries, routeRelated, routeNovel, routeFeed:
 		a.route = routeHome
 	}
 }

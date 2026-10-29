@@ -102,16 +102,6 @@ type browseState struct {
 	tilesText  float64
 }
 
-// homeTabCount is the number of home tabs, one feed each.
-const homeTabCount = 3
-
-// The home tabs, in the order ui.Tabs shows them: recommended, following and
-// ranking.
-const (
-	homeTabFollowing = iota + 1
-	homeTabRanking
-)
-
 // The kinds the new and MyPixiv pages offer, in the order their tabs show
 // them.
 const (
@@ -125,46 +115,6 @@ func feedKind(tab int) pixiv.WorkKind {
 		return pixiv.Manga
 	}
 	return pixiv.Illust
-}
-
-// newHomeFeeds makes one empty feed per home tab.
-func newHomeFeeds() [homeTabCount]*browseState {
-	feeds := [homeTabCount]*browseState{}
-	for i := range feeds {
-		feeds[i] = &browseState{}
-	}
-	return feeds
-}
-
-// armHome sets a home tab's fetch and lets it load, once. The first page is
-// fetched as the tab draws it; a tab already armed keeps its pages and place.
-func (a *App) armHome(tab int) {
-	st := a.homeFeeds[tab]
-	if st.isArmed() {
-		return
-	}
-	st.setFetch(a.homeFetch(st, tab))
-	st.arm()
-}
-
-// homeFetch maps a home tab to its first page. Later pages come from the
-// feed's cursor, which each feed reads under mu. The ranking mode is read here,
-// on the main thread, and carried into the load goroutine.
-func (a *App) homeFetch(st *browseState, tab int) func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
-	mode := a.rankMode
-	return func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
-		if next := st.cursor(); next != "" {
-			return a.client.NextIllustrations(ctx, next)
-		}
-		switch tab {
-		case homeTabFollowing:
-			return a.client.Following(ctx)
-		case homeTabRanking:
-			return a.client.Ranking(ctx, mode, "")
-		default: // tab 0, recommended
-			return a.client.Recommended(ctx)
-		}
-	}
 }
 
 // workFeedFetch pages a works feed of one kind: the first page from first,
@@ -193,62 +143,6 @@ func (a *App) armWorkFeed(st *browseState, kind int, first func(context.Context,
 func (a *App) restartWorkFeed(st *browseState, kind int, first func(context.Context, pixiv.WorkKind) (*pixiv.Page[pixiv.Illustration], error)) {
 	st.restart()
 	st.setFetch(a.workFeedFetch(st, first, feedKind(kind)))
-	st.masonry = widgets.MasonryState{}
-}
-
-// rankModes are the ranking modes the home tab offers, in the order it shows
-// them.
-var rankModes = []pixiv.RankMode{
-	pixiv.Day, pixiv.Week, pixiv.Month, pixiv.DayMale,
-	pixiv.DayFemale, pixiv.WeekOriginal, pixiv.WeekRookie,
-}
-
-// rankModeChoices are the ranking labels the home tab shows.
-func (a *App) rankModeChoices() []string {
-	labels := make([]string, len(rankModes))
-	for i, mode := range rankModes {
-		labels[i] = a.rankModeLabel(mode)
-	}
-	return labels
-}
-
-// rankModeLabel is the label the home tab shows for a ranking mode.
-func (a *App) rankModeLabel(mode pixiv.RankMode) string {
-	switch mode {
-	case pixiv.Week:
-		return a.t("ranking.week")
-	case pixiv.Month:
-		return a.t("ranking.month")
-	case pixiv.DayMale:
-		return a.t("ranking.dayMale")
-	case pixiv.DayFemale:
-		return a.t("ranking.dayFemale")
-	case pixiv.WeekOriginal:
-		return a.t("ranking.weekOriginal")
-	case pixiv.WeekRookie:
-		return a.t("ranking.weekRookie")
-	default:
-		return a.t("ranking.day")
-	}
-}
-
-// rankModeValue is the ranking mode a label stands for.
-func (a *App) rankModeValue(label string) pixiv.RankMode {
-	for _, mode := range rankModes {
-		if a.rankModeLabel(mode) == label {
-			return mode
-		}
-	}
-	return pixiv.Day
-}
-
-// setRankMode makes mode the ranking feed's mode and starts the feed over, so
-// the pages it shows are the new mode's. The other home feeds keep theirs.
-func (a *App) setRankMode(mode pixiv.RankMode) {
-	a.rankMode = mode
-	st := a.homeFeeds[homeTabRanking]
-	st.restart()
-	st.setFetch(a.homeFetch(st, homeTabRanking))
 	st.masonry = widgets.MasonryState{}
 }
 

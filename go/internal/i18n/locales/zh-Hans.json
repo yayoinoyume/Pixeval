@@ -31,9 +31,23 @@
     "groupLibrary": "库"
   },
   "home": {
-    "recommended": "推荐",
-    "following": "关注",
-    "ranking": "排行"
+    "edit": "编辑卡片",
+    "editDone": "完成",
+    "addCard": "添加卡片",
+    "removeCard": "删除卡片",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "resetCards": "恢复默认",
+    "viewAll": "查看全部",
+    "cardsEmpty": "暂无内容",
+    "cardsEmptyHint": "稍后再来看看，或刷新重试。",
+    "lastCard": "至少保留一张卡片",
+    "source.recommended": "推荐",
+    "source.following": "关注",
+    "source.ranking": "排行榜",
+    "source.new": "新作",
+    "source.myPixiv": "好P友",
+    "source.bookmarks": "收藏"
   },
   "ranking": {
     "mode": "排行模式",

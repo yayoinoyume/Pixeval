@@ -31,9 +31,23 @@
     "groupLibrary": "Library"
   },
   "home": {
-    "recommended": "Recommended",
-    "following": "Following",
-    "ranking": "Ranking"
+    "edit": "Edit cards",
+    "editDone": "Done",
+    "addCard": "Add card",
+    "removeCard": "Remove card",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "resetCards": "Reset to default",
+    "viewAll": "View all",
+    "cardsEmpty": "Nothing here yet",
+    "cardsEmptyHint": "Check back later, or try again.",
+    "lastCard": "Keep at least one card",
+    "source.recommended": "Recommended",
+    "source.following": "Following",
+    "source.ranking": "Ranking",
+    "source.new": "New",
+    "source.myPixiv": "MyPixiv",
+    "source.bookmarks": "Bookmarks"
   },
   "ranking": {
     "mode": "Ranking mode",
