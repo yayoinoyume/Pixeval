@@ -204,6 +204,9 @@ type App struct {
 	// openExternalFn opens a URL in the default browser; tests replace it so a
 	// click does not leave the app.
 	openExternalFn func(url string) error
+	// openPathFn opens a downloaded file or folder with the system's default
+	// application; tests replace it for the same reason.
+	openPathFn func(path string) error
 	// fetchImageBytes downloads a picture's bytes off the main thread, and
 	// clipboardWriteImage puts a PNG on the clipboard; tests replace both to
 	// avoid the network and the system clipboard.
@@ -338,6 +341,7 @@ func New() *App {
 			return client.SpotlightArticles(ctx)
 		},
 		openExternalFn:   mygo.Shell.OpenExternal,
+		openPathFn:       mygo.Shell.OpenPath,
 		route:            routeHome,
 		cardText:         60,
 		homeFeeds:        newHomeFeeds(),

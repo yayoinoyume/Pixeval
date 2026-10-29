@@ -249,6 +249,107 @@ func TestDownloadsRetryFailed(t *testing.T) {
 	}
 }
 
+// TestDownloadsOpenDoneRow checks a completed row opens its file and its
+// folder through the injected opener.
+func TestDownloadsOpenDoneRow(t *testing.T) {
+	a := newDownloadApp(t)
+	dest := filepath.Join(t.TempDir(), "作品", "1_001.jpg")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest, []byte("image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var opened []string
+	a.openPathFn = func(p string) error {
+		opened = append(opened, p)
+		return nil
+	}
+	task := download.Task{ID: "1_0", IllustID: 1, Title: "已完成作品", Dest: dest, State: download.Done}
+	tt := ui.NewTester(func(c *ui.Context) { a.downloadRow(c, task) }, 900, 240)
+	if err := tt.Click("打开文件"); err != nil {
+		t.Fatalf("Click open file: %v", err)
+	}
+	if err := tt.Click("打开文件夹"); err != nil {
+		t.Fatalf("Click open folder: %v", err)
+	}
+	if len(opened) != 2 || opened[0] != dest || opened[1] != filepath.Dir(dest) {
+		t.Errorf("opened %q, want [%q %q]", opened, dest, filepath.Dir(dest))
+	}
+}
+
+// TestDownloadsOpenHistoryRow checks a history row opens its file and its
+// folder through the injected opener.
+func TestDownloadsOpenHistoryRow(t *testing.T) {
+	a := newDownloadApp(t)
+	dest := filepath.Join(t.TempDir(), "历史", "2_001.jpg")
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dest, []byte("image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var opened []string
+	a.openPathFn = func(p string) error {
+		opened = append(opened, p)
+		return nil
+	}
+	entry := download.HistoryEntry{ID: "2_0", Title: "历史作品", Dest: dest, CompletedAt: time.Now()}
+	tt := ui.NewTester(func(c *ui.Context) { a.downloadHistoryRow(c, entry) }, 1100, 200)
+	if err := tt.Click("打开文件"); err != nil {
+		t.Fatalf("Click open file: %v", err)
+	}
+	if err := tt.Click("打开文件夹"); err != nil {
+		t.Fatalf("Click open folder: %v", err)
+	}
+	if len(opened) != 2 || opened[0] != dest || opened[1] != filepath.Dir(dest) {
+		t.Errorf("opened %q, want [%q %q]", opened, dest, filepath.Dir(dest))
+	}
+}
+
+// TestDownloadsOpenFailureNotice checks a failed open leaves a notice.
+func TestDownloadsOpenFailureNotice(t *testing.T) {
+	a := newDownloadApp(t)
+	dest := filepath.Join(t.TempDir(), "1_001.jpg")
+	if err := os.WriteFile(dest, []byte("image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.openPathFn = func(string) error { return fmt.Errorf("没有打开程序") }
+	task := download.Task{ID: "1_0", IllustID: 1, Title: "已完成作品", Dest: dest, State: download.Done}
+	tt := ui.NewTester(func(c *ui.Context) { a.downloadRow(c, task) }, 900, 240)
+	if err := tt.Click("打开文件"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if want := a.tf("download.openFailed", "没有打开程序"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
+// TestDownloadsOpenMissingFileNotice checks a file that is gone is reported
+// without asking the system to open it.
+func TestDownloadsOpenMissingFileNotice(t *testing.T) {
+	a := newDownloadApp(t)
+	called := false
+	a.openPathFn = func(string) error {
+		called = true
+		return nil
+	}
+	task := download.Task{
+		ID: "1_0", IllustID: 1, Title: "已完成作品", State: download.Done,
+		Dest: filepath.Join(t.TempDir(), "missing.jpg"),
+	}
+	tt := ui.NewTester(func(c *ui.Context) { a.downloadRow(c, task) }, 900, 240)
+	if err := tt.Click("打开文件"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if called {
+		t.Error("a missing file reached the opener")
+	}
+	if a.notice == "" || !strings.Contains(a.notice, "打开失败") {
+		t.Errorf("notice %q, want an open failure", a.notice)
+	}
+}
+
 // TestDownloadsClearDone checks the clear button drops the finished tasks.
 func TestDownloadsClearDone(t *testing.T) {
 	a := newDownloadApp(t)

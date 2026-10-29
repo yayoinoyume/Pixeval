@@ -197,7 +197,10 @@
     "ugoiraQueued": "动图已加入下载队列",
     "ugoiraUnsupported": "动图批量下载暂不支持",
     "novelSaved": "小说已保存",
-    "novelFailed": "小说保存失败：%s"
+    "novelFailed": "小说保存失败：%s",
+    "openFile": "打开文件",
+    "openFolder": "打开文件夹",
+    "openFailed": "打开失败：%s"
   },
   "settings": {
     "theme": "主题",
