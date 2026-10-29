@@ -112,7 +112,11 @@ type settingsRow func(label, hint string, control func())
 // settingsPad is the horizontal inset of a settings card's title and rows.
 const settingsPad float32 = 20
 
-// settingsPage draws the preferences as four cards, so a setting is found by
+// blockedListShown is how many blocked users the settings card lists; the
+// rest are counted by the card's count text only.
+const blockedListShown = 10
+
+// settingsPage draws the preferences as cards, so a setting is found by
 // what it is about rather than by scanning one long column.
 func (a *App) settingsPage(c *ui.Context) {
 	s := a.settings
@@ -196,6 +200,32 @@ func (a *App) settingsPage(c *ui.Context) {
 							a.numberStepper(c, &s.SubscriptionIntervalMinutes,
 								subscriptionIntervalMin, subscriptionIntervalMax, 5, a.t("subs.interval"))
 						})
+					})
+
+					a.settingsGroup(c, a.t("block.user"), func(row settingsRow) {
+						users := a.blockedUsersSnapshot()
+						row(a.tf("block.count", len(users)), "", func() {
+							if ui.Button(c, a.t("block.clear")).Disabled(len(users) == 0).Clicked() {
+								a.clearBlockedUsers()
+							}
+						})
+						if len(users) == 0 {
+							ui.Text(c, a.t("block.empty")).FontSize(t.TextTiny).TextColor(t.TextMuted).
+								Padding(t.SpaceS, settingsPad, t.SpaceM, settingsPad)
+							return
+						}
+						for _, u := range users[:min(len(users), blockedListShown)] {
+							u := u
+							name := u.Name
+							if name == "" {
+								name = fmt.Sprintf("#%d", u.ID)
+							}
+							row(name, "", func() {
+								if ui.Button(c, a.t("block.remove")).Clicked() {
+									a.unblockUser(u.ID)
+								}
+							})
+						}
 					})
 				})
 			})

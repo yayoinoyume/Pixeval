@@ -116,6 +116,10 @@ func (a *App) bookmarkCard(c *ui.Context, st *browseState, items []pixiv.Illustr
 		if m.Item(a.t("user.open")).Chosen() {
 			a.openUser(work.User.ID)
 		}
+		if m.Item(a.t("block.author")).Chosen() {
+			a.blockUser(work.User)
+			st.removeAuthor(work.User.ID)
+		}
 		if m.Item(a.t("bookmarks.unbookmark")).Chosen() {
 			a.unbookmark(st, work.ID)
 		}

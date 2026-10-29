@@ -316,5 +316,14 @@
   },
   "shortcuts": {
     "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
+  },
+  "block": {
+    "user": "Blocked users",
+    "author": "Block author",
+    "userAdded": "Blocked %s",
+    "remove": "Unblock",
+    "clear": "Clear blocked users",
+    "empty": "No users blocked",
+    "count": "%d blocked"
   }
 }
