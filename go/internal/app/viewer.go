@@ -115,6 +115,18 @@ type viewerState struct {
 	lastX, lastY float32
 }
 
+// relatedViewState is one related-works page: the work its list belongs to,
+// the viewer it was opened from, and the parent page when it was opened from
+// a work found on another related page.
+type relatedViewState struct {
+	workID       int64
+	feed         *browseState
+	viewer       *viewerState
+	comments     *commentState
+	commentsOpen bool
+	parent       *relatedViewState
+}
+
 // pageCount is the work's number of pages, at least one.
 func pageCount(w pixiv.Illustration) int {
 	return pageCountOf(w.PageCount)
@@ -250,6 +262,55 @@ func (a *App) closeViewer() {
 	if a.win != nil {
 		a.win.Invalidate()
 	}
+}
+
+// openRelated shows the related works of the viewer's work. The viewer is set
+// aside whole, so going back returns to it at the page and view it had; a
+// related page opened from a work found on another keeps that page as parent.
+func (a *App) openRelated(v *viewerState) {
+	if v == nil || v.work.ID <= 0 {
+		return
+	}
+	r := &relatedViewState{
+		workID:       v.work.ID,
+		feed:         &browseState{emptyKey: "related.empty", errorKey: "related.loadFailed"},
+		viewer:       v,
+		comments:     a.comments,
+		commentsOpen: a.commentsOpen,
+	}
+	if a.route == routeRelated {
+		// This viewer was opened over a related page: that page is the parent
+		// back returns to. The viewer is kept whole, so it can be restored.
+		r.parent = a.related
+	} else {
+		a.backRoute = a.route
+	}
+	id := r.workID
+	r.feed.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		if next := r.feed.cursor(); next != "" {
+			return a.client.NextIllustrations(ctx, next)
+		}
+		return a.relatedFn(ctx, id)
+	})
+	a.related = r
+	a.viewer, a.comments, a.commentsOpen = nil, nil, false
+	a.route = routeRelated
+	if a.win != nil {
+		a.win.Invalidate()
+	}
+}
+
+// relatedPage draws the related works of the page's work as a browse feed.
+func (a *App) relatedPage(c *ui.Context) {
+	if a.related == nil {
+		return
+	}
+	if a.session == nil {
+		a.loginPrompt(c)
+		return
+	}
+	a.related.feed.arm()
+	a.browsePage(c, a.related.feed)
 }
 
 // viewerImage returns the current page's original and whether it failed. It
@@ -971,6 +1032,9 @@ func (a *App) viewerActions(c *ui.Context, t tokens, v *viewerState, failed bool
 		}
 		if b := a.viewerAction(c, t, iconComment, a.t("comments.title"), a.commentsOpen); b.Clicked() {
 			a.toggleComments()
+		}
+		if b := a.viewerAction(c, t, nil, a.t("viewer.related"), false); b.Clicked() {
+			a.openRelated(v)
 		}
 		if b := a.viewerAction(c, t, nil, a.t("viewer.copyLink"), false); b.Clicked() {
 			a.copyWorkLink(c, v.work.ID)

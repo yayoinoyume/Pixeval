@@ -3,6 +3,7 @@ package app
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -901,4 +902,119 @@ func TestViewerUgoiraTakesTransform(t *testing.T) {
 	waitUgoira(t, a.viewer, "advance while turned", func(_ *animated.Frames, f int, play, _, _ bool) bool {
 		return play && f != frame
 	})
+}
+
+// openRelatedFromViewer opens the viewer and clicks its related action,
+// returning the tester on the related page.
+func openRelatedFromViewer(t *testing.T, a *App) *ui.Tester {
+	t.Helper()
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	// Related lists need a session; set it after the viewer opened so the
+	// detail and comments are not fetched over the network.
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	tt := ui.NewTester(a.View, 1280, 820)
+	if err := tt.Click("相关作品"); err != nil {
+		t.Fatalf("Click related: %v", err)
+	}
+	tt.Frame()
+	return tt
+}
+
+// TestViewerRelatedOpensRelatedPage checks the viewer's related action opens
+// the related page with the work as its source, replacing the viewer.
+func TestViewerRelatedOpensRelatedPage(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.relatedFn = func(context.Context, int64) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(100, 2)}, nil
+	}
+	tt := openRelatedFromViewer(t, a)
+
+	if a.route != routeRelated {
+		t.Fatalf("route %q, want %q", a.route, routeRelated)
+	}
+	if a.viewer != nil {
+		t.Error("the viewer still covers the related page")
+	}
+	if a.related == nil || a.related.workID != 42 {
+		t.Fatalf("related view %+v, want source work 42", a.related)
+	}
+	waitBrowse(t, a.related.feed, "load", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if !tt.HasText("作品 100") {
+		t.Errorf("related works missing: %q", tt.Texts())
+	}
+	if !tt.HasText("相关作品") {
+		t.Errorf("page title missing: %q", tt.Texts())
+	}
+}
+
+// TestRelatedPageEmpty checks a related list with nothing in it says so.
+func TestRelatedPageEmpty(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.relatedFn = func(context.Context, int64) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{}, nil
+	}
+	tt := openRelatedFromViewer(t, a)
+	waitBrowse(t, a.related.feed, "load", func(v browseView) bool { return v.started })
+	tt.Frame()
+	if !tt.HasText("没有相关作品") {
+		t.Errorf("empty state missing: %q", tt.Texts())
+	}
+}
+
+// TestRelatedPageFailed checks a failed related fetch shows the page's own
+// error and a way to retry.
+func TestRelatedPageFailed(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.relatedFn = func(context.Context, int64) (*pixiv.Page[pixiv.Illustration], error) {
+		return nil, errors.New("离线")
+	}
+	tt := openRelatedFromViewer(t, a)
+	waitBrowse(t, a.related.feed, "fail", func(v browseView) bool { return v.err != "" })
+	tt.Frame()
+	if !tt.HasText("相关作品加载失败") {
+		t.Errorf("failure missing: %q", tt.Texts())
+	}
+	if !tt.HasText("重试") {
+		t.Errorf("retry missing: %q", tt.Texts())
+	}
+}
+
+// TestRelatedBackReturnsToViewer checks going back from the related page
+// restores the viewer at the page and view it had, and its comments.
+func TestRelatedBackReturnsToViewer(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	a.relatedFn = func(context.Context, int64) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(100, 2)}, nil
+	}
+	w := viewerWork()
+	a.openViewer(&w, 1)
+	viewer, comments := a.viewer, a.comments
+	viewer.zoom = 2
+	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
+	tt := ui.NewTester(a.View, 1280, 820)
+	if err := tt.Click("相关作品"); err != nil {
+		t.Fatalf("Click related: %v", err)
+	}
+	tt.Frame()
+
+	if err := tt.Click("返回"); err != nil {
+		t.Fatalf("Click back: %v", err)
+	}
+	if a.route != routeHome {
+		t.Errorf("route %q after back, want %q", a.route, routeHome)
+	}
+	if a.viewer != viewer {
+		t.Fatal("back did not restore the original viewer")
+	}
+	if a.viewer.page != 1 || a.viewer.zoom != 2 {
+		t.Errorf("viewer page %d zoom %v, want 1 and 2", a.viewer.page, a.viewer.zoom)
+	}
+	if a.comments != comments || !a.commentsOpen {
+		t.Error("back did not restore the viewer's comments")
+	}
+	if a.related != nil {
+		t.Error("related page still open after back")
+	}
 }
