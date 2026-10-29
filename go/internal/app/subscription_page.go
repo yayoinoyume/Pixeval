@@ -11,6 +11,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 	"github.com/yayoinoyume/pixeval-go/internal/subscription"
 )
@@ -217,7 +218,7 @@ func (a *App) checkSubscriptions() {
 func (a *App) downloadNewWorks(works []pixiv.Illustration) {
 	pages := 0
 	for _, w := range works {
-		n, ok := a.downloadWork(w)
+		n, ok := a.downloadWorkSource(w, download.SourceSubscription)
 		if !ok {
 			a.notice = a.t("viewer.noDownloadDir")
 			a.update(func() {})
@@ -242,7 +243,7 @@ func (a *App) showNewWorks(works []pixiv.Illustration) {
 	}
 	pages := 0
 	for _, w := range works {
-		n, ok := a.downloadWork(w)
+		n, ok := a.downloadWorkSource(w, download.SourceSubscription)
 		if !ok {
 			a.notice = a.t("subs.autoNoDir")
 			return

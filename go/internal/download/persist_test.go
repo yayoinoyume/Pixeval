@@ -20,6 +20,7 @@ func TestManagerSaveLoadUnfinished(t *testing.T) {
 		Dest:      filepath.Join(t.TempDir(), "1.jpg"),
 		Page:      2,
 		Overwrite: true,
+		Source:    SourceSubscription,
 	}
 	if got := m.Add([]Task{want}); got != 1 {
 		t.Fatalf("Add took %d tasks, want 1", got)
@@ -45,6 +46,25 @@ func TestManagerSaveLoadUnfinished(t *testing.T) {
 	}
 	if got[0] != want {
 		t.Fatalf("loaded task %+v, want %+v", got[0], want)
+	}
+}
+
+// TestLoadQueueWithoutSourceIsOrdinary checks a queue written before tasks
+// carried a source loads as ordinary downloads.
+func TestLoadQueueWithoutSourceIsOrdinary(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "downloads.json")
+	if err := os.WriteFile(path, []byte(`{"tasks":[{"id":"old","illustId":3,"title":"旧任务"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tasks, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("loaded %d tasks, want 1: %+v", len(tasks), tasks)
+	}
+	if tasks[0].Source != SourceOrdinary {
+		t.Errorf("source %q for an old task, want the ordinary source", tasks[0].Source)
 	}
 }
 

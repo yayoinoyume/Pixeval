@@ -19,6 +19,7 @@ type persistedTask struct {
 	Dest      string `json:"dest"`
 	Page      int    `json:"page"`
 	Overwrite bool   `json:"overwrite"`
+	Source    string `json:"source,omitempty"`
 }
 
 // downloadsFile is the on-disk queue.
@@ -51,6 +52,7 @@ func Load(path string) ([]Task, error) {
 			Dest:      p.Dest,
 			Page:      p.Page,
 			Overwrite: p.Overwrite,
+			Source:    p.Source,
 			State:     Queued,
 		})
 	}
@@ -104,6 +106,7 @@ func encodeTasks(tasks []Task) ([]byte, error) {
 			Dest:      t.Dest,
 			Page:      t.Page,
 			Overwrite: t.Overwrite,
+			Source:    t.Source,
 		})
 	}
 	return json.Marshal(downloadsFile{Tasks: out})
