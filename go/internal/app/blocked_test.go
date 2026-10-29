@@ -123,7 +123,6 @@ func TestBrowseFiltersBlockedAuthors(t *testing.T) {
 	}}
 	a := New()
 	a.images = imagex.New(nil, "")
-	a.blocked = &BlockedUsers{}
 	a.blocked.Add(BlockedUser{ID: 7, Name: "画师七"})
 	st.arm()
 	a.loadMore(st)
@@ -147,7 +146,6 @@ func TestUserListFiltersBlockedUsers(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := New()
 	a.images = imagex.New(nil, "")
-	a.blocked = &BlockedUsers{}
 	a.blocked.Add(BlockedUser{ID: 8, Name: "关注八"})
 	st := a.searchUsers
 	st.setFetch(func(context.Context) (*pixiv.Page[pixiv.UserPreview], error) {
@@ -177,7 +175,6 @@ func TestBrowseCardMenuBlockAuthor(t *testing.T) {
 		return &pixiv.Page[pixiv.Illustration]{Items: works}, nil
 	}}
 	a, tt := newBrowseTest(st)
-	a.blocked = &BlockedUsers{}
 	tt.Frame()
 	waitBrowse(t, st, "load", func(v browseView) bool { return len(v.items) == 2 })
 	tt.Frame()
@@ -204,7 +201,6 @@ func TestBrowseCardMenuBlockAuthor(t *testing.T) {
 func TestUserPageBlockButton(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := newPageApp()
-	a.blocked = &BlockedUsers{}
 	a.openUser(7)
 	waitUser(t, a, func(v userPageView) bool { return !v.loading })
 	tt := ui.NewTester(a.View, 1000, 700)
@@ -228,7 +224,6 @@ func TestUserPageBlockButton(t *testing.T) {
 func TestSettingsPageUnblockUser(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := New()
-	a.blocked = &BlockedUsers{}
 	a.blocked.Add(BlockedUser{ID: 7, Name: "画师七"})
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 1400)
@@ -255,7 +250,6 @@ func TestSettingsPageUnblockUser(t *testing.T) {
 func TestSettingsPageClearBlockedUsers(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := New()
-	a.blocked = &BlockedUsers{}
 	a.blocked.Add(BlockedUser{ID: 7, Name: "画师七"})
 	a.blocked.Add(BlockedUser{ID: 8, Name: "画师八"})
 	a.route = routeSettings
