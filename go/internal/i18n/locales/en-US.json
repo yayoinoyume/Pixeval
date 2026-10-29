@@ -69,6 +69,11 @@
   "viewer": {
     "imageFailed": "Image failed to load",
     "image": "Illustration: %s (page %d of %d)",
+    "animated": "Animation: %s",
+    "ugoiraLoading": "Loading animation…",
+    "ugoiraFailed": "Animation failed to load",
+    "ugoiraPlay": "Play",
+    "ugoiraPause": "Pause",
     "bookmark": "Bookmark",
     "bookmarked": "Bookmarked",
     "download": "Download",

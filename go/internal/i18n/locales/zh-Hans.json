@@ -69,6 +69,11 @@
   "viewer": {
     "imageFailed": "图片加载失败",
     "image": "作品图片：%s（第 %d/%d 页）",
+    "animated": "动图：%s",
+    "ugoiraLoading": "正在加载动图…",
+    "ugoiraFailed": "动图加载失败",
+    "ugoiraPlay": "播放",
+    "ugoiraPause": "暂停",
     "bookmark": "收藏",
     "bookmarked": "已收藏",
     "download": "下载",

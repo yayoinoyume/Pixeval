@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"image"
 	"sync"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/animated"
 	"github.com/yayoinoyume/pixeval-go/internal/artcolor"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
@@ -21,6 +23,13 @@ const (
 // bookmarkTimeout bounds one bookmark request, so a stuck one cannot leave
 // the button disabled forever.
 const bookmarkTimeout = 30 * time.Second
+
+// ugoiraTimeout bounds the animation's metadata and zip fetch, and
+// defaultUgoiraDelay stands in for a frame without one.
+const (
+	ugoiraTimeout      = 2 * time.Minute
+	defaultUgoiraDelay = 100 * time.Millisecond
+)
 
 // viewerState is the full-screen viewer of one work: the page shown, where
 // the user zoomed and panned it to, and the original being loaded. The view
@@ -47,11 +56,29 @@ type viewerState struct {
 	// viewW and viewH are the size of the image area in the last frame, which
 	// the pan bounds and the zoom's anchor need.
 	viewW, viewH float32
+	// ugoiraBmp is the frame the stage draws, updated in place as the
+	// animation plays; ugoiraBmpFrame is the index it holds. Both are
+	// main-thread state, as drawing is.
+	ugoiraBmp      *ui.Bitmap
+	ugoiraBmpFrame int
 
 	mu      sync.Mutex
 	loadKey string     // the page URL the load fields belong to
 	bmp     *ui.Bitmap // the loaded original, nil until it is there
 	failed  bool       // the load for loadKey failed
+	// ugoiraKey is the work whose animation is loaded, and ugoiraFrames its
+	// decoded frames once they are there; ugoiraFrame is the one shown.
+	// ugoiraLoading and ugoiraFailed follow the fetch, while ugoiraPlaying
+	// and ugoiraGen drive playback: a loop stops when the generation moves,
+	// which pausing, closing or switching does.
+	ugoiraKey     int64
+	ugoiraFrames  *animated.Frames
+	ugoiraFrame   int
+	ugoiraSeed    ui.Color
+	ugoiraLoading bool
+	ugoiraFailed  bool
+	ugoiraPlaying bool
+	ugoiraGen     int
 
 	// bookmarking is set while the bookmark request runs, so the button is
 	// disabled until it lands; bookmarked is the work's state, which flips
@@ -94,6 +121,41 @@ func pageCountOf(n int) int {
 		return 1
 	}
 	return n
+}
+
+// isUgoira reports whether the work is an animation.
+func isUgoira(w pixiv.Illustration) bool {
+	return w.Type == "ugoira"
+}
+
+// ugoiraState returns the animation's frames, the frame shown, and where its
+// load and playback stand.
+func (v *viewerState) ugoiraState() (frames *animated.Frames, frame int, playing, loading, failed bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.ugoiraFrames, v.ugoiraFrame, v.ugoiraPlaying, v.ugoiraLoading, v.ugoiraFailed
+}
+
+// ugoiraSeedColor returns the color of the animation's first frame.
+func (v *viewerState) ugoiraSeedColor() (ui.Color, bool) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.ugoiraSeed, v.ugoiraSeed.A != 0
+}
+
+// ugoiraBitmap returns the bitmap of the frame at index, updating the one the
+// stage draws instead of making a texture for every frame.
+func (v *viewerState) ugoiraBitmap(index int, img *image.RGBA) *ui.Bitmap {
+	if v.ugoiraBmp == nil {
+		v.ugoiraBmp = ui.NewBitmap(img)
+		v.ugoiraBmpFrame = index
+		return v.ugoiraBmp
+	}
+	if v.ugoiraBmpFrame != index {
+		v.ugoiraBmp.Update(img)
+		v.ugoiraBmpFrame = index
+	}
+	return v.ugoiraBmp
 }
 
 // bookmarkState reports whether the work is bookmarked, and whether a request
@@ -143,12 +205,17 @@ func (a *App) openViewer(w *pixiv.Illustration, page int) {
 		old.mu.Lock()
 		old.closed = true
 		old.mu.Unlock()
+		stopUgoira(old)
 	}
 	a.viewer, a.comments, a.commentsOpen = v, &commentState{workID: w.ID}, true
 	a.recordHistory(*w)
 	// Start the original at once, so the first frame already has a load to
-	// show rather than one to start.
-	a.viewerImage(v)
+	// show rather than one to start. An animation fetches its frames instead.
+	if isUgoira(v.work) {
+		a.loadUgoira(v)
+	} else {
+		a.viewerImage(v)
+	}
 	// The feed's copy of a work is thin: the detail fills the info card, and
 	// the comments load with it. Both need a session, so a signed-out viewer
 	// draws the feed's data and asks for neither.
@@ -170,6 +237,7 @@ func (a *App) closeViewer() {
 	v.mu.Lock()
 	v.closed = true
 	v.mu.Unlock()
+	stopUgoira(v)
 	a.viewer = nil
 	// Drop the panel with the viewer: a page still in flight then writes to a
 	// state nothing shows, instead of reviving it on the next work.
@@ -207,6 +275,129 @@ func (a *App) viewerImage(v *viewerState) (bmp *ui.Bitmap, failed bool) {
 		}
 	}
 	return v.bmp, v.failed
+}
+
+// loadUgoira fetches the work's frames and starts playing them. It runs once
+// per viewer; a retry clears the key first.
+func (a *App) loadUgoira(v *viewerState) {
+	if !isUgoira(v.work) || a.client == nil {
+		return
+	}
+	id := v.work.ID
+	v.mu.Lock()
+	if v.ugoiraKey == id {
+		v.mu.Unlock()
+		return
+	}
+	v.ugoiraKey = id
+	v.ugoiraLoading = true
+	v.ugoiraFailed = false
+	v.ugoiraGen++
+	gen := v.ugoiraGen
+	v.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ugoiraTimeout)
+		defer cancel()
+		frames, seed, err := a.fetchUgoira(ctx, id)
+		a.update(func() {
+			v.mu.Lock()
+			if v.closed || v.ugoiraGen != gen || v.ugoiraKey != id {
+				v.mu.Unlock()
+				return
+			}
+			v.ugoiraLoading = false
+			if err != nil {
+				v.ugoiraFailed = true
+				v.mu.Unlock()
+				return
+			}
+			v.ugoiraFrames, v.ugoiraFrame, v.ugoiraSeed = frames, 0, seed
+			v.ugoiraPlaying = true
+			v.ugoiraGen++
+			next := v.ugoiraGen
+			v.mu.Unlock()
+			go a.playUgoira(v, next)
+		})
+	}()
+}
+
+// fetchUgoira fetches the animation's metadata, then its zip, and decodes the
+// frames. The first frame's color seeds the page.
+func (a *App) fetchUgoira(ctx context.Context, id int64) (*animated.Frames, ui.Color, error) {
+	meta, err := a.client.UgoiraMetadata(ctx, id)
+	if err != nil {
+		return nil, ui.Color{}, err
+	}
+	data, err := a.client.GetImage(ctx, meta.ZipURL)
+	if err != nil {
+		return nil, ui.Color{}, err
+	}
+	frames, err := animated.ExtractZip(data, meta.Frames)
+	if err != nil {
+		return nil, ui.Color{}, err
+	}
+	var seed ui.Color
+	if len(frames.Images) > 0 {
+		seed = artcolor.Extract(frames.Images[0])
+	}
+	return frames, seed, nil
+}
+
+// playUgoira advances the frames while the viewer shows and plays them. gen
+// ties the loop to one playback run: pausing, closing or loading again moves
+// it, and the loop ends at its next check.
+func (a *App) playUgoira(v *viewerState, gen int) {
+	for {
+		v.mu.Lock()
+		frames, frame := v.ugoiraFrames, v.ugoiraFrame
+		live := v.ugoiraPlaying && v.ugoiraGen == gen && frames != nil &&
+			frame >= 0 && frame < len(frames.Images) && frame < len(frames.Delays)
+		v.mu.Unlock()
+		if !live {
+			return
+		}
+		delay := frames.Delays[frame]
+		if delay <= 0 {
+			delay = defaultUgoiraDelay
+		}
+		time.Sleep(delay)
+		v.mu.Lock()
+		if !v.ugoiraPlaying || v.ugoiraGen != gen || v.ugoiraFrames != frames {
+			v.mu.Unlock()
+			return
+		}
+		v.ugoiraFrame = (frame + 1) % len(frames.Images)
+		v.mu.Unlock()
+		a.update(func() {})
+	}
+}
+
+// toggleUgoira starts or stops the animation.
+func (a *App) toggleUgoira(v *viewerState) {
+	v.mu.Lock()
+	if v.ugoiraFrames == nil {
+		v.mu.Unlock()
+		return
+	}
+	v.ugoiraGen++
+	if v.ugoiraPlaying {
+		v.ugoiraPlaying = false
+		v.mu.Unlock()
+		return
+	}
+	v.ugoiraPlaying = true
+	gen := v.ugoiraGen
+	v.mu.Unlock()
+	go a.playUgoira(v, gen)
+	a.update(func() {})
+}
+
+// stopUgoira ends playback, so a closed or replaced viewer leaves no loop.
+func stopUgoira(v *viewerState) {
+	v.mu.Lock()
+	v.ugoiraPlaying = false
+	v.ugoiraGen++
+	v.mu.Unlock()
 }
 
 // toggleBookmark adds or removes the work's bookmark off the main thread. The
@@ -255,6 +446,7 @@ func (a *App) viewerGo(delta int) {
 	v.mu.Lock()
 	v.loadKey = "" // the next frame loads the new page
 	v.mu.Unlock()
+	stopUgoira(v)
 	a.update(func() {})
 }
 
@@ -263,7 +455,16 @@ func (a *App) viewerReload(v *viewerState) {
 	v.mu.Lock()
 	v.loadKey = ""
 	v.failed = false
+	if isUgoira(v.work) {
+		v.ugoiraKey = 0
+		v.ugoiraFrames = nil
+		v.ugoiraFrame = 0
+		v.ugoiraSeed = ui.Color{}
+		v.ugoiraFailed = false
+		v.ugoiraBmp, v.ugoiraBmpFrame = nil, 0
+	}
 	v.mu.Unlock()
+	stopUgoira(v)
 	a.update(func() {})
 }
 
@@ -296,6 +497,10 @@ func (v *viewerState) clampPan() {
 	v.mu.Lock()
 	bmp := v.bmp
 	v.mu.Unlock()
+	if bmp == nil {
+		// An animation has no still; its frame sizes the pan.
+		bmp = v.ugoiraBmp
+	}
 	if bmp == nil || v.viewW <= 0 || v.viewH <= 0 {
 		v.panX, v.panY = 0, 0
 		return
@@ -384,7 +589,7 @@ func (a *App) viewerPage(c *ui.Context) {
 	// t is already at the desktop's text scale and, when asked for, at high
 	// contrast; the stock widgets must not scale it a second time.
 	c.SetTheme(themeFromTokens(t, 1))
-	bmp, failed := a.viewerImage(v)
+	bmp, failed := a.viewerArtState(v)
 	ui.Column(c).Fill().FillHeight().
 		LinearGradient(ui.LinearGradient{From: t.WashTop, To: t.WashBottom, Angle: 180, Oklab: true}).
 		Children(func() {
@@ -421,6 +626,13 @@ func (a *App) viewerTokens(c *ui.Context) tokens {
 		work = *detail
 	}
 	seed, have := a.pageSeed(v.work.PageURL(v.page), pageThumbURL(work, v.page))
+	// An animation has no still image to decode; its first frame seeds the
+	// page instead.
+	if isUgoira(v.work) {
+		if s, ok := v.ugoiraSeedColor(); ok {
+			seed, have = s, true
+		}
+	}
 	if !have && v.lastSeed.A != 0 {
 		seed, have = v.lastSeed, true
 	}
@@ -456,6 +668,18 @@ func (a *App) pageSeed(original, thumb string) (ui.Color, bool) {
 		}
 	}
 	return ui.Color{}, false
+}
+
+// viewerArtState returns the still the stage draws and whether its load
+// failed. An animation has no still: its frames carry the stage, and the flag
+// follows their load.
+func (a *App) viewerArtState(v *viewerState) (*ui.Bitmap, bool) {
+	if isUgoira(v.work) {
+		a.loadUgoira(v)
+		_, _, _, _, failed := v.ugoiraState()
+		return nil, failed
+	}
+	return a.viewerImage(v)
 }
 
 // viewerTop is the page's first line: a quiet close control and the zoom
@@ -503,6 +727,10 @@ func (a *App) viewerArt(c *ui.Context, t tokens, v *viewerState, bmp *ui.Bitmap,
 			v.viewW, v.viewH = b.W, b.H
 		}
 		area.Children(func() {
+			if isUgoira(v.work) {
+				a.viewerUgoiraArt(c, t, v)
+				return
+			}
 			switch {
 			case bmp != nil:
 				img := ui.Image(c, bmp).Fill().Fit(ui.Contain).
@@ -530,6 +758,39 @@ func (a *App) viewerArt(c *ui.Context, t tokens, v *viewerState, bmp *ui.Bitmap,
 			a.viewerPageThumbs(c, t, v)
 		}
 	})
+}
+
+// viewerUgoiraArt draws the animation's current frame in the stage, with the
+// same zoom and pan as a still, and a spinner or the failure while its frames
+// load.
+func (a *App) viewerUgoiraArt(c *ui.Context, t tokens, v *viewerState) {
+	frames, frame, _, loading, failed := v.ugoiraState()
+	if frames == nil || frame < 0 || frame >= len(frames.Images) {
+		ui.Column(c).Fill().Center().Gap(t.SpaceS).Children(func() {
+			switch {
+			case failed:
+				ui.Text(c, a.t("viewer.ugoiraFailed")).FontSize(t.TextSmall).TextColor(t.Danger)
+			case loading:
+				ui.Spinner(c)
+				ui.Text(c, a.t("viewer.ugoiraLoading")).FontSize(t.TextTiny).TextColor(t.TextMuted)
+			}
+		})
+		return
+	}
+	bmp := v.ugoiraBitmap(frame, frames.Images[frame])
+	img := ui.Image(c, bmp).Fill().Fit(ui.Contain).
+		Scale(v.zoom, v.zoom).Translate(v.panX, v.panY).
+		Label(a.tf("viewer.animated", v.work.Title))
+	img.HandleInput(func(ev ui.InputEvent) bool {
+		switch ev.Kind {
+		case ui.InputPointerDown, ui.InputPointerMove, ui.InputPointerUp:
+			return a.viewerInput(v, ev)
+		}
+		return false
+	})
+	if img.DoubleClicked() {
+		v.resetView()
+	}
 }
 
 // viewerPageThumbs is the strip under the artwork: up to five page pictures,
@@ -608,6 +869,15 @@ func (a *App) viewerActions(c *ui.Context, t tokens, v *viewerState, failed bool
 		if failed {
 			if b := a.viewerAction(c, t, iconRefresh, a.t("common.retry"), false); b.Clicked() {
 				a.viewerReload(v)
+			}
+		}
+		if frames, _, playing, _, _ := v.ugoiraState(); frames != nil {
+			label := a.t("viewer.ugoiraPlay")
+			if playing {
+				label = a.t("viewer.ugoiraPause")
+			}
+			if b := a.viewerAction(c, t, nil, label, false); b.Clicked() {
+				a.toggleUgoira(v)
 			}
 		}
 		if b := a.viewerAction(c, t, iconDownload, a.t("viewer.download"), false); b.Clicked() {
