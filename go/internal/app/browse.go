@@ -109,6 +109,21 @@ const (
 	homeTabRanking
 )
 
+// The kinds the new and MyPixiv pages offer, in the order their tabs show
+// them.
+const (
+	feedIllust = iota
+	feedManga
+)
+
+// feedKind is the pixiv work kind a page's kind tab stands for.
+func feedKind(tab int) pixiv.WorkKind {
+	if tab == feedManga {
+		return pixiv.Manga
+	}
+	return pixiv.Illust
+}
+
 // newHomeFeeds makes one empty feed per home tab.
 func newHomeFeeds() [homeTabCount]*browseState {
 	feeds := [homeTabCount]*browseState{}
@@ -149,19 +164,33 @@ func (a *App) homeFetch(st *browseState, tab int) func(context.Context) (*pixiv.
 	}
 }
 
-// armClientFeed gives a feed its page fetcher, once: the client's first page,
+// workFeedFetch pages a works feed of one kind: the first page from first,
 // then the cursor each later page returns.
-func (a *App) armClientFeed(st *browseState, first func(context.Context) (*pixiv.Page[pixiv.Illustration], error)) {
-	if st.isArmed() {
-		return
-	}
-	st.setFetch(func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+func (a *App) workFeedFetch(st *browseState, first func(context.Context, pixiv.WorkKind) (*pixiv.Page[pixiv.Illustration], error), kind pixiv.WorkKind) func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+	return func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
 		if next := st.cursor(); next != "" {
 			return a.client.NextIllustrations(ctx, next)
 		}
-		return first(ctx)
-	})
+		return first(ctx, kind)
+	}
+}
+
+// armWorkFeed gives a feed its page fetcher for the kind shown, once: the
+// client's first page of that kind, then the cursor each later page returns.
+func (a *App) armWorkFeed(st *browseState, kind int, first func(context.Context, pixiv.WorkKind) (*pixiv.Page[pixiv.Illustration], error)) {
+	if st.isArmed() {
+		return
+	}
+	st.setFetch(a.workFeedFetch(st, first, feedKind(kind)))
 	st.arm()
+}
+
+// restartWorkFeed drops a page's loaded works and points its feed at the kind
+// now shown, so the other kind's works never show in it.
+func (a *App) restartWorkFeed(st *browseState, kind int, first func(context.Context, pixiv.WorkKind) (*pixiv.Page[pixiv.Illustration], error)) {
+	st.restart()
+	st.setFetch(a.workFeedFetch(st, first, feedKind(kind)))
+	st.masonry = widgets.MasonryState{}
 }
 
 // rankModes are the ranking modes the home tab offers, in the order it shows
@@ -384,23 +413,36 @@ func (st *browseState) restart() {
 	st.selected = nil
 }
 
-// newPage draws the site-wide feed of works just posted.
+// newPage draws the site-wide feed of works just posted, of the kind chosen.
 func (a *App) newPage(c *ui.Context) {
 	if a.session == nil {
 		a.loginPrompt(c)
 		return
 	}
-	a.armClientFeed(a.newFeed, a.client.NewIllustrations)
+	t := themeOf(c)
+	ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+		if textTabs(c, t, &a.newKind, a.t("common.illust"), a.t("common.manga")) {
+			a.restartWorkFeed(a.newFeed, a.newKind, a.client.NewIllustrations)
+		}
+	})
+	a.armWorkFeed(a.newFeed, a.newKind, a.client.NewIllustrations)
 	a.browsePage(c, a.newFeed)
 }
 
-// myPixivPage draws the feed of works by the users the signed-in user follows.
+// myPixivPage draws the feed of works by the users the signed-in user follows,
+// of the kind chosen.
 func (a *App) myPixivPage(c *ui.Context) {
 	if a.session == nil {
 		a.loginPrompt(c)
 		return
 	}
-	a.armClientFeed(a.myPixivFeed, a.client.MyPixivIllustrations)
+	t := themeOf(c)
+	ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+		if textTabs(c, t, &a.myPixivKind, a.t("common.illust"), a.t("common.manga")) {
+			a.restartWorkFeed(a.myPixivFeed, a.myPixivKind, a.client.MyPixivIllustrations)
+		}
+	})
+	a.armWorkFeed(a.myPixivFeed, a.myPixivKind, a.client.MyPixivIllustrations)
 	a.browsePage(c, a.myPixivFeed)
 }
 

@@ -44,6 +44,8 @@
     "loadFailed": "加载失败：%s",
     "coverFailed": "封面加载失败",
     "noWorks": "没有作品",
+    "illust": "插画",
+    "manga": "漫画",
     "save": "保存",
     "back": "返回"
   },

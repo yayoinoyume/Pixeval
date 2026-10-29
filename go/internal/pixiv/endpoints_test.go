@@ -10,75 +10,90 @@ import (
 )
 
 func TestNewIllustrationsRequestsNewFeed(t *testing.T) {
-	var got recordedRequest
-	c := newWriteClient(t, recordInto(&got, feedBody))
+	for _, kind := range []WorkKind{Illust, Manga} {
+		t.Run(string(kind), func(t *testing.T) {
+			var got recordedRequest
+			c := newWriteClient(t, recordInto(&got, feedBody))
 
-	page, err := c.NewIllustrations(context.Background())
-	if err != nil {
-		t.Fatalf("NewIllustrations: %v", err)
-	}
-	if got.method != http.MethodGet {
-		t.Errorf("method = %q, want GET", got.method)
-	}
-	if got.path != "/v1/illust/new" {
-		t.Errorf("path = %q", got.path)
-	}
-	if q := got.query; q.Get("filter") != "for_android" || q.Get("content_type") != "illust" || len(q) != 2 {
-		t.Errorf("query = %v, want the R18 filter and content_type=illust", q)
-	}
-	if got.auth != "Bearer test-token" {
-		t.Errorf("Authorization = %q, want a Bearer token", got.auth)
-	}
-	if len(page.Items) != 1 || page.Items[0].ID != 7 {
-		t.Fatalf("items = %+v, want the decoded illust", page.Items)
-	}
-	if page.NextURL == "" {
-		t.Error("next_url is empty")
+			page, err := c.NewIllustrations(context.Background(), kind)
+			if err != nil {
+				t.Fatalf("NewIllustrations(%s): %v", kind, err)
+			}
+			if got.method != http.MethodGet {
+				t.Errorf("method = %q, want GET", got.method)
+			}
+			if got.path != "/v1/illust/new" {
+				t.Errorf("path = %q", got.path)
+			}
+			if q := got.query; q.Get("filter") != "for_android" || q.Get("content_type") != string(kind) || len(q) != 2 {
+				t.Errorf("query = %v, want the R18 filter and content_type=%s", q, kind)
+			}
+			if got.auth != "Bearer test-token" {
+				t.Errorf("Authorization = %q, want a Bearer token", got.auth)
+			}
+			if len(page.Items) != 1 || page.Items[0].ID != 7 {
+				t.Fatalf("items = %+v, want the decoded illust", page.Items)
+			}
+			if page.NextURL == "" {
+				t.Error("next_url is empty")
+			}
+		})
 	}
 }
 
 func TestMyPixivIllustrationsRequestsMyPixivFeed(t *testing.T) {
-	var got recordedRequest
-	c := newWriteClient(t, recordInto(&got, feedBody))
+	for _, kind := range []WorkKind{Illust, Manga} {
+		t.Run(string(kind), func(t *testing.T) {
+			var got recordedRequest
+			c := newWriteClient(t, recordInto(&got, feedBody))
 
-	page, err := c.MyPixivIllustrations(context.Background())
-	if err != nil {
-		t.Fatalf("MyPixivIllustrations: %v", err)
-	}
-	if got.method != http.MethodGet {
-		t.Errorf("method = %q, want GET", got.method)
-	}
-	if got.path != "/v1/illust/mypixiv" {
-		t.Errorf("path = %q", got.path)
-	}
-	if q := got.query; q.Get("filter") != "for_android" || len(q) != 1 {
-		t.Errorf("query = %v, want only the R18 filter", q)
-	}
-	if got.auth != "Bearer test-token" {
-		t.Errorf("Authorization = %q, want a Bearer token", got.auth)
-	}
-	if len(page.Items) != 1 || page.Items[0].ID != 7 {
-		t.Fatalf("items = %+v, want the decoded illust", page.Items)
-	}
-	if page.NextURL == "" {
-		t.Error("next_url is empty")
+			page, err := c.MyPixivIllustrations(context.Background(), kind)
+			if err != nil {
+				t.Fatalf("MyPixivIllustrations(%s): %v", kind, err)
+			}
+			if got.method != http.MethodGet {
+				t.Errorf("method = %q, want GET", got.method)
+			}
+			if got.path != "/v1/illust/mypixiv" {
+				t.Errorf("path = %q", got.path)
+			}
+			if q := got.query; q.Get("filter") != "for_android" || q.Get("content_type") != string(kind) || len(q) != 2 {
+				t.Errorf("query = %v, want the R18 filter and content_type=%s", q, kind)
+			}
+			if got.auth != "Bearer test-token" {
+				t.Errorf("Authorization = %q, want a Bearer token", got.auth)
+			}
+			if len(page.Items) != 1 || page.Items[0].ID != 7 {
+				t.Fatalf("items = %+v, want the decoded illust", page.Items)
+			}
+			if page.NextURL == "" {
+				t.Error("next_url is empty")
+			}
+		})
 	}
 }
 
-// TestFeedEndpointsPageWithNextURL checks both feeds hand their next_url to
-// NextIllustrations, which asks the same path for the next page.
+// TestFeedEndpointsPageWithNextURL checks both feeds, of both kinds, hand
+// their next_url to NextIllustrations, which asks the same path for the next
+// page.
 func TestFeedEndpointsPageWithNextURL(t *testing.T) {
 	cases := []struct {
-		name        string
-		path        string
-		contentType string
-		first       func(*Client) (*Page[Illustration], error)
+		name  string
+		path  string
+		kind  WorkKind
+		first func(*Client) (*Page[Illustration], error)
 	}{
-		{"new", "/v1/illust/new", "illust", func(c *Client) (*Page[Illustration], error) {
-			return c.NewIllustrations(context.Background())
+		{"new illust", "/v1/illust/new", Illust, func(c *Client) (*Page[Illustration], error) {
+			return c.NewIllustrations(context.Background(), Illust)
 		}},
-		{"mypixiv", "/v1/illust/mypixiv", "", func(c *Client) (*Page[Illustration], error) {
-			return c.MyPixivIllustrations(context.Background())
+		{"new manga", "/v1/illust/new", Manga, func(c *Client) (*Page[Illustration], error) {
+			return c.NewIllustrations(context.Background(), Manga)
+		}},
+		{"mypixiv illust", "/v1/illust/mypixiv", Illust, func(c *Client) (*Page[Illustration], error) {
+			return c.MyPixivIllustrations(context.Background(), Illust)
+		}},
+		{"mypixiv manga", "/v1/illust/mypixiv", Manga, func(c *Client) (*Page[Illustration], error) {
+			return c.MyPixivIllustrations(context.Background(), Manga)
 		}},
 	}
 	for _, tc := range cases {
@@ -93,10 +108,7 @@ func TestFeedEndpointsPageWithNextURL(t *testing.T) {
 				})
 				w.Header().Set("Content-Type", "application/json")
 				if len(reqs) == 1 {
-					next := "http://" + r.Host + tc.path + "?filter=for_android&offset=30"
-					if tc.contentType != "" {
-						next += "&content_type=" + tc.contentType
-					}
+					next := "http://" + r.Host + tc.path + "?content_type=" + string(tc.kind) + "&filter=for_android&offset=30"
 					io.WriteString(w, `{"illusts":[{"id":1,"title":"first"}],"next_url":`+strconv.Quote(next)+`}`)
 					return
 				}
@@ -131,10 +143,10 @@ func TestFeedEndpointsPageWithNextURL(t *testing.T) {
 			if reqs[0].path != tc.path || reqs[1].path != tc.path {
 				t.Errorf("%s paths = %q, %q, want both %q", tc.name, reqs[0].path, reqs[1].path, tc.path)
 			}
-			if q := reqs[0].query; q.Get("filter") != "for_android" || q.Get("content_type") != tc.contentType || q.Get("offset") != "" {
-				t.Errorf("%s first query = %v, want the R18 filter and content_type %q", tc.name, q, tc.contentType)
+			if q := reqs[0].query; q.Get("filter") != "for_android" || q.Get("content_type") != string(tc.kind) || q.Get("offset") != "" {
+				t.Errorf("%s first query = %v, want the R18 filter and content_type %s", tc.name, q, tc.kind)
 			}
-			if q := reqs[1].query; q.Get("filter") != "for_android" || q.Get("content_type") != tc.contentType || q.Get("offset") != "30" {
+			if q := reqs[1].query; q.Get("filter") != "for_android" || q.Get("content_type") != string(tc.kind) || q.Get("offset") != "30" {
 				t.Errorf("%s next query = %v, want the cursor's offset", tc.name, q)
 			}
 			if reqs[1].auth != "Bearer test-token" {
@@ -144,27 +156,35 @@ func TestFeedEndpointsPageWithNextURL(t *testing.T) {
 	}
 }
 
-// TestNewFeedFilterFollowsAllowR18 checks the two feeds drop R18 works unless
-// the client allows them, as the other feeds do.
+// TestNewFeedFilterFollowsAllowR18 checks the two feeds, of both kinds, drop
+// R18 works unless the client allows them, as the other feeds do.
 func TestNewFeedFilterFollowsAllowR18(t *testing.T) {
-	endpoints := map[string]func(*Client) error{
-		"new":     func(c *Client) error { _, err := c.NewIllustrations(context.Background()); return err },
-		"mypixiv": func(c *Client) error { _, err := c.MyPixivIllustrations(context.Background()); return err },
+	endpoints := map[string]func(*Client, WorkKind) error{
+		"new": func(c *Client, kind WorkKind) error {
+			_, err := c.NewIllustrations(context.Background(), kind)
+			return err
+		},
+		"mypixiv": func(c *Client, kind WorkKind) error {
+			_, err := c.MyPixivIllustrations(context.Background(), kind)
+			return err
+		},
 	}
 	for _, allow := range []bool{false, true} {
 		for name, call := range endpoints {
-			var got recordedRequest
-			c := newWriteClient(t, recordInto(&got, `{"illusts":[],"next_url":""}`))
-			c.SetAllowR18(allow)
-			if err := call(c); err != nil {
-				t.Fatalf("%s (AllowR18=%v): %v", name, allow, err)
-			}
-			want := "for_android"
-			if allow {
-				want = ""
-			}
-			if q := got.query.Get("filter"); q != want {
-				t.Errorf("%s (AllowR18=%v): filter = %q, want %q", name, allow, q, want)
+			for _, kind := range []WorkKind{Illust, Manga} {
+				var got recordedRequest
+				c := newWriteClient(t, recordInto(&got, `{"illusts":[],"next_url":""}`))
+				c.SetAllowR18(allow)
+				if err := call(c, kind); err != nil {
+					t.Fatalf("%s/%s (AllowR18=%v): %v", name, kind, allow, err)
+				}
+				want := "for_android"
+				if allow {
+					want = ""
+				}
+				if q := got.query.Get("filter"); q != want {
+					t.Errorf("%s/%s (AllowR18=%v): filter = %q, want %q", name, kind, allow, q, want)
+				}
 			}
 		}
 	}
