@@ -70,7 +70,18 @@
     "target": "Correspondance",
     "targetPartial": "Correspondance partielle des tags",
     "targetExact": "Correspondance exacte des tags",
-    "targetTitleCaption": "Titre et légende"
+    "targetTitleCaption": "Titre et légende",
+    "history": "Recherches récentes",
+    "clearHistory": "Effacer l’historique",
+    "deleteHistory": "Supprimer « %s »",
+    "startDate": "Date de début",
+    "endDate": "Date de fin",
+    "minWidth": "Largeur min.",
+    "maxWidth": "Largeur max.",
+    "minHeight": "Hauteur min.",
+    "maxHeight": "Hauteur max.",
+    "invalidDate": "Utilisez une date au format AAAA-MM-JJ",
+    "invalidSize": "Les dimensions doivent être 0 ou un entier positif"
   },
   "spotlight": {
     "empty": "Aucun article à la une",

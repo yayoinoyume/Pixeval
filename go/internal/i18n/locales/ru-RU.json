@@ -70,7 +70,18 @@
     "target": "Совпадение",
     "targetPartial": "Частичное совпадение тегов",
     "targetExact": "Точное совпадение тегов",
-    "targetTitleCaption": "Название и описание"
+    "targetTitleCaption": "Название и описание",
+    "history": "Недавние запросы",
+    "clearHistory": "Очистить историю",
+    "deleteHistory": "Удалить «%s»",
+    "startDate": "Дата начала",
+    "endDate": "Дата окончания",
+    "minWidth": "Мин. ширина",
+    "maxWidth": "Макс. ширина",
+    "minHeight": "Мин. высота",
+    "maxHeight": "Макс. высота",
+    "invalidDate": "Укажите дату в формате ГГГГ-ММ-ДД",
+    "invalidSize": "Размер должен быть 0 или целым положительным числом"
   },
   "spotlight": {
     "empty": "Нет статей обзора",
