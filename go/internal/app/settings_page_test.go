@@ -335,13 +335,14 @@ func TestSettingsPageBlockedTags(t *testing.T) {
 
 // dataClearRows pairs each record the data card clears with the label of its row.
 var dataClearRows = []struct {
-	label  string
-	button string
+	label   string
+	button  string
+	confirm string
 }{
-	{"settings.browseHistory", "settings.clearBrowseHistory"},
-	{"settings.downloadHistory", "settings.clearDownloadHistory"},
-	{"settings.searchHistory", "settings.clearSearchHistory"},
-	{"settings.novelReading", "settings.clearNovelProgress"},
+	{"settings.browseHistory", "settings.clearBrowseHistory", "settings.confirmBrowseHistory"},
+	{"settings.downloadHistory", "settings.clearDownloadHistory", "settings.confirmDownloadHistory"},
+	{"settings.searchHistory", "settings.clearSearchHistory", "settings.confirmSearchHistory"},
+	{"settings.novelReading", "settings.clearNovelProgress", "settings.confirmNovelProgress"},
 }
 
 // TestSettingsPageDataCard checks the data card offers every record it can
@@ -402,6 +403,10 @@ func TestSettingsPageClearButtons(t *testing.T) {
 			t.Fatalf("Click %s: %v", key, err)
 		}
 		tt.Frame()
+		if err := tt.Click(a.t("common.confirm")); err != nil {
+			t.Fatalf("Confirm %s: %v", key, err)
+		}
+		tt.Frame()
 	}
 
 	click("settings.clearBrowseHistory")
@@ -443,6 +448,49 @@ func TestSettingsPageClearButtons(t *testing.T) {
 	click("settings.clearNovelProgress")
 	if got := a.novelProgress.Get(7); got != 0 {
 		t.Errorf("novel place %v after clearing, want none", got)
+	}
+}
+
+// TestSettingsPageClearCancel checks each clear asks first, and Cancel leaves
+// every record alone.
+func TestSettingsPageClearCancel(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.history.Add(HistoryEntry{ID: 1, Title: "作品"})
+	a.downloadHistory.Add(download.HistoryEntry{ID: "1_0", IllustID: 1, Title: "作品"})
+	a.searchHistory.Add("猫")
+	a.novelProgress.Set(7, 0.5)
+	a.route = routeSettings
+	settingsConfirmPending = settingsConfirmNone
+	tt := ui.NewTester(a.View, 1000, 2600)
+	tt.Frame()
+	unchanged := func() bool {
+		return len(a.history.Snapshot()) == 1 &&
+			len(a.downloadHistory.Snapshot()) == 1 &&
+			len(a.searchHistory.Snapshot()) == 1 &&
+			a.novelProgress.Get(7) == 0.5
+	}
+	for _, pair := range dataClearRows {
+		if err := tt.Click(a.t(pair.button)); err != nil {
+			t.Fatalf("Click %s: %v", pair.button, err)
+		}
+		tt.Frame()
+		if !tt.HasText(a.t(pair.confirm)) {
+			t.Errorf("%s did not ask for confirmation", pair.button)
+		}
+		if !unchanged() {
+			t.Fatalf("%s ran before confirmation", pair.button)
+		}
+		if err := tt.Click(a.t("common.cancel")); err != nil {
+			t.Fatalf("Cancel %s: %v", pair.button, err)
+		}
+		tt.Frame()
+		if tt.HasText(a.t(pair.confirm)) {
+			t.Errorf("%s stayed open after Cancel", pair.button)
+		}
+		if !unchanged() {
+			t.Fatalf("%s ran after Cancel", pair.button)
+		}
 	}
 }
 
@@ -550,6 +598,24 @@ func TestSettingsPageResetsSettings(t *testing.T) {
 	if err := tt.Click(a.t("settings.resetSettings")); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
+	tt.Frame()
+	if a.settings.Theme != themeDark {
+		t.Fatal("reset ran before confirmation")
+	}
+	if err := tt.Click(a.t("common.cancel")); err != nil {
+		t.Fatalf("Cancel: %v", err)
+	}
+	tt.Frame()
+	if a.settings.Theme != themeDark {
+		t.Fatal("reset ran after Cancel")
+	}
+	if err := tt.Click(a.t("settings.resetSettings")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	tt.Frame()
+	if err := tt.Click(a.t("common.confirm")); err != nil {
+		t.Fatalf("Confirm: %v", err)
+	}
 	waitSettingsSaved(t, a, tt)
 
 	want := *Default()
@@ -608,6 +674,7 @@ func waitSettingsSaved(t *testing.T, a *App, tt *ui.Tester) {
 func TestSettingsPageFitsNarrowWindow(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	a := New()
+	settingsConfirmPending = settingsConfirmNone
 	a.route = routeSettings
 	const width, height = 1024, 720
 	tt := ui.NewTester(a.View, width, height)
@@ -667,5 +734,24 @@ func TestSettingsPageFitsNarrowWindow(t *testing.T) {
 	}
 	if after, ok := tt.Find(a.t("common.save")); !ok || after.Y != save.Y {
 		t.Errorf("save moved from y=%v to %v while scrolling", save.Y, after.Y)
+	}
+
+	// A clear asks first in a dialog that fits the same window.
+	if err := tt.Click(a.t("settings.clearBrowseHistory")); err != nil {
+		t.Fatalf("Click the browse history clear: %v", err)
+	}
+	tt.Frame()
+	for _, key := range []string{
+		"settings.confirmBrowseHistory",
+		"common.cancel",
+		"common.confirm",
+	} {
+		r, ok := tt.Find(a.t(key))
+		if !ok || r.W == 0 || r.H == 0 || r.X < 0 || r.Y < 0 || r.X+r.W > width || r.Y+r.H > height {
+			t.Errorf("%s at %v is not in the %d by %d window", key, r, width, height)
+		}
+	}
+	if err := tt.Click(a.t("common.cancel")); err != nil {
+		t.Fatalf("Cancel the confirmation: %v", err)
 	}
 }
