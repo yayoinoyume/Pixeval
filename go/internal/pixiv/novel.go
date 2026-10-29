@@ -22,6 +22,22 @@ func (c *Client) NovelContent(ctx context.Context, novelID int64) (string, error
 	return novelText(page)
 }
 
+// AddNovelBookmark bookmarks a novel. A private bookmark is visible only to
+// the user.
+func (c *Client) AddNovelBookmark(ctx context.Context, novelID int64, private bool) error {
+	form := url.Values{}
+	form.Set("novel_id", strconv.FormatInt(novelID, 10))
+	form.Set("restrict", restrictParam(private))
+	return c.post(ctx, "/v2/novel/bookmark/add", form, nil)
+}
+
+// RemoveNovelBookmark removes the user's bookmark from a novel.
+func (c *Client) RemoveNovelBookmark(ctx context.Context, novelID int64) error {
+	form := url.Values{}
+	form.Set("novel_id", strconv.FormatInt(novelID, 10))
+	return c.post(ctx, "/v1/novel/bookmark/delete", form, nil)
+}
+
 // novelText returns the text field of the novel object embedded in a reader page.
 func novelText(page string) (string, error) {
 	obj, err := embeddedNovel(page)

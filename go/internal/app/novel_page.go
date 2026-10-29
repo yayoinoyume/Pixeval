@@ -29,6 +29,10 @@ type novelViewState struct {
 	doc     *novel.Document
 	loading bool
 	err     string
+	// bookmarked is the novel's bookmark state, taken from the list it was
+	// opened from, and bookmarking marks a request in flight.
+	bookmarked  bool
+	bookmarking bool
 	// imageURLs are the body images whose original URL is known, and
 	// imageLoading marks the illustration lookups in flight, so one image is
 	// looked up once.
@@ -38,10 +42,12 @@ type novelViewState struct {
 
 // novelPageView is what the novel page draws.
 type novelPageView struct {
-	doc       *novel.Document
-	loading   bool
-	err       string
-	imageURLs map[novel.Image]string
+	doc         *novel.Document
+	loading     bool
+	err         string
+	bookmarked  bool
+	bookmarking bool
+	imageURLs   map[novel.Image]string
 }
 
 func (v *novelViewState) snapshot() novelPageView {
@@ -51,7 +57,14 @@ func (v *novelViewState) snapshot() novelPageView {
 	for img, url := range v.imageURLs {
 		urls[img] = url
 	}
-	return novelPageView{doc: v.doc, loading: v.loading, err: v.err, imageURLs: urls}
+	return novelPageView{
+		doc:         v.doc,
+		loading:     v.loading,
+		err:         v.err,
+		bookmarked:  v.bookmarked,
+		bookmarking: v.bookmarking,
+		imageURLs:   urls,
+	}
 }
 
 // openNovel shows the novel's reading page: the body loads off the main
@@ -64,11 +77,32 @@ func (a *App) openNovel(novelID int64, title string) {
 		novelID:      novelID,
 		title:        title,
 		loading:      true,
+		bookmarked:   a.novelBookmarked(novelID),
 		imageURLs:    map[novel.Image]string{},
 		imageLoading: map[novel.Image]bool{},
 	}
 	a.backRoute, a.route, a.novelView = a.route, routeNovel, v
 	go a.loadNovel(v)
+}
+
+// novelBookmarked reports the bookmark state the novel was listed with. The
+// click passes only the id and title, so the loaded novel feeds are asked.
+func (a *App) novelBookmarked(novelID int64) bool {
+	feeds := []*novelFeedState{a.searchNovels}
+	if a.userView != nil {
+		feeds = append(feeds, a.userView.novelFeed)
+	}
+	for _, st := range feeds {
+		if st == nil {
+			continue
+		}
+		for _, n := range st.snapshot().items {
+			if n.ID == novelID {
+				return n.IsBookmarked
+			}
+		}
+	}
+	return false
 }
 
 // loadNovel fetches and parses the novel off the main thread, then shows it.
@@ -131,6 +165,37 @@ func (a *App) loadNovelImage(v *novelViewState, img novel.Image) {
 	})
 }
 
+// toggleNovelBookmark adds or removes the novel's bookmark off the main
+// thread. The button is disabled while the request runs, and the state flips
+// only once it succeeds, so a failure leaves it unchanged.
+func (a *App) toggleNovelBookmark(v *novelViewState) {
+	v.mu.Lock()
+	if v.bookmarking || a.novelBookmarkFn == nil {
+		v.mu.Unlock()
+		return
+	}
+	v.bookmarking = true
+	on, id := !v.bookmarked, v.novelID
+	v.mu.Unlock()
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
+		defer cancel()
+		err := a.novelBookmarkFn(ctx, id, on)
+		a.update(func() {
+			v.mu.Lock()
+			defer v.mu.Unlock()
+			// The notice comes before the state change: a test that waits on
+			// the state then also sees the message.
+			if err != nil {
+				a.notice = a.tf("novel.bookmarkFailed", err.Error())
+			} else {
+				v.bookmarked = on
+			}
+			v.bookmarking = false
+		})
+	}()
+}
+
 // retryNovel loads the body again after a failure.
 func (a *App) retryNovel(v *novelViewState) {
 	v.mu.Lock()
@@ -162,6 +227,15 @@ func (a *App) novelPage(c *ui.Context) {
 				a.goBack()
 			}
 			ui.Text(c, title).FontSize(t.TextTitle).Bold().TextColor(t.Text).Grow(1).MaxLines(1)
+			if a.session != nil {
+				label := a.t("novel.bookmark")
+				if s.bookmarked {
+					label = a.t("novel.bookmarked")
+				}
+				if b := ui.Button(c, label); b.Disabled(s.bookmarking).Clicked() {
+					a.toggleNovelBookmark(v)
+				}
+			}
 			if s.err != "" {
 				if ui.Button(c, a.t("common.retry")).Clicked() {
 					a.retryNovel(v)

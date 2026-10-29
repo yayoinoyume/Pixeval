@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/novel"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
@@ -22,6 +24,15 @@ func newNovelApp(fetch func(context.Context, int64) (string, error)) *App {
 	a := New()
 	a.novelContent = fetch
 	a.images = imagex.New(nil, "")
+	return a
+}
+
+// englishNovelApp is newNovelApp speaking English, whose bookmark labels do
+// not collide with the navigation's own.
+func englishNovelApp(fetch func(context.Context, int64) (string, error)) *App {
+	a := newNovelApp(fetch)
+	a.settings.Language = i18n.LangEnUS
+	a.loadLanguage()
 	return a
 }
 
@@ -163,5 +174,115 @@ func TestNovelPageShowsUnsupportedUploadedImage(t *testing.T) {
 	tt := ui.NewTester(a.View, 1000, 700)
 	if want := "正文图片暂不支持"; !tt.HasText(want) {
 		t.Errorf("%q missing: %q", want, tt.Texts())
+	}
+}
+
+// TestNovelPageBookmark checks the bookmark button calls the API with the
+// novel's id and flips the shown state only after success, both ways.
+func TestNovelPageBookmark(t *testing.T) {
+	a := englishNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7}}
+	calls := make(chan string, 2)
+	a.novelBookmarkFn = func(_ context.Context, id int64, on bool) error {
+		calls <- fmt.Sprintf("%d:%v", id, on)
+		return nil
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("Bookmark"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	select {
+	case got := <-calls:
+		if got != "7:true" {
+			t.Errorf("bookmark call %q, want 7:true", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the bookmark button did not request a bookmark")
+	}
+	waitNovel(t, a, func(v novelPageView) bool { return v.bookmarked && !v.bookmarking })
+	tt.Frame()
+	if _, ok := tt.Find("Bookmarked"); !ok {
+		t.Errorf("bookmarked state missing: %q", tt.Texts())
+	}
+
+	if err := tt.Click("Bookmarked"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	select {
+	case got := <-calls:
+		if got != "7:false" {
+			t.Errorf("unbookmark call %q, want 7:false", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("the bookmark button did not request an unbookmark")
+	}
+	waitNovel(t, a, func(v novelPageView) bool { return !v.bookmarked && !v.bookmarking })
+	tt.Frame()
+	if _, ok := tt.Find("Bookmark"); !ok {
+		t.Errorf("unbookmarked state missing: %q", tt.Texts())
+	}
+}
+
+// TestNovelPageBookmarkStartsFromList checks the button starts from the
+// bookmark state the novel was listed with.
+func TestNovelPageBookmarkStartsFromList(t *testing.T) {
+	a := englishNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7}}
+	a.searchNovels = &novelFeedState{items: []pixiv.Novel{{ID: 7, IsBookmarked: true}}}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if _, ok := tt.Find("Bookmarked"); !ok {
+		t.Errorf("listed bookmark state missing: %q", tt.Texts())
+	}
+}
+
+// TestNovelPageBookmarkFailure checks a failed request keeps the shown state
+// and leaves the reason as a notice.
+func TestNovelPageBookmarkFailure(t *testing.T) {
+	a := englishNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7}}
+	release := make(chan struct{})
+	a.novelBookmarkFn = func(context.Context, int64, bool) error {
+		<-release
+		return errors.New("网络错误")
+	}
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("Bookmark"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	close(release)
+	waitNovel(t, a, func(v novelPageView) bool { return !v.bookmarking })
+	if a.novelView.snapshot().bookmarked {
+		t.Error("a failed bookmark left the novel bookmarked")
+	}
+	if want := a.tf("novel.bookmarkFailed", "网络错误"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("Bookmark"); !ok {
+		t.Errorf("bookmark button missing after failure: %q", tt.Texts())
+	}
+}
+
+// TestNovelPageBookmarkHiddenWhenLoggedOut checks the button is not drawn
+// without a signed-in account.
+func TestNovelPageBookmarkHiddenWhenLoggedOut(t *testing.T) {
+	a := englishNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	for _, label := range []string{"Bookmark", "Bookmarked"} {
+		if _, ok := tt.Find(label); ok {
+			t.Errorf("%q drawn while logged out: %q", label, tt.Texts())
+		}
 	}
 }

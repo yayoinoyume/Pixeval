@@ -276,7 +276,10 @@
   "novel": {
     "loadFailed": "Cannot load the novel: %s",
     "imageUnsupported": "Inline images are not supported yet",
-    "pages": "%d pages"
+    "pages": "%d pages",
+    "bookmark": "Bookmark",
+    "bookmarked": "Bookmarked",
+    "bookmarkFailed": "Bookmark failed: %s"
   },
   "filter": {
     "placeholder": "Filter works, e.g. bookmarks>100",

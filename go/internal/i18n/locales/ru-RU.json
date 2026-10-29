@@ -276,7 +276,10 @@
   "novel": {
     "loadFailed": "Не удалось загрузить новеллу: %s",
     "imageUnsupported": "Встроенные изображения пока не поддерживаются",
-    "pages": "%d pages"
+    "pages": "%d pages",
+    "bookmark": "Добавить в закладки",
+    "bookmarked": "В закладках",
+    "bookmarkFailed": "Ошибка добавления в закладки: %s"
   },
   "filter": {
     "placeholder": "Фильтр работ, например bookmarks>100",

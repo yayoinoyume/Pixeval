@@ -276,7 +276,10 @@
   "novel": {
     "loadFailed": "Impossible de charger le roman : %s",
     "imageUnsupported": "Les images intégrées ne sont pas encore prises en charge",
-    "pages": "%d pages"
+    "pages": "%d pages",
+    "bookmark": "Ajouter aux favoris",
+    "bookmarked": "Ajouté aux favoris",
+    "bookmarkFailed": "Échec de l'ajout aux favoris : %s"
   },
   "filter": {
     "placeholder": "Filtrer les œuvres, p. ex. bookmarks>100",

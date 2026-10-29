@@ -125,6 +125,9 @@ type App struct {
 	// novelContent fetches a novel body off the main thread; tests replace it
 	// to avoid the network.
 	novelContent func(ctx context.Context, novelID int64) (string, error)
+	// novelBookmarkFn sets or clears a novel's bookmark off the main thread;
+	// tests replace it to avoid the network.
+	novelBookmarkFn func(ctx context.Context, id int64, on bool) error
 	// illustrationFn fetches one work's detail, which carries a novel body
 	// image's URL; tests replace it to avoid the network.
 	illustrationFn func(ctx context.Context, id int64) (*pixiv.Illustration, error)
@@ -224,18 +227,24 @@ func New() *App {
 		addCommentFn:     client.AddComment,
 		deleteCommentFn:  client.DeleteComment,
 		novelContent:     client.NovelContent,
-		illustrationFn:   client.Illustration,
-		route:            routeHome,
-		cardText:         60,
-		homeFeeds:        newHomeFeeds(),
-		newFeed:          &browseState{},
-		myPixivFeed:      &browseState{},
-		rankMode:         pixiv.Day,
-		search:           &browseState{},
-		searchNovels:     &novelFeedState{},
-		searchSort:       searchSortDateDesc,
-		searchTarget:     searchTargetPartial,
-		updater:          mygoUpdater{},
+		novelBookmarkFn: func(ctx context.Context, id int64, on bool) error {
+			if on {
+				return client.AddNovelBookmark(ctx, id, false)
+			}
+			return client.RemoveNovelBookmark(ctx, id)
+		},
+		illustrationFn: client.Illustration,
+		route:          routeHome,
+		cardText:       60,
+		homeFeeds:      newHomeFeeds(),
+		newFeed:        &browseState{},
+		myPixivFeed:    &browseState{},
+		rankMode:       pixiv.Day,
+		search:         &browseState{},
+		searchNovels:   &novelFeedState{},
+		searchSort:     searchSortDateDesc,
+		searchTarget:   searchTargetPartial,
+		updater:        mygoUpdater{},
 	}
 	// The check probes the install directory, so the settings page asks once.
 	a.updateSt.off = !a.updater.Enabled()
