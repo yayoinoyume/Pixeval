@@ -60,6 +60,35 @@ func (l *Loader) diskPut(url string, data []byte) {
 	l.evictDisk()
 }
 
+// cacheFile is one file in the cache directory that the loader owns.
+type cacheFile struct {
+	path string
+	size int64
+	at   time.Time
+}
+
+// ownedFiles lists the files the loader owns. A file beside them, which the
+// user put there, is not one of them.
+func (l *Loader) ownedFiles() []cacheFile {
+	entries, err := os.ReadDir(l.dir)
+	if err != nil {
+		return nil
+	}
+	files := make([]cacheFile, 0, len(entries))
+	for _, e := range entries {
+		info, err := e.Info()
+		if err != nil || info.IsDir() || !strings.HasPrefix(e.Name(), cachePrefix) {
+			continue
+		}
+		files = append(files, cacheFile{
+			path: filepath.Join(l.dir, e.Name()),
+			size: info.Size(),
+			at:   info.ModTime(),
+		})
+	}
+	return files
+}
+
 // evictDisk removes the least recently used files until the cache fits its
 // limit. It also clears temporary files a crash left behind.
 func (l *Loader) evictDisk() {
@@ -67,34 +96,17 @@ func (l *Loader) evictDisk() {
 	limit := l.diskLimit
 	l.mu.Unlock()
 
-	entries, err := os.ReadDir(l.dir)
-	if err != nil {
-		return
-	}
-	type file struct {
-		path string
-		size int64
-		at   time.Time
-	}
-	files := make([]file, 0, len(entries))
+	files := make([]cacheFile, 0, 16)
 	var total int64
-	for _, e := range entries {
-		info, err := e.Info()
-		if err != nil || info.IsDir() {
-			continue
-		}
-		path := filepath.Join(l.dir, e.Name())
-		if !strings.HasPrefix(e.Name(), cachePrefix) {
-			continue
-		}
-		if strings.HasSuffix(e.Name(), ".tmp") {
-			if time.Since(info.ModTime()) > time.Hour {
-				os.Remove(path)
+	for _, f := range l.ownedFiles() {
+		if strings.HasSuffix(f.path, ".tmp") {
+			if time.Since(f.at) > time.Hour {
+				os.Remove(f.path)
 			}
 			continue
 		}
-		total += info.Size()
-		files = append(files, file{path: path, size: info.Size(), at: info.ModTime()})
+		total += f.size
+		files = append(files, f)
 	}
 	if total <= limit {
 		return
@@ -108,4 +120,27 @@ func (l *Loader) evictDisk() {
 			total -= f.size
 		}
 	}
+}
+
+// ClearDisk deletes the cached bytes, leaving every other file in the cache
+// directory alone. The decoded bitmaps stay in memory, so the pictures on
+// screen do not blink out.
+func (l *Loader) ClearDisk() {
+	l.diskMu.Lock()
+	defer l.diskMu.Unlock()
+	for _, f := range l.ownedFiles() {
+		os.Remove(f.path)
+	}
+}
+
+// DiskUsage is the bytes the cache holds. It is approximate: it counts the
+// files while they are there, and a load may add one meanwhile.
+func (l *Loader) DiskUsage() int64 {
+	l.diskMu.Lock()
+	defer l.diskMu.Unlock()
+	var total int64
+	for _, f := range l.ownedFiles() {
+		total += f.size
+	}
+	return total
 }

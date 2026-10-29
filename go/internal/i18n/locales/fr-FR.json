@@ -214,6 +214,12 @@
     "proxy": "Adresse du proxy",
     "proxyHint": "Vide suit le proxy du système ou des variables d'environnement ; http://, https:// et socks5:// sont acceptés",
     "proxyInvalid": "L'adresse du proxy n'est pas valide, rien n'a été enregistré",
+    "groupCache": "Cache",
+    "cacheLimit": "Limite du cache d'images (Mo)",
+    "cacheHint": "Au-delà de la limite, les images les moins récemment utilisées sont supprimées",
+    "cacheSize": "Taille du cache",
+    "cacheClear": "Vider le cache",
+    "cacheCleared": "Cache vidé",
     "groupAbout": "À propos"
   },
   "history": {

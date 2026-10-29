@@ -166,6 +166,22 @@ func (a *App) settingsPage(c *ui.Context) {
 						})
 					})
 
+					a.settingsGroup(c, a.t("settings.groupCache"), func(row settingsRow) {
+						row(a.t("settings.cacheLimit"), a.t("settings.cacheHint"), func() {
+							a.numberStepper(c, &s.ImageCacheLimitMB, imageCacheLimitMin, imageCacheLimitMax, 64,
+								a.t("settings.cacheLimit"))
+						})
+						row(a.t("settings.cacheSize"), "", func() {
+							ui.Text(c, cacheSizeText(a.cacheUsageSnapshot())).FontSize(t.TextSmall).
+								TextColor(t.TextMuted)
+							if ui.Button(c, a.t("settings.cacheClear")).Clicked() {
+								a.clearImageCache()
+								c.Toast(a.t("settings.cacheCleared"))
+								c.Invalidate()
+							}
+						})
+					})
+
 					a.settingsGroup(c, a.t("settings.groupContent"), func(row settingsRow) {
 						row(a.t("settings.showR18"), a.t("settings.showR18Hint"), func() {
 							switchControl(c, &s.ShowR18, a.t("settings.showR18"))
@@ -378,6 +394,41 @@ func switchControl(c *ui.Context, on *bool, label string) {
 	})
 }
 
+// cacheUsageSnapshot is the cache size the page shows, measured at most once
+// a second: a redraw every frame would otherwise scan the cache directory
+// every frame. Only the main thread reads and writes it.
+func (a *App) cacheUsageSnapshot() int64 {
+	if time.Since(a.cacheUsageAt) > time.Second {
+		if a.images != nil {
+			a.cacheUsage = a.images.DiskUsage()
+		}
+		a.cacheUsageAt = time.Now()
+	}
+	return a.cacheUsage
+}
+
+// clearImageCache deletes the cached image bytes and makes the next frame
+// measure what is left.
+func (a *App) clearImageCache() {
+	if a.images != nil {
+		a.images.ClearDisk()
+	}
+	a.cacheUsageAt = time.Time{}
+}
+
+// cacheSizeText is a cache size in the unit a person reads.
+func cacheSizeText(bytes int64) string {
+	switch {
+	case bytes >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/(1<<30))
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(bytes)/(1<<10))
+	}
+	return fmt.Sprintf("%d B", bytes)
+}
+
 // updateStatus is the line under the update row: what the last check found,
 // or why it cannot run.
 func (a *App) updateStatus(c *ui.Context) {
@@ -491,6 +542,12 @@ func (a *App) applySavedSettings(c *ui.Context) {
 		a.downloadsDir = settingsDownloadDir(a.settings)
 		if a.downloads != nil {
 			a.downloads.SetConcurrency(a.settings.DownloadConcurrency)
+		}
+		// A smaller limit applies to the files already cached, so the save may
+		// delete some, and the page measures the cache again.
+		if a.images != nil {
+			a.images.SetDiskLimit(imageCacheLimitBytes(a.settings))
+			a.cacheUsageAt = time.Time{}
 		}
 		if err := a.client.SetProxy(a.settings.ProxyURL); err != nil {
 			a.settingsErr = a.t("settings.proxyInvalid")

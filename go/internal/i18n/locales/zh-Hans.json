@@ -214,6 +214,12 @@
     "proxy": "代理地址",
     "proxyHint": "留空则跟随系统或环境变量；支持 http://、https://、socks5://",
     "proxyInvalid": "代理地址无效，未保存",
+    "groupCache": "缓存",
+    "cacheLimit": "图片缓存上限（MB）",
+    "cacheHint": "超出上限时按最久未使用删除图片缓存",
+    "cacheSize": "当前缓存大小",
+    "cacheClear": "清理缓存",
+    "cacheCleared": "缓存已清理",
     "groupAbout": "关于"
   },
   "history": {
