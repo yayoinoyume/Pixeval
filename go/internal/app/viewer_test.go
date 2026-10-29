@@ -766,3 +766,139 @@ func TestViewerUgoiraFailed(t *testing.T) {
 		return frames != nil && playing
 	})
 }
+
+// TestViewerRotateCycle checks a quarter turn walks through the four
+// orientations and that a turn the other way wraps the same way.
+func TestViewerRotateCycle(t *testing.T) {
+	v := &viewerState{zoom: 1}
+	for _, want := range []int{90, 180, 270, 0} {
+		v.rotateBy(90)
+		if got := v.rotation; got != want {
+			t.Errorf("rotation %d after a right turn, want %d", got, want)
+		}
+	}
+	v.rotateBy(-90)
+	if got := v.rotation; got != 270 {
+		t.Errorf("rotation %d after a left turn from 0, want 270", got)
+	}
+}
+
+// TestViewerMirrorAndReset checks the mirror flips both ways, and that the
+// reset clears the turn, the mirror, the zoom and the pan.
+func TestViewerMirrorAndReset(t *testing.T) {
+	v := &viewerState{zoom: 1}
+	v.toggleMirror()
+	if !v.mirror {
+		t.Fatal("mirror not set after one toggle")
+	}
+	v.toggleMirror()
+	if v.mirror {
+		t.Fatal("mirror still set after two toggles")
+	}
+	v.rotateBy(90)
+	v.toggleMirror()
+	v.zoomAt(2, 0, 0)
+	v.resetView()
+	if v.rotation != 0 || v.mirror || v.zoom != 1 || v.panX != 0 || v.panY != 0 {
+		t.Errorf("reset left rotation %d, mirror %v, zoom %v, pan %v,%v",
+			v.rotation, v.mirror, v.zoom, v.panX, v.panY)
+	}
+}
+
+// TestViewerPanClampQuarterTurn checks a quarter turn swaps the sides the
+// pan can reach, and shrinks a wide picture so its turned side fits the
+// stage, so the image cannot be dragged off or drawn clipped.
+func TestViewerPanClampQuarterTurn(t *testing.T) {
+	v := &viewerState{zoom: 2, viewW: 1000, viewH: 600}
+	v.bmp = ui.NewBitmap(image.NewRGBA(image.Rect(0, 0, 100, 50)))
+	if got := v.turnFit(100, 50); got != 1 {
+		t.Errorf("turn fit %v upright, want 1", got)
+	}
+	v.panX, v.panY = 5000, -5000
+	v.clampPan()
+	if v.panX != 500 || v.panY != -200 {
+		t.Fatalf("pan %v,%v want 500,-200", v.panX, v.panY)
+	}
+	// Turned, the picture is 1000 wide and 2000 high: it fits only at 0.6,
+	// cannot pan sideways at all, and keeps the vertical offset it had.
+	v.rotateBy(90)
+	if got := v.turnFit(100, 50); got != 0.6 {
+		t.Errorf("turn fit %v, want 0.6", got)
+	}
+	if v.panX != 0 || v.panY != -200 {
+		t.Errorf("pan %v,%v after the turn, want 0,-200", v.panX, v.panY)
+	}
+}
+
+// TestViewerTransformShortcuts checks the viewer's keys turn, mirror and
+// reset the picture while it is open, and that they do nothing once it is
+// closed.
+func TestViewerTransformShortcuts(t *testing.T) {
+	a := newViewerApp(newImageTransport(nil))
+	w := viewerWork()
+	a.openViewer(&w, 0)
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	tt.Key(0, ui.KeyR)
+	if got := a.viewer.rotation; got != 90 {
+		t.Errorf("rotation %d after R, want 90", got)
+	}
+	tt.Key(ui.Shift, ui.KeyR)
+	if got := a.viewer.rotation; got != 0 {
+		t.Errorf("rotation %d after Shift+R, want 0", got)
+	}
+	tt.Key(0, ui.KeyM)
+	if !a.viewer.mirror {
+		t.Error("mirror not set after M")
+	}
+	tt.Key(0, ui.KeyR)
+	tt.Key(0, ui.Key0)
+	if v := a.viewer; v.rotation != 0 || v.mirror || v.zoom != 1 {
+		t.Errorf("after 0: rotation %d, mirror %v, zoom %v, want 0, false, 1",
+			v.rotation, v.mirror, v.zoom)
+	}
+	tt.Key(0, ui.KeyEscape)
+	if a.viewer != nil {
+		t.Fatal("escape did not close the viewer")
+	}
+	// The keys belong to the viewer: on the page under it they change
+	// nothing and open nothing.
+	tt.Key(0, ui.KeyR)
+	tt.Key(0, ui.KeyM)
+	if a.viewer != nil {
+		t.Fatal("a transform key opened the viewer")
+	}
+}
+
+// TestViewerUgoiraTakesTransform checks the animation's frames are drawn
+// with the same turn and mirror a still gets, and that playback survives
+// them.
+func TestViewerUgoiraTakesTransform(t *testing.T) {
+	tr := &ugoiraTransport{frames: 2, zipData: ugoiraZip(t, 2)}
+	a := newViewerApp(tr)
+	w := ugoiraWork()
+	a.openViewer(&w, 0)
+	waitUgoira(t, a.viewer, "load", func(frames *animated.Frames, _ int, playing, _, _ bool) bool {
+		return frames != nil && playing
+	})
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	tt.Key(0, ui.KeyR)
+	tt.Key(ui.Shift, ui.KeyR)
+	tt.Key(ui.Shift, ui.KeyR)
+	tt.Key(0, ui.KeyM)
+	if got := a.viewer.rotation; got != 270 {
+		t.Fatalf("rotation %d, want 270", got)
+	}
+	if !a.viewer.mirror {
+		t.Fatal("mirror not set")
+	}
+	_, frame, _, _, _ := a.viewer.ugoiraState()
+	tt.Frame()
+	if _, ok := tt.Find("动图：动图作品"); !ok {
+		t.Errorf("the turned frame has no label: %q", tt.Texts())
+	}
+	waitUgoira(t, a.viewer, "advance while turned", func(_ *animated.Frames, f int, play, _, _ bool) bool {
+		return play && f != frame
+	})
+}
