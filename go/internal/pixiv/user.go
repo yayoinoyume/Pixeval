@@ -56,6 +56,27 @@ func (c *Client) UserFollowers(ctx context.Context, userID int64) (*Page[UserPre
 	return c.userPreviewPage(ctx, c.pageURL("/v1/user/follower", q))
 }
 
+// RecommendedUsers lists the users Pixiv recommends to the signed-in user.
+func (c *Client) RecommendedUsers(ctx context.Context) (*Page[UserPreview], error) {
+	q := url.Values{}
+	c.setFilter(q)
+	return c.recommendedUserPage(ctx, c.pageURL("/v1/user/recommended", q))
+}
+
+// NextRecommendedUsers loads the page a recommended list's NextURL points to.
+// Its pages carry users, not the user_previews the other user lists use.
+func (c *Client) NextRecommendedUsers(ctx context.Context, nextURL string) (*Page[UserPreview], error) {
+	return c.recommendedUserPage(ctx, nextURL)
+}
+
+// RelatedUsers lists the users Pixiv lists beside userID.
+func (c *Client) RelatedUsers(ctx context.Context, userID int64) (*Page[UserPreview], error) {
+	q := url.Values{}
+	q.Set("user_id", strconv.FormatInt(userID, 10))
+	c.setFilter(q)
+	return c.userPreviewPage(ctx, c.pageURL("/v1/user/related", q))
+}
+
 // SearchUsers searches users by word.
 func (c *Client) SearchUsers(ctx context.Context, word string) (*Page[UserPreview], error) {
 	q := url.Values{}
@@ -72,6 +93,25 @@ func (c *Client) NextUserPreviews(ctx context.Context, nextURL string) (*Page[Us
 type userPreviewList struct {
 	Previews []UserPreview `json:"user_previews"`
 	NextURL  string        `json:"next_url"`
+}
+
+type recommendedUserList struct {
+	Users   []User `json:"users"`
+	NextURL string `json:"next_url"`
+}
+
+// recommendedUserPage decodes a user list whose entries are plain users,
+// wrapping each in the UserPreview the lists draw.
+func (c *Client) recommendedUserPage(ctx context.Context, rawURL string) (*Page[UserPreview], error) {
+	var r recommendedUserList
+	if err := c.get(ctx, rawURL, &r); err != nil {
+		return nil, err
+	}
+	previews := make([]UserPreview, len(r.Users))
+	for i, u := range r.Users {
+		previews[i] = UserPreview{User: u}
+	}
+	return &Page[UserPreview]{Items: previews, NextURL: r.NextURL}, nil
 }
 
 func (c *Client) userPreviewPage(ctx context.Context, rawURL string) (*Page[UserPreview], error) {

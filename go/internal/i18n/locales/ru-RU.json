@@ -3,6 +3,7 @@
     "home": "Главная",
     "new": "Новые",
     "mypixiv": "MyPixiv",
+    "recommendedUsers": "Рекомендуемые авторы",
     "search": "Поиск",
     "spotlight": "Обзор",
     "subscriptions": "Подписки",
@@ -256,7 +257,13 @@
     "noFollowers": "У пользователя пока нет подписчиков",
     "noSearchResults": "Пользователи не найдены",
     "followingLoadFailed": "Не удалось загрузить подписки: %s",
-    "followersLoadFailed": "Не удалось загрузить подписчиков: %s"
+    "followersLoadFailed": "Не удалось загрузить подписчиков: %s",
+    "relatedUsers": "Похожие пользователи",
+    "noRelatedUsers": "Похожих пользователей нет",
+    "noRecommendedUsers": "Рекомендуемых авторов пока нет"
+  },
+  "recommendedUsers": {
+    "title": "Рекомендуемые авторы"
   },
   "series": {
     "open": "Серия",

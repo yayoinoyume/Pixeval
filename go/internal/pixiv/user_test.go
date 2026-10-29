@@ -420,3 +420,149 @@ func TestSeriesPagingPassesNextURL(t *testing.T) {
 		t.Errorf("series detail id = %d, want 77", second.Detail.ID)
 	}
 }
+
+const recommendedUsersBody = `{"users":[{"id":9,"name":"猫画师","account":"cat",` +
+	`"profile_image_urls":{"px_50x50":"https://example.com/a.jpg"}}],` +
+	`"next_url":"https://app-api.pixiv.net/v1/user/recommended?offset=30"}`
+
+func TestRecommendedUsersDecodesUsersAndFilter(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, recommendedUsersBody))
+
+	page, err := c.RecommendedUsers(context.Background())
+	if err != nil {
+		t.Fatalf("RecommendedUsers: %v", err)
+	}
+	if got.method != http.MethodGet {
+		t.Errorf("method = %q, want GET", got.method)
+	}
+	if got.path != "/v1/user/recommended" {
+		t.Errorf("path = %q", got.path)
+	}
+	if q := got.query; q.Get("user_id") != "" || q.Get("filter") != "for_android" {
+		t.Errorf("query = %v", q)
+	}
+	if got.auth != "Bearer test-token" {
+		t.Errorf("Authorization = %q, want a Bearer token", got.auth)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items = %+v, want one user", page.Items)
+	}
+	u := page.Items[0].User
+	if u.ID != 9 || u.Name != "猫画师" || u.Account != "cat" ||
+		u.ProfileImageUrls.Px50x50 != "https://example.com/a.jpg" {
+		t.Errorf("user = %+v", u)
+	}
+	if page.NextURL == "" {
+		t.Error("next_url is empty")
+	}
+}
+
+func TestRecommendedUsersFilterFollowsAllowR18(t *testing.T) {
+	for _, allow := range []bool{false, true} {
+		var got recordedRequest
+		c := newWriteClient(t, recordInto(&got, recommendedUsersBody))
+		c.SetAllowR18(allow)
+
+		if _, err := c.RecommendedUsers(context.Background()); err != nil {
+			t.Fatalf("RecommendedUsers (AllowR18=%v): %v", allow, err)
+		}
+		want := "for_android"
+		if allow {
+			want = ""
+		}
+		if filter := got.query.Get("filter"); filter != want {
+			t.Errorf("filter = %q (AllowR18=%v), want %q", filter, allow, want)
+		}
+	}
+}
+
+func TestRecommendedUsersPagingPassesNextURL(t *testing.T) {
+	var paths []string
+	c := newWriteClient(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		io.WriteString(w, `{"users":[],"next_url":"http://`+r.Host+
+			`/v1/user/recommended?offset=30"}`)
+	})
+	ctx := context.Background()
+
+	first, err := c.RecommendedUsers(ctx)
+	if err != nil {
+		t.Fatalf("RecommendedUsers: %v", err)
+	}
+	second, err := c.NextRecommendedUsers(ctx, first.NextURL)
+	if err != nil {
+		t.Fatalf("NextRecommendedUsers: %v", err)
+	}
+	if len(paths) != 2 || paths[0] != "/v1/user/recommended" ||
+		paths[1] != "/v1/user/recommended" {
+		t.Errorf("paths = %v", paths)
+	}
+	if len(first.Items) != 0 || len(second.Items) != 0 {
+		t.Errorf("empty lists decoded as %+v / %+v", first.Items, second.Items)
+	}
+}
+
+const relatedUsersBody = `{"user_previews":[{"user":{"id":9,"name":"相似九",` +
+	`"account":"similar9"},"illusts":[{"id":7,"title":"work"}]}],` +
+	`"next_url":"https://app-api.pixiv.net/v1/user/related?user_id=42&offset=30"}`
+
+func TestRelatedUsersRequestsUserAndFilter(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, relatedUsersBody))
+
+	page, err := c.RelatedUsers(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("RelatedUsers: %v", err)
+	}
+	if got.method != http.MethodGet {
+		t.Errorf("method = %q, want GET", got.method)
+	}
+	if got.path != "/v1/user/related" {
+		t.Errorf("path = %q", got.path)
+	}
+	if q := got.query; q.Get("user_id") != "42" || q.Get("filter") != "for_android" {
+		t.Errorf("query = %v", q)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items = %+v, want one user", page.Items)
+	}
+	p := page.Items[0]
+	if p.User.ID != 9 || p.User.Name != "相似九" || p.User.Account != "similar9" ||
+		len(p.Illusts) != 1 || p.Illusts[0].ID != 7 {
+		t.Errorf("preview = %+v", p)
+	}
+	if page.NextURL == "" {
+		t.Error("next_url is empty")
+	}
+}
+
+func TestRelatedUsersPagingPassesNextURL(t *testing.T) {
+	var paths []string
+	var ids []string
+	c := newWriteClient(t, func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		ids = append(ids, r.URL.Query().Get("user_id"))
+		io.WriteString(w, `{"user_previews":[],"next_url":"http://`+r.Host+
+			`/v1/user/related?user_id=42&offset=30"}`)
+	})
+	ctx := context.Background()
+
+	first, err := c.RelatedUsers(ctx, 42)
+	if err != nil {
+		t.Fatalf("RelatedUsers: %v", err)
+	}
+	second, err := c.NextUserPreviews(ctx, first.NextURL)
+	if err != nil {
+		t.Fatalf("NextUserPreviews: %v", err)
+	}
+	if len(paths) != 2 || paths[0] != "/v1/user/related" || paths[1] != "/v1/user/related" {
+		t.Errorf("paths = %v", paths)
+	}
+	if len(ids) != 2 || ids[0] != "42" || ids[1] != "42" {
+		t.Errorf("user ids = %v", ids)
+	}
+	if len(first.Items) != 0 || len(second.Items) != 0 {
+		t.Errorf("empty lists decoded as %+v / %+v", first.Items, second.Items)
+	}
+}

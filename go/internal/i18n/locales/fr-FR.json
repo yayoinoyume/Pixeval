@@ -3,6 +3,7 @@
     "home": "Accueil",
     "new": "Nouveautés",
     "mypixiv": "MyPixiv",
+    "recommendedUsers": "Auteurs recommandés",
     "search": "Recherche",
     "spotlight": "À la une",
     "subscriptions": "Abonnements",
@@ -256,7 +257,13 @@
     "noFollowers": "Cet utilisateur n'a aucun abonné",
     "noSearchResults": "Aucun utilisateur trouvé",
     "followingLoadFailed": "Impossible de charger les abonnements : %s",
-    "followersLoadFailed": "Impossible de charger les abonnés : %s"
+    "followersLoadFailed": "Impossible de charger les abonnés : %s",
+    "relatedUsers": "Utilisateurs similaires",
+    "noRelatedUsers": "Aucun utilisateur similaire",
+    "noRecommendedUsers": "Aucun auteur recommandé pour le moment"
+  },
+  "recommendedUsers": {
+    "title": "Auteurs recommandés"
   },
   "series": {
     "open": "Série",

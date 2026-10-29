@@ -35,7 +35,9 @@ func TestShellLoggedOut(t *testing.T) {
 // its title.
 func TestShellNavSwitches(t *testing.T) {
 	a := New()
-	tt := ui.NewTester(a.View, 1000, 700)
+	// The rail is taller than 700 with every destination it has, so the
+	// window is the app's own size for the click to land.
+	tt := ui.NewTester(a.View, 1280, 820)
 	if err := tt.Click("设置"); err != nil {
 		t.Fatalf("Click: %v", err)
 	}
@@ -54,6 +56,39 @@ func TestShellNavSwitches(t *testing.T) {
 	}
 	if n < 2 {
 		t.Errorf("title not shown: %q", tt.Texts())
+	}
+}
+
+// TestShellRailSettingsReachableInShortWindow checks Settings stays pinned at
+// the rail's bottom when the window is shorter than every destination.
+func TestShellRailSettingsReachableInShortWindow(t *testing.T) {
+	a := New()
+	tt := ui.NewTester(a.View, 1280, 790)
+	tt.Frame()
+	if err := tt.Click("设置"); err != nil {
+		t.Fatalf("Click Settings: %v", err)
+	}
+	if a.route != routeSettings {
+		t.Errorf("route %q, want %q", a.route, routeSettings)
+	}
+}
+
+// TestShellRailScrollsDestinations checks a destination below the rail's
+// viewport comes into reach by scrolling the rail.
+func TestShellRailScrollsDestinations(t *testing.T) {
+	a := New()
+	tt := ui.NewTester(a.View, 1280, 600)
+	tt.Frame()
+	if err := tt.Click("稍后再看"); err == nil {
+		t.Fatal("the last destination was reachable without scrolling")
+	}
+	tt.Scroll(30, 400, 0, 400)
+	tt.Frame()
+	if err := tt.Click("稍后再看"); err != nil {
+		t.Fatalf("Click after scrolling: %v", err)
+	}
+	if a.route != routeWatchLater {
+		t.Errorf("route %q, want %q", a.route, routeWatchLater)
 	}
 }
 

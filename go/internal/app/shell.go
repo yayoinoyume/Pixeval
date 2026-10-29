@@ -15,33 +15,40 @@ import (
 type route string
 
 const (
-	routeHome       route = "home"
-	routeNew        route = "new"
-	routeMyPixiv    route = "mypixiv"
-	routeSearch     route = "search"
-	routeSpotlight  route = "spotlight"
-	routeSubs       route = "subscriptions"
-	routeDownloads  route = "downloads"
-	routeHistory    route = "history"
-	routeBookmarks  route = "bookmarks"
-	routeWatchLater route = "watchLater"
-	routeSettings   route = "settings"
-	routeUser       route = "user"
-	routeSeries     route = "series"
-	routeNovel      route = "novel"
-	routeRelated    route = "related"
+	routeHome             route = "home"
+	routeNew              route = "new"
+	routeMyPixiv          route = "mypixiv"
+	routeRecommendedUsers route = "recommendedUsers"
+	routeSearch           route = "search"
+	routeSpotlight        route = "spotlight"
+	routeSubs             route = "subscriptions"
+	routeDownloads        route = "downloads"
+	routeHistory          route = "history"
+	routeBookmarks        route = "bookmarks"
+	routeWatchLater       route = "watchLater"
+	routeSettings         route = "settings"
+	routeUser             route = "user"
+	routeUserRelated      route = "userRelated"
+	routeSeries           route = "series"
+	routeNovel            route = "novel"
+	routeRelated          route = "related"
 )
 
 // routeLabel is the navigation label of the page.
 func (a *App) routeLabel(r route) string {
-	if r == routeRelated {
+	switch r {
+	case routeRelated:
 		return a.t("related.title")
+	case routeUserRelated:
+		return a.t("user.relatedUsers")
+	case routeRecommendedUsers:
+		return a.t("recommendedUsers.title")
 	}
 	return a.t("nav." + string(r))
 }
 
 var (
-	browseRoutes  = []route{routeHome, routeNew, routeMyPixiv, routeSearch, routeSpotlight, routeSubs}
+	browseRoutes  = []route{routeHome, routeNew, routeMyPixiv, routeRecommendedUsers, routeSearch, routeSpotlight, routeSubs}
 	libraryRoutes = []route{routeDownloads, routeHistory, routeBookmarks, routeWatchLater}
 )
 
@@ -97,7 +104,7 @@ func (a *App) escape() {
 		return
 	}
 	switch a.route {
-	case routeUser, routeSeries, routeNovel, routeRelated:
+	case routeUser, routeSeries, routeNovel, routeRelated, routeUserRelated:
 		a.goBack()
 	}
 }
@@ -112,13 +119,19 @@ func (a *App) nav(c *ui.Context) {
 		BorderWidth(0, 0, 0, 1).BorderColor(t.Border).
 		Role(ui.RoleGroup).Label(a.t("nav.region")).Children(func() {
 		a.brand(c)
-		for _, r := range browseRoutes {
-			a.navItem(c, r)
-		}
-		for _, r := range libraryRoutes {
-			a.navItem(c, r)
-		}
-		ui.Spacer(c)
+		// The destinations scroll between the brand and Settings, so the rail
+		// stays usable when the window is shorter than all of them: Settings is
+		// always at the bottom.
+		ui.Scroll(c).Grow(1).Children(func() {
+			ui.Column(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
+				for _, r := range browseRoutes {
+					a.navItem(c, r)
+				}
+				for _, r := range libraryRoutes {
+					a.navItem(c, r)
+				}
+			})
+		})
 		a.navItem(c, routeSettings)
 	})
 }
@@ -140,7 +153,9 @@ func (a *App) brand(c *ui.Context) {
 func (a *App) navItem(c *ui.Context, r route) {
 	t := themeOf(c)
 	selected := a.route == r
-	label := a.routeLabel(r)
+	// The rail keeps its short name; the page header may name the page more
+	// fully.
+	label := a.t("nav." + string(r))
 	b := ui.ButtonBase(c).Key("nav."+string(r)).Width(64).Height(56).
 		Radius(t.RadiusS).Padding(t.SpaceS, 0, t.SpaceXS, 0).Gap(2).
 		Column().AlignItems(ui.Center).Justify(ui.Center).
@@ -174,7 +189,7 @@ func navGlyph(r route) *ui.SVG {
 	switch r {
 	case routeNew, routeSpotlight:
 		return iconImage
-	case routeMyPixiv:
+	case routeMyPixiv, routeRecommendedUsers:
 		return iconUser
 	case routeBookmarks:
 		return iconHeart
@@ -191,7 +206,8 @@ func (a *App) header(c *ui.Context) {
 	t := themeOf(c)
 	ui.Row(c).Height(84).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
-		if a.route == routeUser || a.route == routeSeries || a.route == routeRelated {
+		if a.route == routeUser || a.route == routeSeries || a.route == routeRelated ||
+			a.route == routeUserRelated {
 			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
@@ -234,6 +250,8 @@ func (a *App) page(c *ui.Context) {
 		a.newPage(c)
 	case routeMyPixiv:
 		a.myPixivPage(c)
+	case routeRecommendedUsers:
+		a.recommendedUsersPage(c)
 	case routeSearch:
 		a.searchPage(c)
 	case routeSpotlight:
@@ -252,6 +270,8 @@ func (a *App) page(c *ui.Context) {
 		a.settingsPage(c)
 	case routeUser:
 		a.userPage(c)
+	case routeUserRelated:
+		a.relatedUsersPage(c)
 	case routeSeries:
 		a.seriesPage(c)
 	case routeNovel:
@@ -269,6 +289,14 @@ func (a *App) page(c *ui.Context) {
 // goBack leaves a user, series or related page for the viewer or page it was
 // opened from.
 func (a *App) goBack() {
+	if a.route == routeUserRelated && a.relatedUsers != nil {
+		// The user page behind the list comes back whole, with its tabs and
+		// place, and its own way back.
+		r := a.relatedUsers
+		a.userView, a.backRoute = r.user, r.backRoute
+		a.relatedUsers, a.route = nil, routeUser
+		return
+	}
 	if a.route == routeRelated && a.related != nil {
 		r := a.related
 		a.related = r.parent

@@ -3,6 +3,7 @@
     "home": "首页",
     "new": "新作",
     "mypixiv": "MyPixiv",
+    "recommendedUsers": "推荐作者",
     "search": "搜索",
     "spotlight": "特辑",
     "subscriptions": "追更",
@@ -256,7 +257,13 @@
     "noFollowers": "这个用户还没有粉丝",
     "noSearchResults": "没有找到用户",
     "followingLoadFailed": "加载关注列表失败：%s",
-    "followersLoadFailed": "加载粉丝列表失败：%s"
+    "followersLoadFailed": "加载粉丝列表失败：%s",
+    "relatedUsers": "相关用户",
+    "noRelatedUsers": "没有相关用户",
+    "noRecommendedUsers": "暂时没有推荐作者"
+  },
+  "recommendedUsers": {
+    "title": "推荐作者"
   },
   "series": {
     "open": "系列",

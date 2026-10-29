@@ -956,3 +956,73 @@ func TestUserPageDownloadLoaded(t *testing.T) {
 		t.Errorf("%d tasks queued after the manga tab, want 2", len(tasks))
 	}
 }
+
+// TestUserPageRelatedUsersEntry checks the profile's related-users entry opens
+// that page on a visit, and going back returns to the user page with its works
+// and its own way back intact.
+func TestUserPageRelatedUsersEntry(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/user/related"] = `{"user_previews":[{"user":{"id":10,"name":"相关十",` +
+		`"account":"related10"}}],"next_url":""}`
+	a := englishPageApp(bodies)
+	a.session = &pixiv.Token{User: pixiv.TokenUser{ID: 7, Name: "画师七"}}
+	a.client.SetToken(a.session)
+	a.route = routeHistory
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	tt.Frame()
+
+	tr := a.client.HTTP().Transport.(*pageTransport)
+	if containsPart(tr.requestedURLs(), "/v1/user/related") {
+		t.Fatalf("opening the user page fetched the related list: %v", tr.requestedURLs())
+	}
+
+	userPage := a.userView
+	if err := tt.Click(a.t("user.relatedUsers")); err != nil {
+		t.Fatalf("Click related users: %v", err)
+	}
+	if a.route != routeUserRelated {
+		t.Fatalf("route %q, want %q", a.route, routeUserRelated)
+	}
+	if a.relatedUsers == nil || a.relatedUsers.userID != 7 {
+		t.Fatalf("related users view %+v, want user 7", a.relatedUsers)
+	}
+	tt.Frame()
+	waitUsers(t, a.relatedUsers.feed, func(v userListView) bool { return len(v.users) == 1 })
+	tt.Frame()
+	for _, want := range []string{a.t("user.relatedUsers"), "相关十", "@related10"} {
+		if !tt.HasText(want) {
+			t.Errorf("%q missing: %q", want, tt.Texts())
+		}
+	}
+	if !containsPart(tr.requestedURLs(), "/v1/user/related") ||
+		!containsPart(tr.requestedURLs(), "user_id=7") {
+		t.Errorf("requests = %v, want the related list of user 7", tr.requestedURLs())
+	}
+
+	if err := tt.Click(a.t("common.back")); err != nil {
+		t.Fatalf("Click back: %v", err)
+	}
+	if a.route != routeUser {
+		t.Errorf("route %q after going back, want %q", a.route, routeUser)
+	}
+	if a.userView != userPage {
+		t.Error("the user page is not the one the related list was opened from")
+	}
+	if a.backRoute != routeHistory {
+		t.Errorf("backRoute %q, want %q", a.backRoute, routeHistory)
+	}
+	if a.relatedUsers != nil {
+		t.Error("the related users page is still open")
+	}
+	tt.Frame()
+	if v := a.userView.feed.snapshot(); len(v.items) != 1 || v.items[0].ID != 11 {
+		t.Errorf("user works after going back = %+v, want work 11", v.items)
+	}
+	if n := countPart(tr.requestedURLs(), "type=illust"); n != 1 {
+		t.Errorf("illustrations requested %d times, want 1: %v", n, tr.requestedURLs())
+	}
+}
