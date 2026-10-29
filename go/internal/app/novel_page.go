@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -60,16 +61,29 @@ type novelViewState struct {
 	restorePainted bool
 	// progressTimer writes the reading place after a pause in the scrolling.
 	progressTimer *time.Timer
+	// comments are the novel's comments loaded so far, with the offset of the
+	// next page and the avatars that failed to load. The load goroutine writes
+	// them under mu.
+	comments            []pixiv.Comment
+	commentsNext        string
+	commentsOffset      int
+	commentsLoading     bool
+	commentsErr         string
+	commentAvatarFailed map[string]bool
 }
 
 // novelPageView is what the novel page draws.
 type novelPageView struct {
-	doc         *novel.Document
-	loading     bool
-	err         string
-	bookmarked  bool
-	bookmarking bool
-	imageURLs   map[novel.Image]string
+	doc             *novel.Document
+	loading         bool
+	err             string
+	bookmarked      bool
+	bookmarking     bool
+	imageURLs       map[novel.Image]string
+	comments        []pixiv.Comment
+	commentsNext    string
+	commentsLoading bool
+	commentsErr     string
 }
 
 func (v *novelViewState) snapshot() novelPageView {
@@ -80,12 +94,16 @@ func (v *novelViewState) snapshot() novelPageView {
 		urls[img] = url
 	}
 	return novelPageView{
-		doc:         v.doc,
-		loading:     v.loading,
-		err:         v.err,
-		bookmarked:  v.bookmarked,
-		bookmarking: v.bookmarking,
-		imageURLs:   urls,
+		doc:             v.doc,
+		loading:         v.loading,
+		err:             v.err,
+		bookmarked:      v.bookmarked,
+		bookmarking:     v.bookmarking,
+		imageURLs:       urls,
+		comments:        v.comments,
+		commentsNext:    v.commentsNext,
+		commentsLoading: v.commentsLoading,
+		commentsErr:     v.commentsErr,
 	}
 }
 
@@ -100,15 +118,16 @@ func (a *App) openNovel(novelID int64, title string) {
 	a.flushNovelProgress(a.novelView)
 	place := novelRestoreFraction(a.novelPlace(novelID))
 	v := &novelViewState{
-		novelID:      novelID,
-		title:        title,
-		author:       a.novelAuthor(novelID),
-		loading:      true,
-		bookmarked:   a.novelBookmarked(novelID),
-		imageURLs:    map[novel.Image]string{},
-		imageLoading: map[novel.Image]bool{},
-		restore:      place,
-		lastFraction: place,
+		novelID:             novelID,
+		title:               title,
+		author:              a.novelAuthor(novelID),
+		loading:             true,
+		bookmarked:          a.novelBookmarked(novelID),
+		imageURLs:           map[novel.Image]string{},
+		imageLoading:        map[novel.Image]bool{},
+		restore:             place,
+		lastFraction:        place,
+		commentAvatarFailed: map[string]bool{},
 	}
 	a.backRoute, a.route, a.novelView = a.route, routeNovel, v
 	go a.loadNovel(v)
@@ -182,6 +201,9 @@ func (a *App) loadNovel(v *novelViewState) {
 		v.pendingSave = false
 		go a.loadNovelImages(v, doc.Images)
 		v.mu.Unlock()
+		if a.session != nil {
+			a.loadNovelComments(v)
+		}
 		if pending {
 			a.saveNovelText(v, doc)
 		}
@@ -224,6 +246,73 @@ func (a *App) loadNovelImage(v *novelViewState, img novel.Image) {
 			v.imageURLs[img] = url
 		}
 	})
+}
+
+// loadNovelComments fetches one page of the novel's comments off the main
+// thread and appends it.
+func (a *App) loadNovelComments(v *novelViewState) {
+	if v == nil || a.fetchNovelCommentPage == nil {
+		return
+	}
+	v.mu.Lock()
+	if v.commentsLoading {
+		v.mu.Unlock()
+		return
+	}
+	v.commentsLoading = true
+	novelID, offset := v.novelID, v.commentsOffset
+	v.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
+		defer cancel()
+		page, err := a.fetchNovelCommentPage(ctx, novelID, offset)
+		a.update(func() {
+			v.mu.Lock()
+			defer v.mu.Unlock()
+			v.commentsLoading = false
+			switch {
+			case errors.Is(err, pixiv.ErrNoMore):
+				v.commentsNext = ""
+			case err != nil:
+				v.commentsErr = err.Error()
+			default:
+				v.comments = append(v.comments, page.Items...)
+				v.commentsNext = page.NextURL
+				v.commentsOffset = len(v.comments)
+			}
+		})
+	}()
+}
+
+// retryNovelComments loads the comments again after a failure, keeping the
+// pages already loaded.
+func (a *App) retryNovelComments(v *novelViewState) {
+	v.mu.Lock()
+	v.commentsErr = ""
+	v.mu.Unlock()
+	a.loadNovelComments(v)
+}
+
+// commentAvatarFailedURL reports whether the avatar did not load, so a broken
+// URL is not asked for again every frame.
+func (v *novelViewState) commentAvatarFailedURL(url string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.commentAvatarFailed[url]
+}
+
+// novelCommentAvatarReady returns the callback an avatar load calls: a probe
+// that finds nothing means the load failed, and the avatar stays a block.
+func (a *App) novelCommentAvatarReady(v *novelViewState, url string) func() {
+	return func() {
+		if a.images.Thumb(url, commentAvatar, commentAvatar, nil) == nil {
+			v.mu.Lock()
+			v.commentAvatarFailed[url] = true
+			v.mu.Unlock()
+		}
+		a.update(func() {})
+	}
 }
 
 // toggleNovelBookmark adds or removes the novel's bookmark off the main
@@ -634,6 +723,7 @@ func (a *App) novelBody(c *ui.Context, v *novelViewState, s novelPageView) {
 				for _, img := range doc.Images {
 					a.novelImage(c, img, s.imageURLs[img], st)
 				}
+				a.novelComments(c, v, s)
 			})
 		})
 	})
@@ -655,6 +745,72 @@ func (a *App) novelImage(c *ui.Context, img novel.Image, url string, st novelSty
 	}
 	ui.Box(c).FillWidth().MaxWidth(maxWidth).Height(novelImageBlock).
 		Radius(t.RadiusXS).Background(t.SurfaceAlt).Label(a.t("a11y.novelImage"))
+}
+
+// novelComments draws the novel's comments below the body: the title, the
+// loaded comments, and a button for the next page. Signed out, the section is
+// not drawn at all.
+func (a *App) novelComments(c *ui.Context, v *novelViewState, s novelPageView) {
+	if a.session == nil {
+		return
+	}
+	t := themeOf(c)
+	ui.Column(c).Gap(t.SpaceM).Padding(t.SpaceXL, 0, 0, 0).
+		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
+		ui.Text(c, a.t("novel.comments")).FontSize(t.TextTitle).Bold().TextColor(t.Text)
+		if s.commentsErr != "" {
+			ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, a.tf("novel.commentsFailed", s.commentsErr)).
+					FontSize(t.TextSmall).TextColor(t.Danger).Grow(1)
+				if ui.Button(c, a.t("common.retry")).Clicked() {
+					a.retryNovelComments(v)
+				}
+			})
+		}
+		if len(s.comments) == 0 && !s.commentsLoading && s.commentsNext == "" && s.commentsErr == "" {
+			ui.Text(c, a.t("novel.commentsEmpty")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		}
+		for i := range s.comments {
+			a.novelCommentItem(c, v, &s.comments[i])
+		}
+		if s.commentsLoading {
+			ui.Text(c, a.t("common.loading")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		}
+		if s.commentsNext != "" && !s.commentsLoading && s.commentsErr == "" {
+			if ui.Button(c, a.t("novel.loadMoreComments")).Clicked() {
+				a.loadNovelComments(v)
+			}
+		}
+	})
+}
+
+// novelCommentItem draws one comment: its avatar, author, date and text.
+func (a *App) novelCommentItem(c *ui.Context, v *novelViewState, cm *pixiv.Comment) {
+	t := themeOf(c)
+	ui.Row(c).Gap(t.SpaceS).AlignItems(ui.Start).
+		Label(a.tf("a11y.comment", cm.User.Name)).Children(func() {
+		avatar := ui.Box(c).Width(commentAvatar).Height(commentAvatar).Shrink(0).
+			Radius(t.RadiusFull).Background(t.SurfaceAlt).Clip().
+			Label(a.tf("a11y.avatar", cm.User.Name))
+		url := cm.User.ProfileImageUrls.Px50x50
+		if url != "" && !v.commentAvatarFailedURL(url) {
+			avatar.Children(func() {
+				if bmp := a.images.Thumb(url, commentAvatar, commentAvatar, a.novelCommentAvatarReady(v, url)); bmp != nil {
+					ui.Image(c, bmp).Fill()
+				}
+			})
+		}
+		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+			ui.Row(c).Gap(t.SpaceXS).Children(func() {
+				ui.Text(c, cm.User.Name).FontSize(t.TextSmall).FontWeight(600).
+					TextColor(t.Text).MaxLines(1).Grow(1)
+				ui.Text(c, detailDate(cm.CreateDate)).FontSize(t.TextMicro).
+					TextColor(t.TextMuted)
+			})
+			ui.Text(c, cm.Comment).FontSize(t.TextSmall).LineHeight(1.55).
+				TextColor(t.Text)
+		})
+	})
 }
 
 // novelImageMaxWidth is the widest a body image may draw: the image's own
