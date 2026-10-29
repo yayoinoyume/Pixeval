@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,13 @@ import (
 
 // novelBody is a body with two paragraphs and one ruby reading.
 const novelBody = "星之故事\n[chapter:第一章]\n这是第一段。\n这是[[rb:漢字>かんじ]]的故事。"
+
+// longParagraph is long enough to wrap at the narrowest reading column.
+var longParagraph = strings.Repeat("阅读栏宽度测试。", 30)
+
+// longNovelBody carries a short paragraph to measure the text at and a long
+// one whose lines the reading width sets.
+var longNovelBody = "星之故事\n这是第一段。\n" + longParagraph
 
 // newNovelApp is an app whose novel body comes from fetch, without a network.
 func newNovelApp(fetch func(context.Context, int64) (string, error)) *App {
@@ -283,6 +291,177 @@ func TestNovelPageBookmarkHiddenWhenLoggedOut(t *testing.T) {
 	for _, label := range []string{"Bookmark", "Bookmarked"} {
 		if _, ok := tt.Find(label); ok {
 			t.Errorf("%q drawn while logged out: %q", label, tt.Texts())
+		}
+	}
+}
+
+// TestNovelPageUsesTypography checks the body draws at the saved text size,
+// line spacing and reading width, and redraws when a value changes.
+func TestNovelPageUsesTypography(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := newNovelApp(func(context.Context, int64) (string, error) { return longNovelBody, nil })
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+
+	tt := ui.NewTester(a.View, 1400, 900)
+	base, ok := tt.Find("这是第一段。")
+	if !ok {
+		t.Fatalf("paragraph missing: %q", tt.Texts())
+	}
+
+	a.settings.NovelFontSize = novelFontSizeMax
+	tt.Frame()
+	big, ok := tt.Find("这是第一段。")
+	if !ok {
+		t.Fatalf("paragraph missing after the size change: %q", tt.Texts())
+	}
+	if big.H <= base.H {
+		t.Errorf("text height %v at size %d, want more than %v at %d", big.H, novelFontSizeMax, base.H, novelFontSizeDefault)
+	}
+
+	a.settings.NovelFontSize = novelFontSizeDefault
+	a.settings.NovelLineHeight = novelLineHeightMin
+	tt.Frame()
+	compact, ok := tt.Find("这是第一段。")
+	if !ok {
+		t.Fatalf("paragraph missing after the spacing change: %q", tt.Texts())
+	}
+	if compact.H >= base.H {
+		t.Errorf("text height %v at line height %v, want less than %v at %v", compact.H, novelLineHeightMin, base.H, novelLineHeightDefault)
+	}
+
+	a.settings.NovelLineHeight = novelLineHeightDefault
+	a.settings.NovelWidth = novelWidthMin
+	tt.Frame()
+	narrow, ok := tt.Find(longParagraph)
+	if !ok {
+		t.Fatalf("long paragraph missing: %q", tt.Texts())
+	}
+	a.settings.NovelWidth = novelWidthMax
+	tt.Frame()
+	wide, ok := tt.Find(longParagraph)
+	if !ok {
+		t.Fatalf("long paragraph missing after the width change: %q", tt.Texts())
+	}
+	if wide.W <= narrow.W {
+		t.Errorf("line width %v at width %v, want more than %v at %v", wide.W, novelWidthMax, narrow.W, novelWidthMin)
+	}
+}
+
+// TestNovelTypographyControls checks the buttons change the settings, stop at
+// the range's ends, and write the result.
+func TestNovelTypographyControls(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := englishNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1400, 900)
+
+	click := func(key string, up bool) {
+		t.Helper()
+		word := a.t("novel.decrease")
+		if up {
+			word = a.t("novel.increase")
+		}
+		if err := tt.Click(word + " " + a.t(key)); err != nil {
+			t.Fatalf("Click: %v", err)
+		}
+	}
+	click("novel.fontSize", false)
+	click("novel.fontSize", false)
+	click("novel.fontSize", false)
+	// A fourth press is past the range's end and must change nothing.
+	click("novel.fontSize", false)
+	click("novel.lineHeight", true)
+	click("novel.width", false)
+
+	if a.settings.NovelFontSize != novelFontSizeMin {
+		t.Errorf("font size %d, want %d", a.settings.NovelFontSize, novelFontSizeMin)
+	}
+	if want := novelLineHeightDefault + novelLineHeightStep; a.settings.NovelLineHeight != want {
+		t.Errorf("line height %v, want %v", a.settings.NovelLineHeight, want)
+	}
+	if want := float64(novelWidthDefault - novelWidthStep); a.settings.NovelWidth != want {
+		t.Errorf("width %v, want %v", a.settings.NovelWidth, want)
+	}
+
+	// The save waits for a pause after the last press; the clamped press above
+	// changed nothing, so the settings saved are the ones the others left.
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil &&
+			got.NovelFontSize == novelFontSizeMin &&
+			got.NovelLineHeight == novelLineHeightDefault+novelLineHeightStep &&
+			got.NovelWidth == float64(novelWidthDefault-novelWidthStep) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("saved settings %+v, load error %v; want the pressed values", got, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestNovelTypographySaveKeepsLaterSettings checks the paused save writes the
+// settings as they are then: a preference changed after the typography press
+// is kept, not overwritten by an older copy.
+func TestNovelTypographySaveKeepsLaterSettings(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := englishNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1400, 900)
+
+	if err := tt.Click(a.t("novel.increase") + " " + a.t("novel.fontSize")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	wantSize := novelFontSizeDefault + novelFontSizeStep
+	waitSettings(t, path, func(s *Settings) bool { return s.NovelFontSize == wantSize })
+	// The pause's save has gone through; let its result out of the one-slot
+	// channel so the second save can report too.
+	<-a.settingsSaved
+
+	// Another page changes a preference before the reading page saves again.
+	a.settings.Theme = themeDark
+	a.saveNovelTypography()
+	waitSettings(t, path, func(s *Settings) bool { return s.NovelFontSize == wantSize && s.Theme == themeDark })
+}
+
+// waitSettings polls the saved file until want holds.
+func waitSettings(t *testing.T, path string, want func(*Settings) bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil && want(got) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("saved settings %+v, load error %v; want does not hold", got, err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestNovelImageMaxWidth checks a body image never draws wider than the
+// reading column, whose narrowest setting is below the image's own limit.
+func TestNovelImageMaxWidth(t *testing.T) {
+	for _, tt := range []struct{ reading, want float32 }{
+		{novelWidthMin, novelWidthMin},
+		{novelWidthDefault, novelImageWidth},
+		{novelWidthMax, novelImageWidth},
+	} {
+		if got := novelImageMaxWidth(tt.reading); got != tt.want {
+			t.Errorf("max width %v at reading width %v, want %v", got, tt.reading, tt.want)
 		}
 	}
 }

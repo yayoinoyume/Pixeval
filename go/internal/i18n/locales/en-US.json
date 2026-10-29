@@ -290,7 +290,12 @@
     "pages": "%d pages",
     "bookmark": "Bookmark",
     "bookmarked": "Bookmarked",
-    "bookmarkFailed": "Bookmark failed: %s"
+    "bookmarkFailed": "Bookmark failed: %s",
+    "fontSize": "Font size",
+    "lineHeight": "Line spacing",
+    "width": "Width",
+    "decrease": "Decrease",
+    "increase": "Increase"
   },
   "filter": {
     "placeholder": "Filter works, e.g. bookmarks>100",

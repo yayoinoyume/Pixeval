@@ -31,6 +31,24 @@ const (
 	subscriptionIntervalMax     = 1440
 )
 
+// The reading page's typography, and how far a control moves it per press.
+const (
+	novelFontSizeDefault = 17
+	novelFontSizeMin     = 14
+	novelFontSizeMax     = 24
+	novelFontSizeStep    = 1
+
+	novelLineHeightDefault = 1.8
+	novelLineHeightMin     = 1.4
+	novelLineHeightMax     = 2.2
+	novelLineHeightStep    = 0.1
+
+	novelWidthDefault = 760
+	novelWidthMin     = 640
+	novelWidthMax     = 960
+	novelWidthStep    = 20
+)
+
 // Settings are the user's preferences, kept in settings.json under the user's
 // config directory.
 type Settings struct {
@@ -45,6 +63,11 @@ type Settings struct {
 	AutoDownloadSubscriptions bool `json:"autoDownloadSubscriptions"`
 	// SubscriptionIntervalMinutes is how often the check runs.
 	SubscriptionIntervalMinutes int `json:"subscriptionIntervalMinutes"`
+	// NovelFontSize is the reading page's body text size, NovelLineHeight its
+	// line height, and NovelWidth the reading column's width.
+	NovelFontSize   int     `json:"novelFontSize"`
+	NovelLineHeight float64 `json:"novelLineHeight"`
+	NovelWidth      float64 `json:"novelWidth"`
 }
 
 // Default is the settings of a first run.
@@ -64,6 +87,10 @@ func Default() *Settings {
 
 		AutoDownloadSubscriptions:   false,
 		SubscriptionIntervalMinutes: subscriptionIntervalDefault,
+
+		NovelFontSize:   novelFontSizeDefault,
+		NovelLineHeight: novelLineHeightDefault,
+		NovelWidth:      novelWidthDefault,
 	}
 }
 
@@ -174,6 +201,15 @@ func (s *Settings) normalize() {
 	}
 	if s.CardWidth < 180 || s.CardWidth > 360 {
 		s.CardWidth = cardWidth
+	}
+	if s.NovelFontSize < novelFontSizeMin || s.NovelFontSize > novelFontSizeMax {
+		s.NovelFontSize = novelFontSizeDefault
+	}
+	if s.NovelLineHeight < novelLineHeightMin || s.NovelLineHeight > novelLineHeightMax {
+		s.NovelLineHeight = novelLineHeightDefault
+	}
+	if s.NovelWidth < novelWidthMin || s.NovelWidth > novelWidthMax {
+		s.NovelWidth = novelWidthDefault
 	}
 	if s.SubscriptionIntervalMinutes < subscriptionIntervalMin ||
 		s.SubscriptionIntervalMinutes > subscriptionIntervalMax {
