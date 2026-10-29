@@ -47,6 +47,7 @@ const (
 	routeRelated          route = "related"
 	routeHelp             route = "help"
 	routeAbout            route = "about"
+	routeExtensions       route = "extensions"
 )
 
 // routeLabel is the navigation label of the page.
@@ -159,7 +160,7 @@ func (a *App) escape() {
 	}
 	switch a.route {
 	case routeUser, routeSeries, routeNovel, routeRelated, routeUserRelated,
-		routeUserMyPixiv, routeHelp, routeAbout:
+		routeUserMyPixiv, routeHelp, routeAbout, routeExtensions:
 		a.goBack()
 	}
 }
@@ -358,7 +359,7 @@ func (a *App) header(c *ui.Context) {
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		if a.route == routeUser || a.route == routeSeries || a.route == routeRelated ||
 			a.route == routeUserRelated || a.route == routeUserMyPixiv ||
-			a.route == routeHelp || a.route == routeAbout {
+			a.route == routeHelp || a.route == routeAbout || a.route == routeExtensions {
 			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
@@ -572,6 +573,8 @@ func (a *App) page(c *ui.Context) {
 		a.helpPage(c)
 	case routeAbout:
 		a.aboutPage(c)
+	case routeExtensions:
+		a.extensionsPage(c)
 	default:
 		t := themeOf(c)
 		ui.Column(c).Grow(1).Center().Children(func() {
