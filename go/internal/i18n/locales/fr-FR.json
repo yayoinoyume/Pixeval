@@ -5,6 +5,7 @@
     "subscriptions": "Abonnements",
     "downloads": "Téléchargements",
     "history": "Historique",
+    "bookmarks": "Favoris",
     "settings": "Paramètres",
     "login": "Se connecter",
     "logout": "Se déconnecter",
@@ -172,6 +173,14 @@
     "count": "%d entrées",
     "clear": "Effacer l'historique",
     "openFailed": "Impossible d'ouvrir l'œuvre : %s"
+  },
+  "bookmarks": {
+    "public": "Public",
+    "private": "Privé",
+    "empty": "Aucun favori pour l'instant",
+    "emptyHint": "Les œuvres ajoutées aux favoris depuis leur page apparaissent ici",
+    "unbookmark": "Retirer des favoris",
+    "unbookmarkFailed": "Impossible de retirer le favori : %s"
   },
   "login": {
     "title": "Se connecter à Pixiv",

@@ -97,6 +97,15 @@ type App struct {
 	// bookmarkFn sets or clears a work's bookmark off the main thread; tests
 	// replace it to avoid the network.
 	bookmarkFn func(ctx context.Context, id int64, on bool) error
+	// bookmarksTab is the bookmarks page's tab, public or private, and
+	// bookmarks is its feed. Switching tabs restarts the feed, so works of
+	// the other tab never show in it.
+	bookmarksTab int
+	bookmarks    *browseState
+	// bookmarksPageFn fetches one page of the signed-in user's bookmarks off
+	// the main thread; tests replace it to avoid the network. An empty next
+	// asks for the tab's first page.
+	bookmarksPageFn func(ctx context.Context, private bool, next string) (*pixiv.Page[pixiv.Illustration], error)
 	// followFn follows or unfollows a user off the main thread; tests replace
 	// it to avoid the network.
 	followFn func(ctx context.Context, id int64, on bool) error
@@ -182,6 +191,17 @@ func New() *App {
 				return client.AddBookmark(ctx, id, false)
 			}
 			return client.RemoveBookmark(ctx, id)
+		},
+		bookmarks: &browseState{},
+		bookmarksPageFn: func(ctx context.Context, private bool, next string) (*pixiv.Page[pixiv.Illustration], error) {
+			if next != "" {
+				return client.NextIllustrations(ctx, next)
+			}
+			var userID int64
+			if tok := client.Token(); tok != nil {
+				userID = int64(tok.User.ID)
+			}
+			return client.BookmarkedIllustrations(ctx, userID, private, 0)
 		},
 		followFn: func(ctx context.Context, id int64, on bool) error {
 			if on {
@@ -373,6 +393,7 @@ func (a *App) logout() {
 			// next login starts empty.
 			a.homeFeeds = newHomeFeeds()
 			a.armHome(a.homeTab)
+			a.bookmarks = &browseState{}
 		})
 	}()
 }
