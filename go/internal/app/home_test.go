@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 
@@ -379,5 +380,304 @@ func TestHomeFitsNarrowWindow(t *testing.T) {
 		if r.X < 0 || r.X+r.W > width {
 			t.Errorf("%q at %v overflows the %d wide window", label, r, width)
 		}
+	}
+}
+
+// homeSources lists the cards' sources in the order the page draws them.
+func homeSources(cards []homeCard) []homeCardSource {
+	out := make([]homeCardSource, len(cards))
+	for i := range cards {
+		out[i] = cards[i].Source
+	}
+	return out
+}
+
+// requireHomeSources fails unless the page shows want, in that order.
+func requireHomeSources(t *testing.T, a *App, want ...homeCardSource) {
+	t.Helper()
+	got := homeSources(a.homeCards)
+	if len(got) != len(want) {
+		t.Fatalf("cards %q, want %q", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("cards %q, want %q", got, want)
+		}
+	}
+}
+
+// openHomeEditor shows the home page and turns card editing on.
+func openHomeEditor(t *testing.T, a *App, tt *ui.Tester) {
+	t.Helper()
+	tt.Frame()
+	if err := tt.Click(a.t("home.edit")); err != nil {
+		t.Fatalf("click %q: %v", a.t("home.edit"), err)
+	}
+	if !a.homeEditing {
+		t.Fatal("the page is not editing after its button")
+	}
+	tt.Frame()
+}
+
+// TestHomeEditTogglesControls checks the header opens the card controls and
+// Done closes them, without changing the cards.
+func TestHomeEditTogglesControls(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, 1024, 720)
+	tt.Frame()
+	if !tt.HasText(a.t("home.edit")) {
+		t.Fatalf("the header has no edit button: %q", tt.Texts())
+	}
+	if _, ok := tt.Find(a.homeCardActionLabel("home.moveUp", a.homeCards[0])); ok {
+		t.Fatal("the page shows edit controls before editing")
+	}
+	openHomeEditor(t, a, tt)
+	if !tt.HasText(a.t("home.editDone")) {
+		t.Fatalf("the editor has no Done button: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("home.editDone")); err != nil {
+		t.Fatalf("click %q: %v", a.t("home.editDone"), err)
+	}
+	if a.homeEditing {
+		t.Fatal("the page is still editing after Done")
+	}
+	tt.Frame()
+	if _, ok := tt.Find(a.homeCardActionLabel("home.moveUp", a.homeCards[0])); ok {
+		t.Fatal("the edit controls stayed after Done")
+	}
+}
+
+// TestHomeEditMovesCardsAndSaves checks a card moves down and back up, and
+// each move is in the saved layout.
+func TestHomeEditMovesCardsAndSaves(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, 1024, 720)
+	openHomeEditor(t, a, tt)
+	path, err := homeLayoutPath()
+	if err != nil {
+		t.Fatalf("homeLayoutPath: %v", err)
+	}
+
+	if err := tt.Click(a.homeCardActionLabel("home.moveDown", a.homeCards[0])); err != nil {
+		t.Fatalf("click Move down: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceFollowing, homeSourceRecommended, homeSourceRanking)
+	loaded, err := loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if got := homeSources(loaded); len(got) != 3 || got[0] != homeSourceFollowing ||
+		got[1] != homeSourceRecommended || got[2] != homeSourceRanking {
+		t.Fatalf("saved cards %q after the move", got)
+	}
+
+	if err := tt.Click(a.homeCardActionLabel("home.moveUp", a.homeCards[1])); err != nil {
+		t.Fatalf("click Move up: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceRecommended, homeSourceFollowing, homeSourceRanking)
+	loaded, err = loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if got := homeSources(loaded); len(got) != 3 || got[0] != homeSourceRecommended {
+		t.Fatalf("saved cards %q after moving back", got)
+	}
+}
+
+// TestHomeEditRemovesCardsAndKeepsOne checks a card leaves the page and the
+// file, and that the last card is kept with an explanation.
+func TestHomeEditRemovesCardsAndKeepsOne(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, 1024, 720)
+	openHomeEditor(t, a, tt)
+	path, err := homeLayoutPath()
+	if err != nil {
+		t.Fatalf("homeLayoutPath: %v", err)
+	}
+
+	if err := tt.Click(a.homeCardActionLabel("home.removeCard", a.homeCards[0])); err != nil {
+		t.Fatalf("click Remove card: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceFollowing, homeSourceRanking)
+	loaded, err := loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if got := homeSources(loaded); len(got) != 2 || got[0] != homeSourceFollowing {
+		t.Fatalf("saved cards %q after the removal", got)
+	}
+
+	if err := tt.Click(a.homeCardActionLabel("home.removeCard", a.homeCards[0])); err != nil {
+		t.Fatalf("click Remove card: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceRanking)
+	loaded, err = loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if got := homeSources(loaded); len(got) != 1 || got[0] != homeSourceRanking {
+		t.Fatalf("saved cards %q after the second removal", got)
+	}
+
+	if err := tt.Click(a.homeCardActionLabel("home.removeCard", a.homeCards[0])); err != nil {
+		t.Fatalf("click Remove card on the last card: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceRanking)
+	if !tt.HasText(a.t("home.lastCard")) {
+		t.Fatalf("removing the last card said nothing: %q", tt.Texts())
+	}
+	loaded, err = loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if len(loaded) != 1 {
+		t.Fatalf("saved cards %q after the refused removal", homeSources(loaded))
+	}
+}
+
+// pressAddCard opens the add-card menu from the end of the edit page.
+func pressAddCard(t *testing.T, a *App, tt *ui.Tester) {
+	t.Helper()
+	tt.Scroll(512, 400, 0, 4000)
+	tt.Frame()
+	r, ok := tt.Find(a.t("home.addCard"))
+	if !ok {
+		t.Fatalf("the add-card menu is missing: %q", tt.Texts())
+	}
+	tt.Press(r.X+r.W/2, r.Y+r.H/2)
+}
+
+// TestHomeEditAddsCardAndResets checks the add-card menu offers the six
+// sources, adds the chosen one to the page and the file, and Reset brings the
+// default cards back.
+func TestHomeEditAddsCardAndResets(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, 1024, 720)
+	openHomeEditor(t, a, tt)
+	path, err := homeLayoutPath()
+	if err != nil {
+		t.Fatalf("homeLayoutPath: %v", err)
+	}
+
+	pressAddCard(t, a, tt)
+	menu := tt.Menu()
+	for _, source := range homeCardSources {
+		label := a.homeSourceLabel(source)
+		if !slices.Contains(menu, label) {
+			t.Fatalf("the add-card menu has no %q: %q", label, menu)
+		}
+	}
+	if err := tt.ChooseMenuItem(a.t("home.source.new")); err != nil {
+		t.Fatalf("choose New: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceRecommended, homeSourceFollowing,
+		homeSourceRanking, homeSourceNew)
+	loaded, err := loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if got := homeSources(loaded); len(got) != 4 || got[3] != homeSourceNew {
+		t.Fatalf("saved cards %q after the addition", got)
+	}
+
+	tt.Scroll(512, 400, 0, 4000)
+	tt.Frame()
+	if err := tt.Click(a.t("home.resetCards")); err != nil {
+		t.Fatalf("click Reset: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceRecommended, homeSourceFollowing, homeSourceRanking)
+	loaded, err = loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if got := homeSources(loaded); len(got) != 3 || got[0] != homeSourceRecommended {
+		t.Fatalf("saved cards %q after the reset", got)
+	}
+}
+
+// TestHomeEditAddsRankingCardOnDay checks a ranking card added in edit mode
+// starts on the day ranking, as the default ranking card does.
+func TestHomeEditAddsRankingCardOnDay(t *testing.T) {
+	a := newHomeApp(t)
+	a.homeCards = []homeCard{{Source: homeSourceRecommended, feed: &browseState{}}}
+	tt := ui.NewTester(a.View, 1024, 720)
+	openHomeEditor(t, a, tt)
+	pressAddCard(t, a, tt)
+	if err := tt.ChooseMenuItem(a.t("home.source.ranking")); err != nil {
+		t.Fatalf("choose Ranking: %v", err)
+	}
+	tt.Frame()
+	requireHomeSources(t, a, homeSourceRecommended, homeSourceRanking)
+	if mode := a.homeCards[1].RankMode; mode != pixiv.Day {
+		t.Fatalf("added ranking card mode %q, want %q", mode, pixiv.Day)
+	}
+	path, err := homeLayoutPath()
+	if err != nil {
+		t.Fatalf("homeLayoutPath: %v", err)
+	}
+	loaded, err := loadHomeLayoutFile(path)
+	if err != nil {
+		t.Fatalf("loadHomeLayoutFile: %v", err)
+	}
+	if len(loaded) != 2 || loaded[1].RankMode != pixiv.Day {
+		t.Fatalf("saved ranking card %+v", loaded)
+	}
+}
+
+// TestHomeEditControlsFitNarrowWindow checks the edit controls stay inside
+// the 1024x720 window, both on the cards and at the page's end.
+func TestHomeEditControlsFitNarrowWindow(t *testing.T) {
+	const width = 1024
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	tt := ui.NewTester(a.View, width, 720)
+	openHomeEditor(t, a, tt)
+	check := func(label string) {
+		t.Helper()
+		r, ok := tt.Find(label)
+		if !ok || r.W == 0 {
+			t.Fatalf("%q is not laid out: %q", label, tt.Texts())
+		}
+		if r.X < 0 || r.X+r.W > width {
+			t.Errorf("%q at %v overflows the %d wide window", label, r, width)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		for _, key := range []string{"home.moveUp", "home.moveDown", "home.removeCard"} {
+			check(a.homeCardActionLabel(key, a.homeCards[i]))
+		}
+	}
+	// The third card is below the fold until the page scrolls; the edit row
+	// must fit just the same once it is in reach.
+	tt.Scroll(width/2, 400, 0, 400)
+	tt.Frame()
+	for _, key := range []string{"home.moveUp", "home.moveDown", "home.removeCard"} {
+		check(a.homeCardActionLabel(key, a.homeCards[2]))
+	}
+	tt.Scroll(width/2, 400, 0, 400)
+	tt.Frame()
+	for _, label := range []string{a.t("home.addCard"), a.t("home.resetCards")} {
+		check(label)
 	}
 }

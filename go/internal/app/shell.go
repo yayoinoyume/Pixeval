@@ -381,6 +381,9 @@ func (a *App) header(c *ui.Context) {
 			}
 			return
 		}
+		if a.route == routeHome {
+			a.homeEditButton(c)
+		}
 		a.accountMenu(c)
 	})
 }

@@ -47,6 +47,12 @@ type homeFeedView struct {
 	st   *browseState
 }
 
+// homeCardSources are the sources the add-card menu offers, in its order.
+var homeCardSources = []homeCardSource{
+	homeSourceRecommended, homeSourceFollowing, homeSourceRanking,
+	homeSourceNew, homeSourceMyPixiv, homeSourceBookmarks,
+}
+
 // homeCoverBase is the preview cover width the column count starts from. The
 // row fits as many covers as the page has room for, between three and six.
 const homeCoverBase = 180
@@ -273,7 +279,11 @@ func (a *App) homeSourceFetch(st *browseState, source homeCardSource, mode pixiv
 }
 
 // homePage draws the cards as one column, each with its first page. A
-// signed-out user is asked to sign in instead of fetching anything.
+// signed-out user is asked to sign in instead of fetching anything. In edit
+// mode each card offers its controls and the page ends with the ways to add
+// a card and to return to the default cards. The cards are copied here so a
+// control that changes them shows on the next frame, not halfway down this
+// one.
 func (a *App) homePage(c *ui.Context) {
 	if a.session == nil {
 		a.loginPrompt(c)
@@ -281,19 +291,155 @@ func (a *App) homePage(c *ui.Context) {
 	}
 	a.armHomeCards()
 	t := themeOf(c)
+	cards := a.homeCards
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Padding(t.SpaceL, contentPadding, t.Space2XL, contentPadding).
 			Gap(t.Space2XL).Children(func() {
-			for i := range a.homeCards {
-				a.homeCardView(c, &a.homeCards[i])
+			for i := range cards {
+				a.homeCardView(c, i, &cards[i])
+			}
+			if a.homeEditing {
+				a.homeEditTrailer(c)
 			}
 		})
 	})
 }
 
-// homeCardView draws one card: its title, a row of covers and the way to its
-// full page.
-func (a *App) homeCardView(c *ui.Context, card *homeCard) {
+// homeEditButton toggles the page's card editing from the header, and names
+// the way out while editing.
+func (a *App) homeEditButton(c *ui.Context) {
+	t := themeOf(c)
+	label := a.t("home.edit")
+	if a.homeEditing {
+		label = a.t("home.editDone")
+	}
+	if ui.Button(c, label).Height(36).Radius(t.RadiusS).
+		Padding(0, t.SpaceL).Clicked() {
+		a.homeEditing = !a.homeEditing
+	}
+}
+
+// homeCardControls is one card's edit row: move it up or down in the page, or
+// take it off. The first and last cards cannot move past the page's ends; the
+// last card still offers removal, which says why it stays.
+func (a *App) homeCardControls(c *ui.Context, i int, card homeCard) {
+	t := themeOf(c)
+	ui.Row(c).FillWidth().Gap(t.SpaceXS).Justify(ui.End).AlignItems(ui.Center).
+		Children(func() {
+			up := iconButton(c, iconUp, a.homeCardActionLabel("home.moveUp", card),
+				28, t.TextMuted, t.SurfaceAlt).Disabled(i == 0)
+			if up.Clicked() {
+				a.moveHomeCard(c, i, i-1)
+			}
+			down := iconButton(c, iconDown, a.homeCardActionLabel("home.moveDown", card),
+				28, t.TextMuted, t.SurfaceAlt).Disabled(i == len(a.homeCards)-1)
+			if down.Clicked() {
+				a.moveHomeCard(c, i, i+1)
+			}
+			if iconButton(c, iconClose, a.homeCardActionLabel("home.removeCard", card),
+				28, t.Danger, t.SurfaceAlt).Clicked() {
+				a.removeHomeCard(c, i)
+			}
+		})
+}
+
+// homeEditTrailer is the end of the edit page: the six sources a card can be
+// added for, and the way back to the first run's cards.
+func (a *App) homeEditTrailer(c *ui.Context) {
+	t := themeOf(c)
+	ui.Row(c).FillWidth().Gap(t.SpaceM).AlignItems(ui.Center).Children(func() {
+		ui.MenuButton(c, a.t("home.addCard"), func(m *ui.Menu) {
+			for _, source := range homeCardSources {
+				label := a.homeSourceLabel(source)
+				if m.Item(label).Disabled(a.hasHomeCard(source)).Chosen() {
+					a.addHomeCard(c, source)
+				}
+			}
+		})
+		if ui.Button(c, a.t("home.resetCards")).Clicked() {
+			a.resetHomeCards(c)
+		}
+	})
+}
+
+// homeCardActionLabel names one card's edit control, for its tooltip, the
+// keyboard and assistive technology.
+func (a *App) homeCardActionLabel(key string, card homeCard) string {
+	return a.t(key) + " · " + a.homeCardTitle(card)
+}
+
+// hasHomeCard reports whether the page already shows source.
+func (a *App) hasHomeCard(source homeCardSource) bool {
+	for i := range a.homeCards {
+		if a.homeCards[i].Source == source {
+			return true
+		}
+	}
+	return false
+}
+
+// moveHomeCard puts the card at i at j and saves the order. The page draws
+// the previous frame's cards, so the move shows on the next frame.
+func (a *App) moveHomeCard(c *ui.Context, i, j int) {
+	if i < 0 || j < 0 || i >= len(a.homeCards) || j >= len(a.homeCards) || i == j {
+		return
+	}
+	next := make([]homeCard, len(a.homeCards))
+	copy(next, a.homeCards)
+	next[i], next[j] = next[j], next[i]
+	a.homeCards = next
+	a.saveHomeCards(c)
+}
+
+// removeHomeCard takes the card at i off the page and saves the rest. The
+// last card stays, and a toast says why.
+func (a *App) removeHomeCard(c *ui.Context, i int) {
+	if len(a.homeCards) <= 1 {
+		c.Toast(a.t("home.lastCard"))
+		return
+	}
+	if i < 0 || i >= len(a.homeCards) {
+		return
+	}
+	next := make([]homeCard, 0, len(a.homeCards)-1)
+	next = append(next, a.homeCards[:i]...)
+	next = append(next, a.homeCards[i+1:]...)
+	a.homeCards = next
+	a.saveHomeCards(c)
+}
+
+// addHomeCard appends source's card and saves the page. A source already on
+// the page is not added twice; a ranking card starts on the day ranking.
+func (a *App) addHomeCard(c *ui.Context, source homeCardSource) {
+	if !source.valid() || a.hasHomeCard(source) {
+		return
+	}
+	card := homeCard{Source: source, feed: &browseState{}}
+	if source == homeSourceRanking {
+		card.RankMode = pixiv.Day
+	}
+	a.homeCards = append(a.homeCards, card)
+	a.saveHomeCards(c)
+}
+
+// resetHomeCards puts back the first run's cards and saves them.
+func (a *App) resetHomeCards(c *ui.Context) {
+	a.homeCards = defaultHomeLayout()
+	a.saveHomeCards(c)
+}
+
+// saveHomeCards writes an edit now, so the saved page always matches what the
+// page shows. A failed save is reported and leaves the edit on screen.
+func (a *App) saveHomeCards(c *ui.Context) {
+	if err := saveHomeLayout(a.homeCards); err != nil {
+		log.Printf("home layout: %v", err)
+		c.Toast(a.tf("settings.saveFailed", err.Error()))
+	}
+}
+
+// homeCardView draws one card: its edit row while editing, its title, a row
+// of covers and the way to its full page.
+func (a *App) homeCardView(c *ui.Context, i int, card *homeCard) {
 	t := themeOf(c)
 	st := card.feed
 	if st == nil {
@@ -303,6 +449,9 @@ func (a *App) homeCardView(c *ui.Context, card *homeCard) {
 	v := st.snapshot()
 	title := a.homeCardTitle(*card)
 	ui.Column(c).FillWidth().Gap(t.SpaceM).Children(func() {
+		if a.homeEditing {
+			a.homeCardControls(c, i, *card)
+		}
 		displayText(c, title).FontSize(t.TextTitle).FontWeight(500).
 			TextColor(t.Text).MaxLines(1)
 		switch {
