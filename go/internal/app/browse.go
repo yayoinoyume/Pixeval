@@ -65,13 +65,16 @@ type browseState struct {
 	// frame, which the window's search shortcut sets.
 	focusQuery bool
 
-	// filterText is the expression being typed, filterExpr the one applied
-	// (nil shows every work) and filterErr why the last apply failed. The
-	// view owns these three: only the main thread reads or writes them.
-	filterText string
-	filterExpr filter.Expr
-	filterErr  string
-	filterOpen bool
+	// filterText is the expression being typed, filterApplied the text of
+	// the one in force (the box's draft can differ from it), filterExpr the
+	// parsed expression (nil shows every work) and filterErr why the last
+	// apply failed. The view owns these four: only the main thread reads or
+	// writes them.
+	filterText    string
+	filterApplied string
+	filterExpr    filter.Expr
+	filterErr     string
+	filterOpen    bool
 
 	// masonry is the feed's place, touched only by the view.
 	masonry widgets.MasonryState
@@ -367,7 +370,7 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 	})
 	card.Children(func() {
 		ui.Column(c).Gap(2).Children(func() {
-			ui.Text(c, work.Title).FontSize(t.TextSmall).FontWeight(500).
+			ui.Text(c, work.Title).FontSize(t.TextBody).FontWeight(600).
 				TextColor(titleColor).MaxLines(1)
 			ui.Text(c, work.User.Name).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 		})

@@ -222,7 +222,7 @@ func (a *App) commentsSection(c *ui.Context, t tokens, st *commentState) {
 	ui.Column(c).Gap(t.SpaceM).Padding(t.SpaceXL, 0, 0, 0).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
 		ui.Row(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, a.t("comments.title")).FontSize(t.TextMicro).LetterSpacing(1.2).
+			ui.Text(c, a.t("comments.title")).FontSize(t.TextTiny).LetterSpacing(0.5).
 				TextColor(t.TextMuted)
 			if len(v.items) > 0 {
 				ui.Text(c, detailCount(len(v.items))).FontSize(t.TextMicro).

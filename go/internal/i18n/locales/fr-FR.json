@@ -66,7 +66,6 @@
     "pageThumb": "Page %d",
     "views": "Vues",
     "bookmarkCount": "Favoris",
-    "published": "Publié le",
     "workID": "ID de l'œuvre",
     "tags": "Mots-clés",
     "info": "Détails de l'œuvre",
@@ -207,7 +206,9 @@
     "placeholder": "Filtrer les œuvres, p. ex. bookmarks>100",
     "action": "Appliquer",
     "invalid": "Filtre invalide : %s",
-    "title": "Filtrer"
+    "title": "Filtrer",
+    "active": "Filtré : %s",
+    "clear": "Effacer le filtre"
   },
   "shortcuts": {
     "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"

@@ -216,7 +216,7 @@ func (a *App) detailTags(c *ui.Context, t tokens, tags []pixiv.Tag) {
 		return
 	}
 	ui.Column(c).Gap(t.SpaceS).Children(func() {
-		ui.Text(c, a.t("viewer.tags")).FontSize(t.TextMicro).LetterSpacing(1.2).
+		ui.Text(c, a.t("viewer.tags")).FontSize(t.TextTiny).LetterSpacing(0.5).
 			TextColor(t.TextMuted)
 		ui.Row(c).Wrap().Gap(t.SpaceM).Role(ui.RoleGroup).Label(a.t("viewer.tags")).
 			Children(func() {
@@ -262,7 +262,7 @@ func (a *App) detailTag(c *ui.Context, t tokens, tag pixiv.Tag) {
 func (a *App) detailSeries(c *ui.Context, t tokens, s pixiv.Series) {
 	ui.Column(c).Gap(t.SpaceS).Padding(t.SpaceM, 0, 0, 0).
 		BorderWidth(1, 0, 0, 0).BorderColor(t.Border).Children(func() {
-		ui.Text(c, a.t("nav.series")).FontSize(t.TextMicro).LetterSpacing(1.2).
+		ui.Text(c, a.t("nav.series")).FontSize(t.TextTiny).LetterSpacing(0.5).
 			TextColor(t.TextMuted)
 		b := ui.ButtonBase(c).FillWidth().Radius(t.RadiusS).Padding(0).
 			Gap(t.SpaceS).Label(a.tf("viewer.seriesLabel", s.Title))

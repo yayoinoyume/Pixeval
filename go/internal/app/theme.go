@@ -79,15 +79,6 @@ type tokens struct {
 	WashTop    ui.Color
 	WashBottom ui.Color
 
-	// The viewer's chrome follows the window, but keeps its own names so a
-	// work page can tint it from the artwork without changing the shell.
-	ViewerBg        ui.Color
-	ViewerBar       ui.Color
-	ViewerBarBorder ui.Color
-	ViewerBarHover  ui.Color
-	ViewerBarText   ui.Color
-	ViewerBarMuted  ui.Color
-
 	SpaceXS  float32
 	SpaceS   float32
 	SpaceM   float32
@@ -121,9 +112,10 @@ func designTokens(dark bool) tokens {
 
 		SpaceXS: 4, SpaceS: 8, SpaceM: 12, SpaceL: 16, SpaceXL: 24, Space2XL: 32,
 		// Two radii are enough for pictures and rules (2), four for controls
-		// (4), eight for a panel that truly needs an edge. Nothing else is
-		// rounded; avatars alone are circles.
-		RadiusXS: 2, RadiusS: 4, RadiusM: 6, RadiusL: 8, RadiusXL: 8, Radius2XL: 8, RadiusFull: 999,
+		// (4), eight for a panel that truly needs an edge. RadiusM is that same
+		// eight, kept for the panels written against the older scale. Nothing
+		// else is rounded; avatars alone are circles.
+		RadiusXS: 2, RadiusS: 4, RadiusM: 8, RadiusL: 8, RadiusXL: 8, Radius2XL: 8, RadiusFull: 999,
 		TextMicro: 10, TextDetail: 36, TextDisplay: 30, TextTitle: 22, TextBody: 15, TextSmall: 13, TextTiny: 11,
 	}
 	if dark {
@@ -187,13 +179,6 @@ func designTokens(dark bool) tokens {
 		t.WashTop = ui.Hex("#f7f3ed")
 		t.WashBottom = ui.Hex("#efe7dc")
 	}
-	t.ViewerBg = t.Bg
-	t.ViewerBar = t.Surface
-	t.ViewerBarBorder = t.Border
-	t.ViewerBarHover = t.SurfaceHover
-	t.ViewerBarText = t.Text
-	t.ViewerBarMuted = t.TextMuted
-
 	// The aliases keep the pages that still speak Material's role names in
 	// the same palette. They are the same colors, not a second theme.
 	t.Primary = t.Accent
@@ -255,13 +240,6 @@ func (t tokens) withPalette(p artcolor.Palette) tokens {
 	t.WashTop = p.WashTop
 	t.WashBottom = p.WashBottom
 	t.Shadow = p.Shadow
-
-	t.ViewerBg = p.WashBottom
-	t.ViewerBar = p.Surface.Alpha(0.92)
-	t.ViewerBarBorder = p.Border
-	t.ViewerBarHover = p.SurfaceHover
-	t.ViewerBarText = p.Text
-	t.ViewerBarMuted = p.TextMuted
 
 	t.Primary = t.Accent
 	t.OnPrimary = t.AccentText
@@ -423,7 +401,9 @@ func themeFromTokens(t tokens, scale float32) *ui.Theme {
 		Radius:         t.RadiusS,
 		Spacing:        4,
 		FontSize:       t.TextBody * scale,
-		Font:           uiFont(),
+		// The empty family is the desktop's own UI font, which covers the four
+		// locales the app ships.
+		Font: "",
 	}
 }
 

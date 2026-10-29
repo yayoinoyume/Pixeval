@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"image"
+	"image/color"
 	"image/png"
 	"io"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/artcolor"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
@@ -79,14 +81,14 @@ func (tr *imageTransport) count(url string) int {
 	return tr.calls[url]
 }
 
-// newViewerApp is an app whose images come from tr, without a network. It is
-// signed out, so opening the viewer fetches neither the detail nor the
+// newViewerApp is an app whose images come through rt, without a network. It
+// is signed out, so opening the viewer fetches neither the detail nor the
 // comments.
-func newViewerApp(tr *imageTransport) *App {
+func newViewerApp(rt http.RoundTripper) *App {
 	a := New()
 	a.session = nil
 	client := pixiv.NewClient()
-	client.HTTP().Transport = tr
+	client.HTTP().Transport = rt
 	a.images = imagex.New(client, "")
 	return a
 }
@@ -364,5 +366,145 @@ func TestViewerPageThumbsUseDetail(t *testing.T) {
 			}
 			time.Sleep(time.Millisecond)
 		}
+	}
+}
+
+// The three colors the palette tests serve: one per page, and one for the
+// cover's rendition.
+var (
+	seedRed   = color.NRGBA{R: 200, G: 40, B: 40, A: 255}
+	seedBlue  = color.NRGBA{R: 40, G: 60, B: 200, A: 255}
+	seedGreen = color.NRGBA{R: 40, G: 200, B: 60, A: 255}
+)
+
+// seedPNG is a tiny image of one solid color, which artcolor reads as exactly
+// that color's seed.
+func seedPNG(c color.NRGBA) []byte {
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			img.Set(x, y, c)
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		panic(err)
+	}
+	return buf.Bytes()
+}
+
+// colorTransport serves one image per URL and fails every other, so a test
+// knows which renditions decoded and which did not.
+type colorTransport struct {
+	bodies map[string][]byte
+}
+
+func (tr *colorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	body, ok := tr.bodies[req.URL.String()]
+	if !ok {
+		return nil, errors.New("下载失败")
+	}
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Header:     http.Header{"Content-Type": []string{"image/png"}},
+		Body:       io.NopCloser(bytes.NewReader(body)),
+		Request:    req,
+	}, nil
+}
+
+// waitSeed waits for an image's color to be known and returns it.
+func waitSeed(t *testing.T, a *App, url string) ui.Color {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if s, ok := a.images.Seed(url); ok {
+			return s
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the seed of %q never arrived", url)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// paletteFor is the token set a page made from seed draws with.
+func paletteFor(seed ui.Color, dark bool) tokens {
+	return tokensFor(dark).withPalette(artcolor.Derive(seed, dark))
+}
+
+// TestViewerSeedHoldsOnPageTurn checks turning to a page nothing has decoded
+// yet keeps the previous page's color, instead of taking the color of the
+// cover's rendition: the cover is a different image with different colors, so
+// falling back to it makes the room flash a color neither page has.
+func TestViewerSeedHoldsOnPageTurn(t *testing.T) {
+	w := viewerWork()
+	page0, page1 := w.PageURL(0), w.PageURL(1)
+	// The cover's rendition, which the page thumbnails and the feed's card
+	// decode under their own URL.
+	cover := pageThumbURL(w, 0)
+	if cover == page0 {
+		t.Fatalf("the fixture's cover is the page's original: %q", cover)
+	}
+	a := newViewerApp(&colorTransport{bodies: map[string][]byte{
+		page0: seedPNG(seedRed),
+		cover: seedPNG(seedGreen),
+	}})
+	a.openViewer(&w, 0)
+	// The thumbnails ask for the cover's rendition as the frame draws them.
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	red := waitSeed(t, a, page0)
+	green := waitSeed(t, a, cover)
+	if sameColor(red, green) {
+		t.Fatal("the fixture's page and cover have the same color")
+	}
+	tt.Frame()
+	if !sameColor(a.viewer.themeSeed, red) {
+		t.Fatalf("seed %v for the page shown, want %v", a.viewer.themeSeed, red)
+	}
+	a.viewerGo(1)
+	tt.Frame()
+	if !sameColor(a.viewer.themeSeed, red) {
+		t.Errorf("seed %v after the turn, want the previous page's %v, not the cover's %v",
+			a.viewer.themeSeed, red, green)
+	}
+	if got, want := a.viewer.themeTokens.Bg, paletteFor(red, a.viewer.themeDark).Bg; !sameColor(got, want) {
+		t.Errorf("room %v after the turn, want the red page's %v", got, want)
+	}
+	if got, unwanted := a.viewer.themeTokens.Bg, paletteFor(green, a.viewer.themeDark).Bg; sameColor(got, unwanted) {
+		t.Errorf("room %v took the cover's color", got)
+	}
+	if s, ok := a.images.Seed(page1); ok {
+		t.Fatalf("the fixture decoded page 1's own image: %v", s)
+	}
+}
+
+// TestViewerSeedFollowsPage checks the room takes a page's own color once its
+// original decodes: red, then blue, never stuck on the first page.
+func TestViewerSeedFollowsPage(t *testing.T) {
+	w := viewerWork()
+	page0, page1 := w.PageURL(0), w.PageURL(1)
+	a := newViewerApp(&colorTransport{bodies: map[string][]byte{
+		page0: seedPNG(seedRed),
+		page1: seedPNG(seedBlue),
+	}})
+	a.openViewer(&w, 0)
+	red := waitSeed(t, a, page0)
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if !sameColor(a.viewer.themeSeed, red) {
+		t.Fatalf("seed %v for the first page, want %v", a.viewer.themeSeed, red)
+	}
+	// The page beside the first loads ahead, so its color is known before the
+	// turn in the ordinary case.
+	blue := waitSeed(t, a, page1)
+	a.viewerGo(1)
+	tt.Frame()
+	if !sameColor(a.viewer.themeSeed, blue) {
+		t.Fatalf("seed %v for the second page, want %v", a.viewer.themeSeed, blue)
+	}
+	if got, want := a.viewer.themeTokens.Bg, paletteFor(blue, a.viewer.themeDark).Bg; !sameColor(got, want) {
+		t.Errorf("room %v for the second page, want %v", got, want)
 	}
 }

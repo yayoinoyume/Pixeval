@@ -122,7 +122,7 @@ func (a *App) brand(c *ui.Context) {
 			Label("Pixeval Go").Tooltip("Pixeval Go " + appVersion()).Children(func() {
 			ui.Icon(c, iconLogo).Size(18, 18).TextColor(t.Bg)
 		})
-		ui.Text(c, "Pixeval Go").FontSize(9).LetterSpacing(0.3).TextColor(t.TextMuted)
+		ui.Text(c, "Pixeval Go").FontSize(t.TextMicro).LetterSpacing(0.3).TextColor(t.TextMuted)
 	})
 }
 
@@ -147,7 +147,7 @@ func (a *App) navItem(c *ui.Context, r route) {
 	}
 	b.Children(func() {
 		ui.Icon(c, navIcon(r)).Size(20, 20).TextColor(fg)
-		ui.Text(c, label).FontSize(10).FontWeight(500).TextColor(fg).MaxLines(1)
+		ui.Text(c, label).FontSize(t.TextMicro).FontWeight(500).TextColor(fg).MaxLines(1)
 		bar := t.Accent
 		if !selected {
 			bar = ui.Transparent
@@ -281,36 +281,31 @@ func (a *App) applyTheme(c *ui.Context) {
 }
 
 // textTabs is the app's tab line: quiet words with one accent rule under the
-// chosen tab. It replaces the pill segmented control with the same states.
+// chosen tab. TabsBase gives it the tab list's roles and keys, the arrows and
+// Home/End moving the choice; the look stays a word over a 2px rule.
 func textTabs(c *ui.Context, t tokens, selected *int, labels ...string) bool {
-	changed := false
-	ui.Row(c).Gap(t.SpaceXL).AlignItems(ui.End).Children(func() {
+	tabs := ui.TabsBase(c, selected, len(labels))
+	tabs.List.Gap(t.SpaceXL).AlignItems(ui.End).Children(func() {
 		for i, label := range labels {
-			idx := i
-			b := ui.ButtonBase(c).Height(40).Radius(0).Padding(0).Gap(t.SpaceS).
+			tab := tabs.Tab(i).Height(40).Radius(0).Padding(0).Gap(t.SpaceS).
 				Column().AlignItems(ui.Start).Label(label)
 			fg := t.TextMuted
-			if *selected == idx {
+			if *selected == i {
 				fg = t.Text
-			} else if b.Hovered() {
+			} else if tab.Hovered() {
 				fg = t.Text
 			}
-			b.Children(func() {
+			bar := t.Accent
+			if *selected != i {
+				bar = ui.Transparent
+			}
+			tab.Children(func() {
 				ui.Text(c, label).FontSize(t.TextSmall).FontWeight(500).TextColor(fg)
-				ui.Box(c).FillWidth().Height(2).Background(func() ui.Color {
-					if *selected == idx {
-						return t.Accent
-					}
-					return ui.Transparent
-				}())
+				ui.Box(c).FillWidth().Height(2).Background(bar)
 			})
-			if b.Clicked() && *selected != idx {
-				*selected = idx
-				changed = true
-			}
 		}
 	})
-	return changed
+	return tabs.List.Changed()
 }
 
 // homePage draws the home tabs above the feed of the one chosen. Pixiv's
@@ -400,11 +395,21 @@ func (a *App) startSearch(st *browseState) {
 }
 
 // filterBar draws a feed's filter expression box. Each feed keeps its own
-// expression, so switching tabs or searching again keeps it.
+// expression, so switching tabs or searching again keeps it. A collapsed bar
+// still names the expression in force: a filtered feed stops paging, and an
+// applied filter the user cannot see would look like a feed that ran dry.
 func (a *App) filterBar(c *ui.Context, st *browseState) {
 	t := themeOf(c)
 	if !st.filterOpen {
-		ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Justify(ui.End).Children(func() {
+		ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Gap(t.SpaceS).
+			AlignItems(ui.Center).Justify(ui.End).Children(func() {
+			if st.filterExpr != nil {
+				ui.Text(c, a.tf("filter.active", st.filterApplied)).FontSize(t.TextTiny).
+					TextColor(t.Accent).MaxLines(1)
+				if iconButton(c, iconClose, a.t("filter.clear"), 24, t.TextMuted, t.SurfaceAlt).Clicked() {
+					st.clearFilter()
+				}
+			}
 			b := ui.ButtonBase(c).Height(28).Radius(t.RadiusS).Padding(0, t.SpaceS).
 				Label(a.t("filter.title"))
 			fg := t.TextMuted
@@ -455,11 +460,18 @@ func (st *browseState) applyFilter() {
 		expr = parsed
 	}
 	st.filterErr = ""
+	st.filterApplied = text
 	st.filterExpr = expr
 	// The place and the tiles were laid out for the works shown until now.
 	st.masonry = widgets.MasonryState{}
 	st.tilesWidth = 0
 	st.tilesText = 0
+}
+
+// clearFilter drops the applied expression and shows every work again.
+func (st *browseState) clearFilter() {
+	st.filterText = ""
+	st.applyFilter()
 }
 
 // feedTiles returns the works a feed draws and the tiles they draw as: the

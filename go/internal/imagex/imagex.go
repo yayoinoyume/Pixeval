@@ -41,6 +41,10 @@ const (
 	defaultDiskLimit = 512 << 20
 	maxDownloads     = 6
 	downloadTimeout  = 2 * time.Minute
+	// maxSeeds bounds the colors kept for the whole session: a feed surfacing
+	// thousands of works would otherwise keep a color for every picture it has
+	// ever decoded.
+	maxSeeds = 4096
 )
 
 // Loader caches illustrations from a Pixiv client. It is safe for concurrent
@@ -212,24 +216,47 @@ func (l *Loader) decode(memKey, url string, scale func(image.Image) image.Image)
 	if !fromDisk {
 		l.diskPut(url, data)
 	}
-	seed := artcolor.Extract(img)
+	// One picture is decoded under several memory keys, as a thumbnail and as
+	// an original; its color is the same one every time, so only the first
+	// decode of a URL pays for it.
+	l.mu.Lock()
+	_, haveSeed := l.seeds[url]
+	l.mu.Unlock()
+	var seed ui.Color
+	if !haveSeed {
+		seed = artcolor.Extract(img)
+	}
 	if scale != nil {
 		img = scale(img)
 	}
 	b := img.Bounds()
 	l.put(memKey, ui.NewBitmap(img), int64(b.Dx())*int64(b.Dy())*4)
-	if seed.A != 0 {
-		l.mu.Lock()
-		if l.seeds == nil {
-			l.seeds = map[string]ui.Color{}
-		}
-		// The cover and the original are separate URLs; the first decode
-		// of each decides its seed, so a smaller rendition cannot drift.
-		if _, ok := l.seeds[url]; !ok {
-			l.seeds[url] = seed
-		}
-		l.mu.Unlock()
+	if !haveSeed && seed.A != 0 {
+		l.setSeed(url, seed)
 	}
+}
+
+// setSeed keeps an image's color, dropping an arbitrary older one once the
+// bound is reached. The bound only has to keep the map from growing without
+// limit; a dropped color is extracted again the next time its image is decoded.
+func (l *Loader) setSeed(url string, seed ui.Color) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.seeds == nil {
+		l.seeds = map[string]ui.Color{}
+	}
+	// The cover and the original are separate URLs; the first decode of each
+	// decides its seed, so a smaller rendition cannot drift.
+	if _, ok := l.seeds[url]; ok {
+		return
+	}
+	if len(l.seeds) >= maxSeeds {
+		for key := range l.seeds {
+			delete(l.seeds, key)
+			break
+		}
+	}
+	l.seeds[url] = seed
 }
 
 // fetch returns the image data from the disk cache, or downloads it. Only a

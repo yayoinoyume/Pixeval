@@ -195,8 +195,8 @@ func TestDesignScale(t *testing.T) {
 	}{
 		{"picture", tok.RadiusXS, 2},
 		{"control", tok.RadiusS, 4},
-		{"small panel", tok.RadiusM, 6},
-		{"panel", tok.RadiusL, 8},
+		{"panel", tok.RadiusM, 8},
+		{"large panel", tok.RadiusL, 8},
 		{"extra large", tok.RadiusXL, 8},
 		{"extra extra large", tok.Radius2XL, 8},
 		{"avatar", tok.RadiusFull, 999},

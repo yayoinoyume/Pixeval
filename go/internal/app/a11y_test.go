@@ -72,7 +72,8 @@ func TestShellEscapeLeavesUserPage(t *testing.T) {
 }
 
 // TestBrowseCardLabels checks a card names its work and author for a screen
-// reader, and takes the focus, so the keys can open it.
+// reader, and that the keyboard reaches it right after the feed's filter
+// control, with nothing in between.
 func TestBrowseCardLabels(t *testing.T) {
 	st := &browseState{fetch: func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
 		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(0, 2)}, nil
@@ -84,12 +85,54 @@ func TestBrowseCardLabels(t *testing.T) {
 	if _, ok := tt.Find(card); !ok {
 		t.Fatalf("card label %q missing: %q", card, tt.Texts())
 	}
-	// The quiet filter control comes before the works.
-	for i := 0; i < 6; i++ {
-		tt.Key(0, ui.KeyTab)
-		if tt.Focused(card) {
-			return
-		}
+	tt.Key(0, ui.KeyTab)
+	if !tt.Focused("筛选") {
+		t.Fatalf("the first stop is not the filter control: %q", tt.Texts())
 	}
-	t.Errorf("the first card does not take the focus: %q", tt.Texts())
+	tt.Key(0, ui.KeyTab)
+	if !tt.Focused(card) {
+		t.Errorf("the filter control is not followed by the first card: %q", tt.Texts())
+	}
+}
+
+// TestHomeTabsKeyboard checks the home tab line is one stop of Tab and takes
+// the keys of a tab list: the arrows and Home/End move the choice, and the
+// focus follows it.
+func TestHomeTabsKeyboard(t *testing.T) {
+	a := New()
+	tt := ui.NewTester(a.View, 1000, 700)
+	// The navigation and the sign-in button come first; the tab line is one
+	// stop, on the tab chosen.
+	reached := false
+	for i := 0; i < 10 && !reached; i++ {
+		tt.Key(0, ui.KeyTab)
+		reached = tt.Focused("推荐")
+	}
+	if !reached {
+		t.Fatalf("Tab never reached the chosen tab: %q", tt.Texts())
+	}
+	if tt.Focused("关注") {
+		t.Fatalf("an unchosen tab took the focus: %q", tt.Texts())
+	}
+
+	tt.Key(0, ui.KeyRight)
+	if a.homeTab != 1 {
+		t.Fatalf("homeTab %d after the right key, want 1", a.homeTab)
+	}
+	if !tt.Focused("关注") {
+		t.Errorf("the focus did not follow the choice: %q", tt.Texts())
+	}
+
+	tt.Key(0, ui.KeyEnd)
+	if a.homeTab != homeTabRanking {
+		t.Fatalf("homeTab %d after End, want %d", a.homeTab, homeTabRanking)
+	}
+	tt.Key(0, ui.KeyHome)
+	if a.homeTab != 0 {
+		t.Fatalf("homeTab %d after Home, want 0", a.homeTab)
+	}
+	tt.Key(0, ui.KeyLeft)
+	if a.homeTab != homeTabRanking {
+		t.Fatalf("homeTab %d after the left key from the first, want %d", a.homeTab, homeTabRanking)
+	}
 }

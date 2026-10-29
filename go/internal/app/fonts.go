@@ -9,26 +9,18 @@ import (
 
 // The display face is the one place the app leaves the system's UI font: page
 // titles and work titles are serif, so the gallery reads as editorial rather
-// than as a control panel. Body copy stays in the system sans, which keeps
-// Chinese, Japanese and Cyrillic consistent with the rest of the desktop.
-var (
-	displayFamily = sync.OnceValue(func() string {
-		return firstFont(
-			"Noto Serif CJK SC", "Source Han Serif SC", "Songti SC",
-			"Noto Serif CJK JP", "Noto Serif JP", "Georgia",
-			"DejaVu Serif", "serif",
-		)
-	})
-	interfaceFamily = sync.OnceValue(func() string {
-		// The empty string asks for the system font, which has the best
-		// coverage for the four locales the app ships.
-		return ""
-	})
-)
+// than as a control panel. Body copy stays in the system sans, which is what an
+// empty family asks for, and that keeps Chinese, Japanese and Cyrillic
+// consistent with the rest of the desktop.
+var displayFamily = sync.OnceValue(func() string {
+	return firstFont(
+		"Noto Serif CJK SC", "Source Han Serif SC", "Songti SC",
+		"Noto Serif CJK JP", "Noto Serif JP", "Georgia",
+		"DejaVu Serif", "serif",
+	)
+})
 
 func displayFont() string { return displayFamily() }
-
-func uiFont() string { return interfaceFamily() }
 
 func firstFont(names ...string) string {
 	families := ui.FontFamilies()

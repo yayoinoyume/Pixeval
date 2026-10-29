@@ -40,6 +40,10 @@ type viewerState struct {
 	themeHigh   bool
 	themeTokens tokens
 	themeSet    bool
+	// lastSeed is the last artwork color the page drew with. Turning to a page
+	// nothing has decoded yet keeps it, so the room does not flash another
+	// picture's color on the way.
+	lastSeed ui.Color
 	// viewW and viewH are the size of the image area in the last frame, which
 	// the pan bounds and the zoom's anchor need.
 	viewW, viewH float32
@@ -396,9 +400,11 @@ func (a *App) viewerPage(c *ui.Context) {
 }
 
 // viewerTokens returns the base theme with the current page's palette. The
-// cover's seed is available as soon as the feed has drawn it; the original's
-// seed replaces it when the larger image lands. The result is cached for the
-// seed, appearance, scale and contrast it was made from.
+// original's seed is the exact page; a page nothing has decoded yet falls back
+// to its own smaller rendition, and then to the color the previous page drew
+// with. The cover's seed is never a stand-in for another page: its rendition
+// holds different colors, so using it would flash them on the way. The result
+// is cached for the seed, appearance, scale and contrast it was made from.
 func (a *App) viewerTokens(c *ui.Context) tokens {
 	v := a.viewer
 	if v == nil {
@@ -408,20 +414,15 @@ func (a *App) viewerTokens(c *ui.Context) tokens {
 	scale := textScale(c)
 	high := c.Preferences().HighContrast
 
-	var seed ui.Color
-	var have bool
-	if s, ok := a.images.Seed(v.work.PageURL(v.page)); ok {
-		seed, have = s, true
+	// The page thumbnails are drawn from the detail's copy when it landed, so
+	// its renditions are the ones whose seeds may be there.
+	work := v.work
+	if detail, _, _ := v.detailState(); detail != nil {
+		work = *detail
 	}
-	if !have {
-		if s, ok := a.images.Seed(v.work.ThumbURL()); ok {
-			seed, have = s, true
-		}
-	}
-	if !have {
-		if s, ok := a.images.Seed(v.work.CoverURL()); ok {
-			seed, have = s, true
-		}
+	seed, have := a.pageSeed(v.work.PageURL(v.page), pageThumbURL(work, v.page))
+	if !have && v.lastSeed.A != 0 {
+		seed, have = v.lastSeed, true
 	}
 	if v.themeSet && v.themeSeed == seed && v.themeDark == dark && v.themeScale == scale && v.themeHigh == high {
 		return v.themeTokens
@@ -437,7 +438,24 @@ func (a *App) viewerTokens(c *ui.Context) tokens {
 	}
 	v.themeSeed, v.themeDark, v.themeScale, v.themeHigh = seed, dark, scale, high
 	v.themeTokens, v.themeSet = t, true
+	if have {
+		v.lastSeed = seed
+	}
 	return t
+}
+
+// pageSeed returns a page's artwork color: the original's when it has decoded,
+// otherwise its smaller rendition's.
+func (a *App) pageSeed(original, thumb string) (ui.Color, bool) {
+	if s, ok := a.images.Seed(original); ok {
+		return s, true
+	}
+	if thumb != "" {
+		if s, ok := a.images.Seed(thumb); ok {
+			return s, true
+		}
+	}
+	return ui.Color{}, false
 }
 
 // viewerTop is the page's first line: a quiet close control and the zoom
