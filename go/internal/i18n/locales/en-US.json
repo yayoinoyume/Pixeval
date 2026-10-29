@@ -213,6 +213,8 @@
     "showR18": "Show R18",
     "showR18Hint": "When off, recommendations, following, ranking and search leave R18 works out",
     "cardWidth": "Masonry column width",
+    "notifications": "Desktop notifications",
+    "notificationsHint": "Send one when a subscription check finds new works",
     "language": "Language",
     "langSystem": "Follow system",
     "langZh": "中文",
@@ -368,6 +370,12 @@
     "intervalHint": "5 to 1440 minutes, 15 by default",
     "autoQueued": "Queued %d pages automatically",
     "autoNoDir": "No download directory, so new works were not queued"
+  },
+  "notify": {
+    "newWorksTitle": "New works on Pixiv",
+    "newWorksBody": "%d new works, latest: %s",
+    "autoQueuedTitle": "Added to the download queue",
+    "autoQueuedBody": "%d pages queued automatically"
   },
   "novel": {
     "loadFailed": "Cannot load the novel: %s",

@@ -209,6 +209,9 @@ type App struct {
 	// avoid the network and the system clipboard.
 	fetchImageBytes     func(ctx context.Context, url string) ([]byte, error)
 	clipboardWriteImage func(png []byte) error
+	// notifyFn shows a desktop notification; tests replace it so a check never
+	// reaches the system's notification center.
+	notifyFn func(title, body string) error
 	// subsStore holds the followed users and series, loaded at start, and subs
 	// checks them on demand and every subscriptionInterval.
 	subsStore *subscription.Store
@@ -359,6 +362,14 @@ func New() *App {
 	// the clipboard; tests replace both to avoid either.
 	a.fetchImageBytes = client.GetImage
 	a.clipboardWriteImage = mygo.Clipboard.WriteImage
+	// A notification needs the window's main loop, which a test binary has
+	// none of, and Show would wait for one forever.
+	a.notifyFn = func(title, body string) error {
+		if a.win == nil {
+			return nil
+		}
+		return mygo.NewNotification(mygo.NotificationOptions{Title: title, Body: body}).Show()
+	}
 	// The saved limit applies before the first image loads.
 	a.images.SetDiskLimit(imageCacheLimitBytes(settings))
 	// The check runs on the timer goroutine, so it hands the works to the main

@@ -30,6 +30,7 @@ func TestSettingsRoundTrip(t *testing.T) {
 		CardWidth:           300,
 
 		AutoDownloadSubscriptions:   true,
+		NotificationsEnabled:        true,
 		SubscriptionIntervalMinutes: 30,
 
 		NovelFontSize:   novelFontSizeMax,
@@ -81,6 +82,9 @@ func TestDefaultSettings(t *testing.T) {
 	if s.AutoDownloadSubscriptions {
 		t.Error("auto download on by default")
 	}
+	if !s.NotificationsEnabled {
+		t.Error("notifications off by default")
+	}
 	if s.SubscriptionIntervalMinutes != subscriptionIntervalDefault {
 		t.Errorf("interval %d, want %d", s.SubscriptionIntervalMinutes, subscriptionIntervalDefault)
 	}
@@ -128,6 +132,9 @@ func TestLoadFillsMissingFields(t *testing.T) {
 	}
 	if s.AutoDownloadSubscriptions {
 		t.Error("missing auto download not defaulted to off")
+	}
+	if !s.NotificationsEnabled {
+		t.Error("missing notifications not defaulted to on")
 	}
 	if s.SubscriptionIntervalMinutes != subscriptionIntervalDefault {
 		t.Errorf("missing interval %d, want %d", s.SubscriptionIntervalMinutes, subscriptionIntervalDefault)
@@ -465,7 +472,7 @@ func TestSettingsPageShowsFields(t *testing.T) {
 	a := New()
 	a.route = routeSettings
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽", "网络", "代理地址", "SauceNAO API Key",
+	for _, label := range []string{"主题", "语言", "下载目录", "下载并发", "命名模板", "自动下载新作品", "检查间隔（分钟）", "显示 R18", "瀑布流列宽", "桌面通知", "网络", "代理地址", "SauceNAO API Key",
 		"缓存", "图片缓存上限（MB）", "当前缓存大小", "清理缓存"} {
 		if !tt.HasText(label) {
 			t.Errorf("label %q missing: %q", label, tt.Texts())
@@ -728,6 +735,37 @@ func TestSettingsPageSavesMacro(t *testing.T) {
 		if err == nil {
 			if got.DownloadMacro != "@{artist_name}/@{id}.@{ext}" {
 				t.Fatalf("saved macro %q", got.DownloadMacro)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("settings not saved: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// TestSettingsPageSavesNotificationsOff checks a save writes the notification
+// switch the page draws, and a later load reads it back.
+func TestSettingsPageSavesNotificationsOff(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	a.settings.NotificationsEnabled = false
+	tt := ui.NewTester(a.View, 1000, 900)
+	if err := tt.Click("保存"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		got, err := Load(path)
+		if err == nil {
+			if got.NotificationsEnabled {
+				t.Fatalf("saved notifications on, want off")
 			}
 			return
 		}

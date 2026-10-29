@@ -213,6 +213,8 @@
     "showR18": "Afficher R18",
     "showR18Hint": "Désactivé, les recommandations, abonnements, classements et recherches excluent les œuvres R18",
     "cardWidth": "Largeur des colonnes de la mosaïque",
+    "notifications": "Notifications du bureau",
+    "notificationsHint": "En envoyer une quand une vérification d'abonnement trouve des œuvres",
     "language": "Langue",
     "langSystem": "Suivre le système",
     "langZh": "中文",
@@ -368,6 +370,12 @@
     "intervalHint": "De 5 à 1440 minutes, 15 par défaut",
     "autoQueued": "%d pages ajoutées automatiquement à la file",
     "autoNoDir": "Aucun dossier de téléchargement : les nouvelles œuvres n'ont pas été ajoutées"
+  },
+  "notify": {
+    "newWorksTitle": "Nouvelles œuvres sur Pixiv",
+    "newWorksBody": "%d nouvelles œuvres, la dernière : %s",
+    "autoQueuedTitle": "Ajouté à la file de téléchargement",
+    "autoQueuedBody": "%d pages ajoutées automatiquement"
   },
   "novel": {
     "loadFailed": "Impossible de charger le roman : %s",
