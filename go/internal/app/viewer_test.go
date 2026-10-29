@@ -578,16 +578,23 @@ type ugoiraTransport struct {
 	frames  int
 	zipData []byte
 
-	mu       sync.Mutex
-	metaFail bool
-	zipErr   error
-	zipCalls int
+	mu        sync.Mutex
+	metaFail  bool
+	zipErr    error
+	metaCalls int
+	zipCalls  int
 }
 
 func (tr *ugoiraTransport) setMetaFail(fail bool) {
 	tr.mu.Lock()
 	tr.metaFail = fail
 	tr.mu.Unlock()
+}
+
+func (tr *ugoiraTransport) metaCount() int {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return tr.metaCalls
 }
 
 func (tr *ugoiraTransport) zipCount() int {
@@ -600,11 +607,15 @@ func (tr *ugoiraTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	tr.mu.Lock()
 	metaFail, zipErr := tr.metaFail, tr.zipErr
 	isZip := req.URL.String() == ugoiraZipURL
+	isMeta := strings.HasSuffix(req.URL.Path, "/v1/ugoira/metadata")
 	if isZip {
 		tr.zipCalls++
 	}
+	if isMeta {
+		tr.metaCalls++
+	}
 	tr.mu.Unlock()
-	if strings.HasSuffix(req.URL.Path, "/v1/ugoira/metadata") {
+	if isMeta {
 		if metaFail {
 			// A 404 is a failure the client does not retry, so the test does
 			// not wait through the backoff.

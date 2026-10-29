@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/novel"
+	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 // The widest a body image may draw and the height of the block that stands in
@@ -26,12 +29,17 @@ const (
 type novelViewState struct {
 	novelID int64
 	title   string
-	scroll  ui.ScrollState
+	// author is the writer the novel was listed with, saved with the text.
+	author string
+	scroll ui.ScrollState
 
 	mu      sync.Mutex
 	doc     *novel.Document
 	loading bool
 	err     string
+	// pendingSave is set when the download button was pressed before the body
+	// landed, so the save happens once it does.
+	pendingSave bool
 	// bookmarked is the novel's bookmark state, taken from the list it was
 	// opened from, and bookmarking marks a request in flight.
 	bookmarked  bool
@@ -94,6 +102,7 @@ func (a *App) openNovel(novelID int64, title string) {
 	v := &novelViewState{
 		novelID:      novelID,
 		title:        title,
+		author:       a.novelAuthor(novelID),
 		loading:      true,
 		bookmarked:   a.novelBookmarked(novelID),
 		imageURLs:    map[novel.Image]string{},
@@ -114,9 +123,9 @@ func (a *App) novelPlace(novelID int64) float64 {
 	return a.novelProgress.Get(novelID)
 }
 
-// novelBookmarked reports the bookmark state the novel was listed with. The
+// novelListed returns the loaded list entry of a novel, if one holds it. The
 // click passes only the id and title, so the loaded novel feeds are asked.
-func (a *App) novelBookmarked(novelID int64) bool {
+func (a *App) novelListed(novelID int64) (pixiv.Novel, bool) {
 	feeds := []*novelFeedState{a.searchNovels}
 	if a.userView != nil {
 		feeds = append(feeds, a.userView.novelFeed)
@@ -127,11 +136,23 @@ func (a *App) novelBookmarked(novelID int64) bool {
 		}
 		for _, n := range st.snapshot().items {
 			if n.ID == novelID {
-				return n.IsBookmarked
+				return n, true
 			}
 		}
 	}
-	return false
+	return pixiv.Novel{}, false
+}
+
+// novelBookmarked reports the bookmark state the novel was listed with.
+func (a *App) novelBookmarked(novelID int64) bool {
+	n, ok := a.novelListed(novelID)
+	return ok && n.IsBookmarked
+}
+
+// novelAuthor is the writer the novel was listed with, empty when unknown.
+func (a *App) novelAuthor(novelID int64) string {
+	n, _ := a.novelListed(novelID)
+	return n.User.Name
 }
 
 // loadNovel fetches and parses the novel off the main thread, then shows it.
@@ -145,14 +166,25 @@ func (a *App) loadNovel(v *novelViewState) {
 	}
 	a.update(func() {
 		v.mu.Lock()
-		defer v.mu.Unlock()
 		v.loading = false
 		if err != nil {
 			v.err = err.Error()
+			pending := v.pendingSave
+			v.pendingSave = false
+			v.mu.Unlock()
+			if pending {
+				a.notice = a.tf("download.novelFailed", err.Error())
+			}
 			return
 		}
 		v.doc = doc
+		pending := v.pendingSave
+		v.pendingSave = false
 		go a.loadNovelImages(v, doc.Images)
+		v.mu.Unlock()
+		if pending {
+			a.saveNovelText(v, doc)
+		}
 	})
 }
 
@@ -237,6 +269,85 @@ func (a *App) retryNovel(v *novelViewState) {
 	go a.loadNovel(v)
 }
 
+// downloadNovel saves the loaded body as text, loading it first when the
+// click came before it landed.
+func (a *App) downloadNovel(v *novelViewState) {
+	v.mu.Lock()
+	doc := v.doc
+	if doc == nil {
+		start := !v.loading
+		v.pendingSave = true
+		if start {
+			v.loading, v.err = true, ""
+		}
+		v.mu.Unlock()
+		if start {
+			go a.loadNovel(v)
+		}
+		return
+	}
+	v.mu.Unlock()
+	a.saveNovelText(v, doc)
+	a.update(func() {})
+}
+
+// saveNovelText writes the novel as a text file in the download directory and
+// leaves the outcome as a notice.
+func (a *App) saveNovelText(v *novelViewState, doc *novel.Document) {
+	if a.downloadsDir == "" {
+		a.notice = a.t("viewer.noDownloadDir")
+		return
+	}
+	v.mu.Lock()
+	title, author, novelID := v.title, v.author, v.novelID
+	v.mu.Unlock()
+	if title == "" {
+		title = doc.Title
+	}
+	path := filepath.Join(a.downloadsDir, novelFileName(title, novelID))
+	if err := os.WriteFile(path, []byte(novelText(title, author, doc)), 0o644); err != nil {
+		a.notice = a.tf("download.novelFailed", err.Error())
+		return
+	}
+	a.notice = a.t("download.novelSaved")
+}
+
+// novelFileName is the safe name a saved novel gets: its title, or its id
+// when the title has nothing usable.
+func novelFileName(title string, id int64) string {
+	name := downloadSafeSegment(downloadContextName(title))
+	if name == "" {
+		name = fmt.Sprintf("novel_%d", id)
+	}
+	return name + ".txt"
+}
+
+// novelText is the saved file's text: the title, the author when known, and the
+// chapters, with ruby readings written after their base.
+func novelText(title, author string, doc *novel.Document) string {
+	var b strings.Builder
+	if title != "" {
+		b.WriteString(title)
+		b.WriteString("\n")
+	}
+	if author != "" {
+		b.WriteString(author)
+		b.WriteString("\n")
+	}
+	for _, ch := range doc.Chapters {
+		b.WriteString("\n")
+		if ch.Title != "" {
+			b.WriteString(ch.Title)
+			b.WriteString("\n\n")
+		}
+		for _, p := range ch.Paragraphs {
+			b.WriteString(novelParagraphText(p))
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
 // novelPage draws the novel: the back button and the title above the body.
 func (a *App) novelPage(c *ui.Context) {
 	v := a.novelView
@@ -265,6 +376,9 @@ func (a *App) novelPage(c *ui.Context) {
 				if b := ui.Button(c, label); b.Disabled(s.bookmarking).Clicked() {
 					a.toggleNovelBookmark(v)
 				}
+			}
+			if ui.Button(c, a.t("viewer.download")).Clicked() {
+				a.downloadNovel(v)
 			}
 			if s.err != "" {
 				if ui.Button(c, a.t("common.retry")).Clicked() {

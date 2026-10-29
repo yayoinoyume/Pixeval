@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -463,5 +465,84 @@ func TestNovelImageMaxWidth(t *testing.T) {
 		if got := novelImageMaxWidth(tt.reading); got != tt.want {
 			t.Errorf("max width %v at reading width %v, want %v", got, tt.reading, tt.want)
 		}
+	}
+}
+
+// TestNovelDownloadSavesText checks the download action writes the title, the
+// author and the body as a text file in the download directory.
+func TestNovelDownloadSavesText(t *testing.T) {
+	a := newNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.downloadsDir = t.TempDir()
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+	a.novelView.mu.Lock()
+	a.novelView.author = "作者A"
+	a.novelView.mu.Unlock()
+
+	a.downloadNovel(a.novelView)
+	data, err := os.ReadFile(filepath.Join(a.downloadsDir, "星之故事.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	for _, want := range []string{"星之故事", "作者A", "第一章", "这是第一段。", "这是漢字(かんじ)的故事。"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("%q missing from saved text:\n%s", want, data)
+		}
+	}
+	if want := a.t("download.novelSaved"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+}
+
+// TestNovelDownloadWaitsForBody checks a click before the body lands saves it
+// once it does.
+func TestNovelDownloadWaitsForBody(t *testing.T) {
+	release := make(chan struct{})
+	a := newNovelApp(func(context.Context, int64) (string, error) {
+		<-release
+		return novelBody, nil
+	})
+	a.downloadsDir = t.TempDir()
+	a.openNovel(7, "星之故事")
+	a.downloadNovel(a.novelView)
+	close(release)
+
+	path := filepath.Join(a.downloadsDir, "星之故事.txt")
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the pending download never wrote the novel")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestNovelDownloadFailureNotice checks a save that cannot write says so.
+func TestNovelDownloadFailureNotice(t *testing.T) {
+	a := englishNovelApp(func(context.Context, int64) (string, error) { return novelBody, nil })
+	a.openNovel(7, "星之故事")
+	waitNovel(t, a, func(v novelPageView) bool { return !v.loading })
+	blocked := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blocked, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	a.downloadsDir = blocked
+	a.downloadNovel(a.novelView)
+	if !strings.HasPrefix(a.notice, "Could not save the novel:") {
+		t.Errorf("notice %q, want a save failure", a.notice)
+	}
+}
+
+// TestNovelFileNameIsSafe checks a saved novel's name drops what no file
+// system takes, and falls back to the id without a usable title.
+func TestNovelFileNameIsSafe(t *testing.T) {
+	if got, want := novelFileName("a/b:c*?d", 7), "a_b_c__d.txt"; got != want {
+		t.Errorf("name %q, want %q", got, want)
+	}
+	if got, want := novelFileName(" .. ", 7), "novel_7.txt"; got != want {
+		t.Errorf("name %q, want %q", got, want)
 	}
 }
