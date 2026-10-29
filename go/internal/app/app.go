@@ -88,6 +88,10 @@ type App struct {
 	recommendedUsers *userListState
 	// seriesView is the series page shown, nil until one opens.
 	seriesView *seriesViewState
+	// seriesFeeds are the series watchlist tabs' lists, one per kind, and
+	// seriesTab is the kind shown.
+	seriesFeeds [seriesTabCount]*seriesListState
+	seriesTab   int
 	// related is the related-works page shown, nil until one opens.
 	related *relatedViewState
 	// novelView is the novel reading page shown, nil until one opens, and
@@ -387,6 +391,7 @@ func New() *App {
 		searchNovels:     &novelFeedState{},
 		searchUsers:      &userListState{},
 		recommendedUsers: &userListState{},
+		seriesFeeds:      [seriesTabCount]*seriesListState{{}, {}},
 		spotlight:        &spotlightState{},
 		searchSort:       searchSortDateDesc,
 		searchTarget:     searchTargetPartial,
@@ -703,6 +708,7 @@ func (a *App) resetAccountPages() {
 	a.relatedUsers = nil
 	a.myPixivUsers = nil
 	a.seriesView = nil
+	a.seriesFeeds = [seriesTabCount]*seriesListState{{}, {}}
 	a.related = nil
 	a.novelView = nil
 	switch a.route {

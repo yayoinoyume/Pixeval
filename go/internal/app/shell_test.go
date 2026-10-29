@@ -90,6 +90,7 @@ func TestShellRailGroupsReachDestinations(t *testing.T) {
 		want  route
 	}{
 		{"作品", "新作", routeNew},
+		{"作品", "系列", routeSeriesList},
 		{"作品", "MyPixiv", routeMyPixiv},
 		{"作品", "特辑", routeSpotlight},
 		{"作品", "追更", routeSubs},

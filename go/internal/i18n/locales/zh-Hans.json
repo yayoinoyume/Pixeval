@@ -49,6 +49,7 @@
     "noWorks": "没有作品",
     "illust": "插画",
     "manga": "漫画",
+    "novel": "小说",
     "save": "保存",
     "back": "返回"
   },
@@ -389,6 +390,10 @@
   },
   "series": {
     "open": "系列",
+    "watchlistTitle": "追更系列",
+    "watchlistEmpty": "还没有追更的系列",
+    "watchlistEmptyHint": "在 Pixiv 上追更系列后，会显示在这里",
+    "novelUnsupported": "小说系列详情页尚未支持",
     "loadFailed": "加载系列失败：%s",
     "author": "作者",
     "worksCount": "%d 件作品",
