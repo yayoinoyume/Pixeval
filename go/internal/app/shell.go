@@ -155,6 +155,11 @@ func (a *App) shortcuts(c *ui.Context) {
 func (a *App) goRoute(r route) {
 	a.closeViewer()
 	navMenuState.open = ""
+	// A data action's confirmation belongs to the settings page, so leaving it
+	// drops the pending one instead of asking again on the next visit.
+	if r != routeSettings {
+		settingsConfirmPending = settingsConfirmNone
+	}
 	a.route = r
 }
 

@@ -435,6 +435,34 @@ func settingsDownloadDir(s *Settings) string {
 	return downloadDir()
 }
 
+// settingsDownloadMacro is the naming template the settings ask for, or the
+// default one when they have none.
+func settingsDownloadMacro(s *Settings) string {
+	if s != nil && strings.TrimSpace(s.DownloadMacro) != "" {
+		return s.DownloadMacro
+	}
+	return download.DefaultMacro
+}
+
+// publishSettings stores a copy of the settings for the MCP server, which runs
+// off the main thread. It is called on the main thread after a load or a save,
+// so nothing writes the copy once it is stored.
+func (a *App) publishSettings() {
+	if a.settings == nil {
+		return
+	}
+	snap := new(Settings)
+	*snap = *a.settings
+	a.settingsSnap.Store(snap)
+}
+
+// settingsSnapshot is the settings copy the MCP server reads, nil before the
+// first publish.
+func (a *App) settingsSnapshot() *Settings {
+	s, _ := a.settingsSnap.Load().(*Settings)
+	return s
+}
+
 // imageCacheLimitBytes is the disk limit the settings ask for.
 func imageCacheLimitBytes(s *Settings) int64 {
 	if s == nil || s.ImageCacheLimitMB <= 0 {

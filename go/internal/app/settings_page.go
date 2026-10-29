@@ -816,6 +816,7 @@ func (a *App) applySavedSettings(c *ui.Context) {
 			return
 		}
 		a.settingsErr = ""
+		a.publishSettings()
 		a.downloadsDir = settingsDownloadDir(a.settings)
 		if a.downloads != nil {
 			a.downloads.SetConcurrency(a.settings.DownloadConcurrency)

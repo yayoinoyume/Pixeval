@@ -181,10 +181,7 @@ func (a *App) downloadLoaded(works []pixiv.Illustration) (queued int) {
 // downloadMacro is the naming template the settings ask for, or the default
 // one when there are no settings yet.
 func (a *App) downloadMacro() string {
-	if a.settings != nil && strings.TrimSpace(a.settings.DownloadMacro) != "" {
-		return a.settings.DownloadMacro
-	}
-	return download.DefaultMacro
+	return settingsDownloadMacro(a.settings)
 }
 
 // downloadTemplate parses a macro; nil means the caller names the file itself.

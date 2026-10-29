@@ -177,6 +177,7 @@ func (a *App) SetDownloadMacro(ctx context.Context, text string) error {
 			return
 		}
 		a.settings.DownloadMacro = text
+		a.publishSettings()
 		s := *a.settings
 		go func() { done <- Save(path, &s) }()
 	}

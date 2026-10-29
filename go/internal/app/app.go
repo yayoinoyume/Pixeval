@@ -160,8 +160,12 @@ type App struct {
 	sauce         *sauceState
 	sauceSearchFn func(ctx context.Context, apiKey, imageURL string) (*saucenao.Result, error)
 	// settings are the user's preferences, loaded at start and saved from the
-	// settings page. shortcutsOpen shows the shortcut hint in its About card.
+	// settings page, which edits them in place on the main thread. The MCP
+	// server runs off it, so it reads settingsSnap, the copy publishSettings
+	// stores after each change. shortcutsOpen shows the shortcut hint in its
+	// About card.
 	settings      *Settings
+	settingsSnap  atomic.Value // *Settings, never written after the store
 	shortcutsOpen bool
 	// cacheUsage is the image cache size the settings page shows, measured at
 	// cacheUsageAt so a redraw every frame does not scan the cache directory.
@@ -430,6 +434,8 @@ func New() *App {
 	// thread; the subscription page toasts the result when it next draws.
 	subs.OnNewFetched = a.onNewSubscriptions
 	a.loadLanguage()
+	// The MCP server reads the published copy, so it exists from the start.
+	a.publishSettings()
 	return a
 }
 
@@ -822,7 +828,11 @@ func (a *App) Status() string {
 	if a.downloads == nil {
 		return "downloads: unavailable"
 	}
-	return fmt.Sprintf("downloads: %d task(s) in %s", len(a.downloads.Snapshot()), a.downloadsDir)
+	dir := ""
+	if s := a.settingsSnapshot(); s != nil {
+		dir = settingsDownloadDir(s)
+	}
+	return fmt.Sprintf("downloads: %d task(s) in %s", len(a.downloads.Snapshot()), dir)
 }
 
 // DownloadTasks returns the download queue's tasks; the MCP download tasks
@@ -1107,7 +1117,7 @@ func (a *App) TrendingTags(ctx context.Context) ([]pixiv.TrendingTag, error) {
 // SettingsSummary describes the saved preferences for the MCP settings tool.
 // Secrets, the proxy URL and resolver lists stay out of it.
 func (a *App) SettingsSummary(context.Context) (string, error) {
-	s := a.settings
+	s := a.settingsSnapshot()
 	if s == nil {
 		return "", errors.New("settings are unavailable")
 	}
@@ -1127,10 +1137,11 @@ func (a *App) SettingsSummary(context.Context) (string, error) {
 // DownloadMacro returns the naming template the settings ask for; the MCP
 // download macro tool.
 func (a *App) DownloadMacro(context.Context) (string, error) {
-	if a.settings == nil {
+	s := a.settingsSnapshot()
+	if s == nil {
 		return "", errors.New("settings are unavailable")
 	}
-	return a.downloadMacro(), nil
+	return settingsDownloadMacro(s), nil
 }
 
 // History returns the works the user opened, newest first; the MCP history
