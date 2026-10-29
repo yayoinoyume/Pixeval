@@ -208,7 +208,13 @@
     "tabIllust": "投稿插画",
     "tabManga": "投稿漫画",
     "tabNovel": "小说",
-    "noNovels": "这个用户还没有小说"
+    "tabFollowing": "关注",
+    "tabFollowers": "粉丝",
+    "noNovels": "这个用户还没有小说",
+    "noFollowing": "这个用户还没有关注任何人",
+    "noFollowers": "这个用户还没有粉丝",
+    "followingLoadFailed": "加载关注列表失败：%s",
+    "followersLoadFailed": "加载粉丝列表失败：%s"
   },
   "series": {
     "open": "系列",

@@ -208,7 +208,13 @@
     "tabIllust": "Illustrations",
     "tabManga": "Mangas",
     "tabNovel": "Romans",
-    "noNovels": "Aucun roman pour cet utilisateur"
+    "tabFollowing": "Abonnements",
+    "tabFollowers": "Abonnés",
+    "noNovels": "Aucun roman pour cet utilisateur",
+    "noFollowing": "Cet utilisateur ne suit personne",
+    "noFollowers": "Cet utilisateur n'a aucun abonné",
+    "followingLoadFailed": "Impossible de charger les abonnements : %s",
+    "followersLoadFailed": "Impossible de charger les abonnés : %s"
   },
   "series": {
     "open": "Série",
