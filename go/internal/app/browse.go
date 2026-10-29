@@ -24,6 +24,9 @@ const (
 	coverHeight = 720
 )
 
+// iconCheck is the tick a picked card shows in selection mode.
+var iconCheck = icon(`<path d="m5 12.5 4.5 4.5L19 7"/>`)
+
 // browseView is what the view draws, read from the state in one go. The
 // slices are the state's own: callers read them and must not change them.
 type browseView struct {
@@ -80,6 +83,13 @@ type browseState struct {
 	filterExpr    filter.Expr
 	filterErr     string
 	filterOpen    bool
+
+	// selecting marks the feed as picking works for a batch download, and
+	// selected holds the picks by id. The view owns both, like the filter: only
+	// the main thread reads or writes them, a tile's click picks instead of
+	// opening while they are on, and a new list drops them.
+	selecting bool
+	selected  map[int64]bool
 
 	// masonry is the feed's place, touched only by the view.
 	masonry widgets.MasonryState
@@ -318,6 +328,7 @@ func (st *browseState) removeAuthor(userID int64) {
 	tiles := make([]widgets.MasonryItem, 0, len(st.tiles))
 	for i, w := range st.items {
 		if w.User.ID == userID {
+			delete(st.selected, w.ID)
 			continue
 		}
 		items = append(items, w)
@@ -336,6 +347,7 @@ func (st *browseState) removeWorks(match func(pixiv.Illustration) bool) {
 	tiles := make([]widgets.MasonryItem, 0, len(st.tiles))
 	for i, w := range st.items {
 		if match(w) {
+			delete(st.selected, w.ID)
 			continue
 		}
 		items = append(items, w)
@@ -367,6 +379,9 @@ func (st *browseState) restart() {
 	st.loading = false
 	st.armed = true
 	st.mu.Unlock()
+	// The picks belonged to the list that went; the new one starts none.
+	st.selecting = false
+	st.selected = nil
 }
 
 // newPage draws the site-wide feed of works just posted.
@@ -430,8 +445,13 @@ func (a *App) imageReady(st *browseState, key string) func() {
 // browsePage draws a feed, and loads its next page once it is at the end.
 func (a *App) browsePage(c *ui.Context, st *browseState) {
 	t := themeOf(c)
-	a.filterBar(c, st)
 	v := st.snapshot()
+	// The filter and selection controls are one toolbar: Tab enters at the
+	// filter and leaves past the selection, so the feed's tiles follow them.
+	ui.Column(c).FocusGroup(ui.Horizontal).Children(func() {
+		a.filterBar(c, st)
+		a.selectionBar(c, st, v.items)
+	})
 	if v.err != "" {
 		errorKey := st.errorKey
 		if errorKey == "" {
@@ -477,6 +497,113 @@ func (a *App) browsePage(c *ui.Context, st *browseState) {
 	}
 }
 
+// selectionBar draws a feed's selection controls: the switch into selection
+// mode, or, while it is on, how many works are picked and what to do with
+// them. It shows only over a loaded list, since there is nothing to pick
+// otherwise.
+func (a *App) selectionBar(c *ui.Context, st *browseState, items []pixiv.Illustration) {
+	if len(items) == 0 && !st.selecting {
+		return
+	}
+	t := themeOf(c)
+	ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Gap(t.SpaceS).
+		AlignItems(ui.Center).Justify(ui.End).Children(func() {
+		if !st.selecting {
+			if ui.Button(c, a.t("selection.select")).Clicked() {
+				st.selecting = true
+			}
+			return
+		}
+		ui.Text(c, a.tf("selection.selected", len(st.selected))).FontSize(t.TextSmall).
+			TextColor(t.TextMuted)
+		if ui.Button(c, a.t("selection.selectAll")).Clicked() {
+			st.selectAll(items)
+		}
+		if ui.Button(c, a.t("selection.clear")).Clicked() {
+			st.clearSelection()
+		}
+		if ui.Button(c, a.t("selection.download")).Clicked() {
+			a.downloadSelected(st, items)
+		}
+		if ui.Button(c, a.t("selection.exit")).Clicked() {
+			st.selecting = false
+			st.clearSelection()
+		}
+	})
+}
+
+// toggleSelected picks a work, or drops it when picked.
+func (st *browseState) toggleSelected(id int64) {
+	if st.selected == nil {
+		st.selected = map[int64]bool{}
+	}
+	if st.selected[id] {
+		delete(st.selected, id)
+		return
+	}
+	st.selected[id] = true
+}
+
+// selectAll picks every loaded work, dropping picks the feed no longer holds.
+func (st *browseState) selectAll(items []pixiv.Illustration) {
+	st.selected = make(map[int64]bool, len(items))
+	for _, w := range items {
+		st.selected[w.ID] = true
+	}
+}
+
+// clearSelection drops every pick.
+func (st *browseState) clearSelection() {
+	st.selected = nil
+}
+
+// selectedWorks returns the loaded works picked, in feed order.
+func (st *browseState) selectedWorks(items []pixiv.Illustration) []pixiv.Illustration {
+	if len(st.selected) == 0 {
+		return nil
+	}
+	picked := make([]pixiv.Illustration, 0, len(st.selected))
+	for _, w := range items {
+		if st.selected[w.ID] {
+			picked = append(picked, w)
+		}
+	}
+	return picked
+}
+
+// downloadSelected queues the picked works, saying so when nothing is picked
+// or when saving is off. An animation is skipped as the loaded-batch button
+// skips one: its zip is the viewer's job.
+func (a *App) downloadSelected(st *browseState, items []pixiv.Illustration) {
+	picked := st.selectedWorks(items)
+	if len(picked) == 0 {
+		a.notice = a.t("selection.none")
+		a.update(func() {})
+		return
+	}
+	if a.downloads == nil || a.downloadsDir == "" {
+		a.notice = a.t("viewer.noDownloadDir")
+		a.update(func() {})
+		return
+	}
+	skipped := 0
+	for _, w := range picked {
+		if isUgoira(w) {
+			skipped++
+		}
+	}
+	queued := a.downloadLoaded(picked)
+	if skipped > 0 {
+		skip := a.tf("selection.ugoiraSkipped", skipped)
+		if queued > 0 {
+			a.notice = a.tf("download.allQueued", queued) + " " + skip
+		} else {
+			a.notice = skip
+		}
+		a.update(func() {})
+	}
+}
+
 // browseCard draws one tile: the cover, its title and the author. A cover not
 // loaded yet, or one that failed, is a plain block. There is no card box:
 // the picture and two quiet lines are the whole tile.
@@ -492,6 +619,11 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 	card = card.Fill().Focusable().
 		Label(a.tf("a11y.card", work.Title, work.User.Name)).
 		Cursor(ui.CursorPointer).OnClick(func() {
+		if st.selecting {
+			// In selection mode a tile picks the work instead of opening it.
+			st.toggleSelected(work.ID)
+			return
+		}
 		a.openViewer(&items[i], 0)
 	}).ContextMenu(func(m *ui.Menu) {
 		// Right click opens the author's page: the card's click is the work.
@@ -511,10 +643,15 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 			ui.Column(c).Fill().Center().Children(func() {
 				ui.Text(c, a.t("common.coverFailed")).FontSize(t.TextTiny).TextColor(t.TextMuted)
 			})
-			return
-		}
-		if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.imageReady(st, key)); bmp != nil {
+		} else if bmp := a.images.Thumb(key, coverWidth, coverHeight, a.imageReady(st, key)); bmp != nil {
 			ui.Image(c, bmp).Fill().Fit(ui.Cover).Label(a.tf("a11y.cover", work.Title))
+		}
+		if st.selecting && st.selected[work.ID] {
+			badge := ui.Box(c).Size(24, 24).Center().Radius(t.RadiusFull).
+				Background(t.AccentFill).Absolute().Top(t.SpaceS).Right(t.SpaceS)
+			badge.Children(func() {
+				ui.Icon(c, iconCheck).Size(14, 14).TextColor(t.AccentText)
+			})
 		}
 	})
 	card.Children(func() {
