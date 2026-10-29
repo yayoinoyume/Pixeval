@@ -116,6 +116,10 @@ const settingsPad float32 = 20
 // rest are counted by the card's count text only.
 const blockedListShown = 10
 
+// blockedTagListShown is how many blocked tags the settings card lists; the
+// rest are counted by the card's count text only.
+const blockedTagListShown = 10
+
 // settingsPage draws the preferences as cards, so a setting is found by
 // what it is about rather than by scanning one long column.
 func (a *App) settingsPage(c *ui.Context) {
@@ -245,6 +249,28 @@ func (a *App) settingsPage(c *ui.Context) {
 							row(name, "", func() {
 								if ui.Button(c, a.t("block.remove")).Clicked() {
 									a.unblockUser(u.ID)
+								}
+							})
+						}
+					})
+
+					a.settingsGroup(c, a.t("block.tag"), func(row settingsRow) {
+						tags := a.blockedTagsSnapshot()
+						row(a.tf("block.tagCount", len(tags)), "", func() {
+							if ui.Button(c, a.t("block.tagClear")).Disabled(len(tags) == 0).Clicked() {
+								a.clearBlockedTags()
+							}
+						})
+						if len(tags) == 0 {
+							ui.Text(c, a.t("block.tagEmpty")).FontSize(t.TextTiny).TextColor(t.TextMuted).
+								Padding(t.SpaceS, settingsPad, t.SpaceM, settingsPad)
+							return
+						}
+						for _, tag := range tags[:min(len(tags), blockedTagListShown)] {
+							tag := tag
+							row(tag.Name, "", func() {
+								if ui.Button(c, a.t("block.tagRemove")).Clicked() {
+									a.unblockTag(tag.Name)
 								}
 							})
 						}

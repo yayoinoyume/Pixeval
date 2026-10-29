@@ -148,8 +148,10 @@ type App struct {
 	// watchLaterFailed the covers of it that did not load.
 	watchLater       *WatchLater
 	watchLaterFailed map[string]bool
-	// blocked is the users whose works and lists are hidden.
-	blocked *BlockedUsers
+	// blocked is the users whose works and lists are hidden, and blockedTags
+	// the illustration tags whose works are hidden.
+	blocked     *BlockedUsers
+	blockedTags *BlockedTags
 	// bookmarkFn sets or clears a work's bookmark off the main thread; tests
 	// replace it to avoid the network.
 	bookmarkFn func(ctx context.Context, id int64, on bool) error
@@ -268,6 +270,7 @@ func New() *App {
 		watchLater:       loadWatchLater(),
 		watchLaterFailed: map[string]bool{},
 		blocked:          loadBlockedUsers(),
+		blockedTags:      loadBlockedTags(),
 		novelProgress:    loadNovelProgress(),
 		bookmarkFn: func(ctx context.Context, id int64, on bool) error {
 			if on {

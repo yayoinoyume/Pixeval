@@ -216,3 +216,37 @@ func TestSettingsPageClearsImageCache(t *testing.T) {
 		t.Errorf("clear not reported: %q", tt.Texts())
 	}
 }
+
+// TestSettingsPageBlockedTags checks the tags card counts and lists blocked
+// tags, and its buttons unblock one or clear them all.
+func TestSettingsPageBlockedTags(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.blockedTags.Add(BlockedTag{Name: "オリジナル"})
+	a.blockedTags.Add(BlockedTag{Name: "風景"})
+	a.route = routeSettings
+	tt := ui.NewTester(a.View, 1000, 1800)
+	if !tt.HasText(a.tf("block.tagCount", 2)) {
+		t.Fatalf("count missing: %q", tt.Texts())
+	}
+	if !tt.HasText("風景") {
+		t.Fatalf("blocked tag not listed: %q", tt.Texts())
+	}
+	if err := tt.Click(a.t("block.tagRemove")); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.isTagBlocked("風景") {
+		t.Error("tag still blocked after the remove button")
+	}
+	tt.Frame()
+	if err := tt.Click(a.t("block.tagClear")); err != nil {
+		t.Fatalf("Click clear: %v", err)
+	}
+	if got := a.blockedTagsSnapshot(); len(got) != 0 {
+		t.Errorf("blocked tags %+v after clearing, want none", got)
+	}
+	tt.Frame()
+	if !tt.HasText(a.t("block.tagEmpty")) {
+		t.Errorf("empty text missing: %q", tt.Texts())
+	}
+}

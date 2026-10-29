@@ -328,6 +328,24 @@ func (st *browseState) removeAuthor(userID int64) {
 	st.items, st.tiles = items, tiles
 }
 
+// removeWorks drops the works match picks from the feed.
+func (st *browseState) removeWorks(match func(pixiv.Illustration) bool) {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	items := make([]pixiv.Illustration, 0, len(st.items))
+	tiles := make([]widgets.MasonryItem, 0, len(st.tiles))
+	for i, w := range st.items {
+		if match(w) {
+			continue
+		}
+		items = append(items, w)
+		if i < len(st.tiles) {
+			tiles = append(tiles, st.tiles[i])
+		}
+	}
+	st.items, st.tiles = items, tiles
+}
+
 // retry clears a failure, so the next frame loads the page again.
 func (st *browseState) retry() {
 	st.mu.Lock()
