@@ -15,18 +15,19 @@ import (
 type route string
 
 const (
-	routeHome      route = "home"
-	routeNew       route = "new"
-	routeMyPixiv   route = "mypixiv"
-	routeSearch    route = "search"
-	routeSubs      route = "subscriptions"
-	routeDownloads route = "downloads"
-	routeHistory   route = "history"
-	routeBookmarks route = "bookmarks"
-	routeSettings  route = "settings"
-	routeUser      route = "user"
-	routeSeries    route = "series"
-	routeNovel     route = "novel"
+	routeHome       route = "home"
+	routeNew        route = "new"
+	routeMyPixiv    route = "mypixiv"
+	routeSearch     route = "search"
+	routeSubs       route = "subscriptions"
+	routeDownloads  route = "downloads"
+	routeHistory    route = "history"
+	routeBookmarks  route = "bookmarks"
+	routeWatchLater route = "watchLater"
+	routeSettings   route = "settings"
+	routeUser       route = "user"
+	routeSeries     route = "series"
+	routeNovel      route = "novel"
 )
 
 // routeLabel is the navigation label of the page.
@@ -36,7 +37,7 @@ func (a *App) routeLabel(r route) string {
 
 var (
 	browseRoutes  = []route{routeHome, routeNew, routeMyPixiv, routeSearch, routeSubs}
-	libraryRoutes = []route{routeDownloads, routeHistory, routeBookmarks}
+	libraryRoutes = []route{routeDownloads, routeHistory, routeBookmarks, routeWatchLater}
 )
 
 // View builds the shell: the navigation on the left, the page title and the
@@ -172,6 +173,8 @@ func navGlyph(r route) *ui.SVG {
 		return iconUser
 	case routeBookmarks:
 		return iconHeart
+	case routeWatchLater:
+		return iconHistory
 	default:
 		return navIcon(r)
 	}
@@ -234,6 +237,8 @@ func (a *App) page(c *ui.Context) {
 		a.downloadsPage(c)
 	case routeHistory:
 		a.historyPage(c)
+	case routeWatchLater:
+		a.watchLaterPage(c)
 	case routeBookmarks:
 		a.bookmarksPage(c)
 	case routeSettings:

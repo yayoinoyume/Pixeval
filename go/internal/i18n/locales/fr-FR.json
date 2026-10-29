@@ -16,6 +16,7 @@
     "user": "Utilisateur",
     "series": "Séries",
     "novel": "Roman",
+    "watchLater": "Plus tard",
     "region": "Navigation",
     "groupBrowse": "Parcourir",
     "groupLibrary": "Bibliothèque"
@@ -185,6 +186,15 @@
     "emptyHint": "Les œuvres que vous ouvrez sont enregistrées ici",
     "count": "%d entrées",
     "clear": "Effacer l'historique",
+    "openFailed": "Impossible d'ouvrir l'œuvre : %s"
+  },
+  "watchLater": {
+    "add": "À regarder plus tard",
+    "added": "Ajoutée",
+    "remove": "Retirer de la liste",
+    "empty": "Rien à regarder plus tard",
+    "emptyHint": "Les œuvres enregistrées depuis une carte ou la visionneuse apparaissent ici",
+    "clear": "Vider la liste",
     "openFailed": "Impossible d'ouvrir l'œuvre : %s"
   },
   "bookmarks": {

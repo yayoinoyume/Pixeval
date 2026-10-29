@@ -449,6 +449,9 @@ func (a *App) browseCard(c *ui.Context, st *browseState, items []pixiv.Illustrat
 		if m.Item(a.t("user.open")).Chosen() {
 			a.openUser(work.User.ID)
 		}
+		if m.Item(a.watchLaterMenuLabel(work.ID)).Chosen() {
+			a.toggleWatchLater(work)
+		}
 	})
 	cover.Children(func() {
 		if st.imageFailed(key) {
