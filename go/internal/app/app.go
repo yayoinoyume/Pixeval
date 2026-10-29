@@ -86,6 +86,11 @@ type App struct {
 	myPixivUsers *myPixivUsersViewState
 	// recommendedUsers is the recommended-authors page's list.
 	recommendedUsers *userListState
+	// myFollowing, myFollowers and myPixivUsersList are the signed-in user's
+	// own people lists, each kept apart from the same list on a user's page.
+	myFollowing      *userListState
+	myFollowers      *userListState
+	myPixivUsersList *userListState
 	// seriesView is the series page shown, nil until one opens.
 	seriesView *seriesViewState
 	// seriesFeeds are the series watchlist tabs' lists, one per kind, and
@@ -391,6 +396,9 @@ func New() *App {
 		searchNovels:     &novelFeedState{},
 		searchUsers:      &userListState{},
 		recommendedUsers: &userListState{},
+		myFollowing:      &userListState{},
+		myFollowers:      &userListState{},
+		myPixivUsersList: &userListState{},
 		seriesFeeds:      [seriesTabCount]*seriesListState{{}, {}},
 		spotlight:        &spotlightState{},
 		searchSort:       searchSortDateDesc,
@@ -704,6 +712,9 @@ func (a *App) resetAccountPages() {
 	a.search = &browseState{}
 	a.searchNovels = &novelFeedState{}
 	a.searchUsers = &userListState{}
+	a.myFollowing = &userListState{}
+	a.myFollowers = &userListState{}
+	a.myPixivUsersList = &userListState{}
 	a.userView = nil
 	a.relatedUsers = nil
 	a.myPixivUsers = nil
