@@ -38,6 +38,13 @@ func downloadDir() string {
 // took, and whether saving is on at all; the queue skips a page it already
 // holds.
 func (a *App) downloadWork(w pixiv.Illustration) (queued int, ok bool) {
+	return a.downloadWorkSource(w, download.SourceOrdinary)
+}
+
+// downloadWorkSource queues w's pages tagged with the source they came from,
+// so the download page can group subscription updates apart from the user's
+// own downloads.
+func (a *App) downloadWorkSource(w pixiv.Illustration, source string) (queued int, ok bool) {
 	if a.downloads == nil || a.downloadsDir == "" {
 		return 0, false
 	}
@@ -54,6 +61,7 @@ func (a *App) downloadWork(w pixiv.Illustration) (queued int, ok bool) {
 			URL:      w.PageURL(i),
 			Dest:     downloadDest(a.downloadsDir, tmpl, ctx),
 			Page:     i,
+			Source:   source,
 		})
 	}
 	return a.downloads.Add(tasks), true
@@ -229,6 +237,29 @@ func downloadFinished(s download.State) bool {
 	return s == download.Done || s == download.Failed || s == download.Canceled
 }
 
+// The download page's groups, in the order the tab line shows them.
+const (
+	downloadFilterAll = iota
+	downloadFilterOrdinary
+	downloadFilterSubscription
+)
+
+// downloadFilterTasks keeps the tasks of the chosen group. The all group
+// keeps every task, in queue order.
+func downloadFilterTasks(tasks []download.Task, filter int) []download.Task {
+	if filter == downloadFilterAll {
+		return tasks
+	}
+	out := make([]download.Task, 0, len(tasks))
+	for _, task := range tasks {
+		subscription := task.Source == download.SourceSubscription
+		if (filter == downloadFilterSubscription) == subscription {
+			out = append(out, task)
+		}
+	}
+	return out
+}
+
 func (a *App) downloadStateLabel(s download.State) string {
 	switch s {
 	case download.Running:
@@ -257,8 +288,9 @@ func downloadStateColor(t tokens, s download.State) ui.Color {
 }
 
 // downloadsPage draws the queue: a row per task, and the button clearing the
-// finished ones. The manager reports a paused task as queued, so the pause
-// state is kept here, on the main thread.
+// finished ones. A tab line groups the user's own downloads apart from the
+// subscription updates. The manager reports a paused task as queued, so the
+// pause state is kept here, on the main thread.
 func (a *App) downloadsPage(c *ui.Context) {
 	t := themeOf(c)
 	tasks := a.downloads.Snapshot()
@@ -266,6 +298,7 @@ func (a *App) downloadsPage(c *ui.Context) {
 		emptyState(c, iconDownload, a.t("download.empty"), a.t("download.emptyHint"), nil)
 		return
 	}
+	shown := downloadFilterTasks(tasks, a.downloadFilter)
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, t.SpaceS, contentPadding).
 			AlignItems(ui.Center).Children(func() {
@@ -275,15 +308,34 @@ func (a *App) downloadsPage(c *ui.Context) {
 				a.clearDoneDownloads()
 			}
 		})
+		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
+			textTabs(c, t, &a.downloadFilter,
+				a.t("download.filterAll"), a.t("download.filterOrdinary"),
+				a.t("download.filterSubscription"))
+		})
+		if len(shown) == 0 {
+			a.downloadGroupEmpty(c)
+			return
+		}
 		ui.Scroll(c).Grow(1).Children(func() {
 			ui.Column(c).Padding(0, contentPadding, contentPadding, contentPadding).
 				Gap(t.SpaceS).Children(func() {
-				for _, task := range tasks {
+				for _, task := range shown {
 					a.downloadRow(c, task)
 				}
 			})
 		})
 	})
+}
+
+// downloadGroupEmpty says the chosen group has nothing, without pretending the
+// rest of the queue is gone.
+func (a *App) downloadGroupEmpty(c *ui.Context) {
+	title := a.t("download.ordinaryEmpty")
+	if a.downloadFilter == downloadFilterSubscription {
+		title = a.t("download.subscriptionEmpty")
+	}
+	emptyState(c, iconDownload, title, "", nil)
 }
 
 // downloadRow draws one task: what it is, how far it got, and its buttons.

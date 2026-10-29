@@ -49,9 +49,17 @@ type Task struct {
 	Total     int64
 	Err       string
 	Attempts  int
-	Overwrite bool // write even when Dest already exists
-	Skipped   bool // Dest existed and Overwrite was false
+	Overwrite bool   // write even when Dest already exists
+	Skipped   bool   // Dest existed and Overwrite was false
+	Source    string // empty for a user download, SourceSubscription for an update
 }
+
+// Task sources. An empty source is a download the user queued themselves; a
+// subscription's automatic download keeps its own group on the download page.
+const (
+	SourceOrdinary     = ""
+	SourceSubscription = "subscription"
+)
 
 // Manager runs the queue. All methods are safe for concurrent use.
 type Manager struct {

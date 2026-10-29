@@ -52,6 +52,69 @@ func TestDownloadsList(t *testing.T) {
 	}
 }
 
+// TestDownloadsFilterGroups checks the tab line shows one group at a time, and
+// the empty group says so without hiding the other one.
+func TestDownloadsFilterGroups(t *testing.T) {
+	a := newDownloadApp(t)
+	a.downloads.Add([]download.Task{
+		{ID: "1_0", IllustID: 1, Title: "普通作品", Source: download.SourceOrdinary},
+		{ID: "2_0", IllustID: 2, Title: "订阅作品", Source: download.SourceSubscription},
+	})
+	tt := ui.NewTester(a.View, 1000, 700)
+	if !tt.HasText("普通作品") || !tt.HasText("订阅作品") {
+		t.Fatalf("all group missing a task: %q", tt.Texts())
+	}
+
+	if err := tt.Click("订阅"); err != nil {
+		t.Fatalf("Click subscription: %v", err)
+	}
+	if !tt.HasText("订阅作品") {
+		t.Errorf("subscription task missing: %q", tt.Texts())
+	}
+	if tt.HasText("普通作品") {
+		t.Errorf("ordinary task stayed in the subscription group: %q", tt.Texts())
+	}
+
+	if err := tt.Click("普通"); err != nil {
+		t.Fatalf("Click ordinary: %v", err)
+	}
+	if !tt.HasText("普通作品") {
+		t.Errorf("ordinary task missing: %q", tt.Texts())
+	}
+	if tt.HasText("订阅作品") {
+		t.Errorf("subscription task stayed in the ordinary group: %q", tt.Texts())
+	}
+}
+
+// TestDownloadsEmptyGroup checks a group with no task shows its own empty
+// state, not the empty queue's.
+func TestDownloadsEmptyGroup(t *testing.T) {
+	a := newDownloadApp(t)
+	a.downloads.Add([]download.Task{{ID: "1_0", IllustID: 1, Title: "普通作品"}})
+	a.downloadFilter = downloadFilterSubscription
+	tt := ui.NewTester(a.View, 1000, 700)
+	if !tt.HasText("还没有订阅下载") {
+		t.Errorf("subscription empty state missing: %q", tt.Texts())
+	}
+	if tt.HasText("还没有下载任务") {
+		t.Errorf("empty queue state shown for one empty group: %q", tt.Texts())
+	}
+}
+
+// TestDownloadWorkMarksOrdinarySource checks a manual download is grouped as
+// an ordinary one.
+func TestDownloadWorkMarksOrdinarySource(t *testing.T) {
+	a := newDownloadApp(t)
+	if _, ok := a.downloadWork(viewerWork()); !ok {
+		t.Fatal("downloadWork reported saving off")
+	}
+	for _, task := range a.downloads.Snapshot() {
+		if task.Source != download.SourceOrdinary {
+			t.Errorf("task %q source %q, want ordinary", task.ID, task.Source)
+		}
+	}
+}
+
 // TestDownloadsRestoreSavedQueue checks the start brings back the unfinished
 // queue the previous run saved.
 func TestDownloadsRestoreSavedQueue(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/egoist/mygo/ui"
 
+	"github.com/yayoinoyume/pixeval-go/internal/download"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 	"github.com/yayoinoyume/pixeval-go/internal/subscription"
 )
@@ -179,11 +180,35 @@ func TestAutoDownloadQueuesNewWorks(t *testing.T) {
 	if tasks := a.downloads.Snapshot(); len(tasks) != 2 {
 		t.Fatalf("%d tasks queued, want 2", len(tasks))
 	}
+	for _, task := range a.downloads.Snapshot() {
+		if task.Source != download.SourceSubscription {
+			t.Errorf("task %q source %q, want subscription", task.ID, task.Source)
+		}
+	}
 	if want := a.tf("subs.autoQueued", 2); a.notice != want {
 		t.Errorf("notice %q, want %q", a.notice, want)
 	}
 	if works, _, _ := a.subsSnapshot(); len(works) != 1 {
 		t.Errorf("%d new works shown, want 1", len(works))
+	}
+}
+
+// TestDownloadNewWorksMarksSubscription checks the subscription page's
+// download button tags the queued pages as subscription updates.
+func TestDownloadNewWorksMarksSubscription(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a, _ := newSubsTest(t, stubFetcher{})
+	a.downloadsDir = t.TempDir()
+	a.downloadNewWorks([]pixiv.Illustration{newWork(1, 2)})
+
+	tasks := a.downloads.Snapshot()
+	if len(tasks) != 2 {
+		t.Fatalf("%d tasks queued, want 2", len(tasks))
+	}
+	for _, task := range tasks {
+		if task.Source != download.SourceSubscription {
+			t.Errorf("task %q source %q, want subscription", task.ID, task.Source)
+		}
 	}
 }
 

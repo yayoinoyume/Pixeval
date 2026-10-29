@@ -38,6 +38,9 @@ type App struct {
 	// paused marks the tasks the user paused: a paused task reads as queued in
 	// a snapshot, so the download page cannot tell on its own.
 	paused map[string]bool
+	// downloadFilter is which queue group the download page shows: all,
+	// ordinary or subscription.
+	downloadFilter int
 	// session is the signed-in token, nil while logged out.
 	session *pixiv.Token
 	// webviewOK reports whether the system webview is there; without it the
