@@ -199,7 +199,11 @@
     "follow": "Suivre",
     "following": "Abonné",
     "followFailed": "Échec de l'abonnement : %s",
-    "loadFailed": "Impossible de charger l'utilisateur : %s"
+    "loadFailed": "Impossible de charger l'utilisateur : %s",
+    "tabIllust": "Illustrations",
+    "tabManga": "Mangas",
+    "tabNovel": "Romans",
+    "noNovels": "Aucun roman pour cet utilisateur"
   },
   "series": {
     "open": "Série",

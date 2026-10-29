@@ -199,7 +199,11 @@
     "follow": "关注",
     "following": "已关注",
     "followFailed": "关注失败：%s",
-    "loadFailed": "加载用户失败：%s"
+    "loadFailed": "加载用户失败：%s",
+    "tabIllust": "投稿插画",
+    "tabManga": "投稿漫画",
+    "tabNovel": "小说",
+    "noNovels": "这个用户还没有小说"
   },
   "series": {
     "open": "系列",

@@ -24,6 +24,8 @@ func pageBodies() map[string]string {
 			`"profile":{"total_illusts":1}}`,
 		"/v1/user/illusts": `{"illusts":[{"id":11,"title":"作品十一",` +
 			`"user":{"id":7,"name":"画师七"},"width":480,"height":720}],"next_url":""}`,
+		"/v1/user/novels": `{"novels":[{"id":31,"title":"小说三十一",` +
+			`"user":{"id":7,"name":"画师七"},"page_count":3}],"next_url":""}`,
 		"/v1/illust/series/": `{"illust_series_detail":{"id":3,"title":"系列三","description":"系列简介"},` +
 			`"illusts":[{"id":21,"title":"系列作品","user":{"id":7,"name":"画师七"},` +
 			`"width":480,"height":720}],"next_url":""}`,
@@ -35,17 +37,26 @@ func pageBodies() map[string]string {
 type pageTransport struct {
 	mu     sync.Mutex
 	bodies map[string]string
+	// byType answers /v1/user/illusts by its type parameter, when set.
+	byType map[string]string
 	paths  []string
+	urls   []string
 }
 
 func (tr *pageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	tr.mu.Lock()
 	tr.paths = append(tr.paths, req.URL.Path)
+	tr.urls = append(tr.urls, req.URL.RequestURI())
 	body := ""
-	for prefix, b := range tr.bodies {
-		if strings.HasPrefix(req.URL.Path, prefix) {
-			body = b
-			break
+	if tr.byType != nil && req.URL.Path == "/v1/user/illusts" {
+		body = tr.byType[req.URL.Query().Get("type")]
+	}
+	if body == "" {
+		for prefix, b := range tr.bodies {
+			if strings.HasPrefix(req.URL.Path, prefix) {
+				body = b
+				break
+			}
 		}
 	}
 	tr.mu.Unlock()
@@ -58,11 +69,30 @@ func (tr *pageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}, nil
 }
 
+// requestedURLs returns the URLs the transport answered, without their host.
+func (tr *pageTransport) requestedURLs() []string {
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	return append([]string(nil), tr.urls...)
+}
+
 // newPageApp is an app whose API answers from pageBodies, without images or a
 // network.
 func newPageApp() *App {
+	return newPageAppWithBodies(pageBodies())
+}
+
+// newPageAppWithBodies is newPageApp with the API bodies a test needs.
+func newPageAppWithBodies(bodies map[string]string) *App {
 	a := New()
-	a.client.HTTP().Transport = &pageTransport{bodies: pageBodies()}
+	a.client.HTTP().Transport = &pageTransport{
+		bodies: bodies,
+		byType: map[string]string{
+			"illust": bodies["/v1/user/illusts"],
+			"manga": `{"illusts":[{"id":12,"title":"漫画十二",` +
+				`"user":{"id":7,"name":"画师七"},"width":480,"height":720}],"next_url":""}`,
+		},
+	}
 	a.client.SetCooldown(0)
 	a.images = imagex.New(nil, "")
 	return a
@@ -112,10 +142,124 @@ func TestUserPageShowsUser(t *testing.T) {
 	tt.Frame()
 	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
 	tt.Frame()
-	for _, want := range []string{"画师七", "painter7", "画风景", "关注", "作品十一"} {
+	for _, want := range []string{"画师七", "painter7", "画风景", "关注", "作品十一",
+		"投稿插画", "投稿漫画"} {
 		if !tt.HasText(want) {
 			t.Errorf("%q missing: %q", want, tt.Texts())
 		}
+	}
+}
+
+// TestUserPageTabsKeepFeeds checks the works tabs request their own kind and
+// keep each feed's loaded page when another tab is shown.
+func TestUserPageTabsKeepFeeds(t *testing.T) {
+	a := newPageApp()
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	if a.userView.tab != userTabIllust {
+		t.Fatalf("tab %d, want the illustration tab", a.userView.tab)
+	}
+	tt.Frame()
+	if !tt.HasText("作品十一") {
+		t.Errorf("illustration tab missing: %q", tt.Texts())
+	}
+
+	if err := tt.Click(a.t("user.tabManga")); err != nil {
+		t.Fatalf("Click manga tab: %v", err)
+	}
+	if a.userView.tab != userTabManga {
+		t.Fatalf("tab %d, want the manga tab", a.userView.tab)
+	}
+	waitBrowse(t, a.userView.mangaFeed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	tt.Frame()
+	if !tt.HasText("漫画十二") {
+		t.Errorf("manga tab missing: %q", tt.Texts())
+	}
+
+	if err := tt.Click(a.t("user.tabNovel")); err != nil {
+		t.Fatalf("Click novel tab: %v", err)
+	}
+	waitNovels(t, a.userView.novelFeed, func(v novelFeedView) bool { return len(v.items) == 1 })
+	tt.Frame()
+	if !tt.HasText("小说三十一") {
+		t.Errorf("novel tab missing: %q", tt.Texts())
+	}
+
+	if err := tt.Click(a.t("user.tabIllust")); err != nil {
+		t.Fatalf("Click illustration tab: %v", err)
+	}
+	tt.Frame()
+	if v := a.userView.feed.snapshot(); len(v.items) != 1 || v.items[0].ID != 11 {
+		t.Errorf("illustration feed after switching back = %+v, want work 11", v.items)
+	}
+	tr := a.client.HTTP().Transport.(*pageTransport)
+	illustLoads, novelLoads := 0, 0
+	for _, u := range tr.requestedURLs() {
+		if strings.Contains(u, "/v1/user/illusts") && strings.Contains(u, "type=illust") {
+			illustLoads++
+		}
+		if strings.Contains(u, "/v1/user/novels") {
+			novelLoads++
+		}
+	}
+	if illustLoads != 1 || novelLoads != 1 {
+		t.Errorf("requests = %v, want one illustration page and one novel page", tr.requestedURLs())
+	}
+}
+
+// TestUserPageNovelEmpty checks the novel tab's empty state.
+func TestUserPageNovelEmpty(t *testing.T) {
+	bodies := pageBodies()
+	bodies["/v1/user/novels"] = `{"novels":[],"next_url":""}`
+	a := newPageAppWithBodies(bodies)
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	if err := tt.Click(a.t("user.tabNovel")); err != nil {
+		t.Fatalf("Click novel tab: %v", err)
+	}
+	waitNovels(t, a.userView.novelFeed, func(v novelFeedView) bool {
+		return v.started && len(v.items) == 0
+	})
+	tt.Frame()
+	if !tt.HasText(a.t("user.noNovels")) {
+		t.Errorf("empty state missing: %q", tt.Texts())
+	}
+}
+
+// TestUserPageNovelOpensReader checks a novel card opens the reader on that
+// novel.
+func TestUserPageNovelOpensReader(t *testing.T) {
+	a := newPageApp()
+	a.novelContent = func(context.Context, int64) (string, error) { return novelBody, nil }
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load", func(v browseView) bool { return len(v.items) == 1 })
+	if err := tt.Click(a.t("user.tabNovel")); err != nil {
+		t.Fatalf("Click novel tab: %v", err)
+	}
+	waitNovels(t, a.userView.novelFeed, func(v novelFeedView) bool { return len(v.items) == 1 })
+	tt.Frame()
+
+	card := a.tf("a11y.card", "小说三十一", "画师七")
+	if err := tt.Click(card); err != nil {
+		t.Fatalf("Click %q: %v", card, err)
+	}
+	if a.route != routeNovel {
+		t.Fatalf("route %q after the click, want %q", a.route, routeNovel)
+	}
+	if a.novelView == nil || a.novelView.novelID != 31 || a.novelView.title != "小说三十一" {
+		t.Fatalf("novel view %+v, want novel 31", a.novelView)
+	}
+	if a.backRoute != routeUser {
+		t.Errorf("backRoute %q, want %q", a.backRoute, routeUser)
 	}
 }
 

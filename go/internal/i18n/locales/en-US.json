@@ -199,7 +199,11 @@
     "follow": "Follow",
     "following": "Following",
     "followFailed": "Follow failed: %s",
-    "loadFailed": "Cannot load the user: %s"
+    "loadFailed": "Cannot load the user: %s",
+    "tabIllust": "Illustrations",
+    "tabManga": "Manga",
+    "tabNovel": "Novels",
+    "noNovels": "This user has no novels yet"
   },
   "series": {
     "open": "Series",

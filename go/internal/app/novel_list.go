@@ -243,11 +243,15 @@ func (a *App) loadMoreNovels(st *novelFeedState) {
 	}()
 }
 
-// novelResults draws the novel list, and loads its next page once it is at the
-// end.
+// novelResults draws the search page's novel list.
 func (a *App) novelResults(c *ui.Context) {
+	a.novelResultsFor(c, a.searchNovels, a.t("common.noWorks"))
+}
+
+// novelResultsFor draws a novel list, and loads its next page once it is at
+// the end. emptyTitle is the title its empty state shows.
+func (a *App) novelResultsFor(c *ui.Context, st *novelFeedState, emptyTitle string) {
 	t := themeOf(c)
-	st := a.searchNovels
 	v := st.snapshot()
 	if v.err != "" {
 		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, contentPadding).AlignItems(ui.Center).Children(func() {
@@ -280,7 +284,7 @@ func (a *App) novelResults(c *ui.Context) {
 	case !v.started:
 		skeletonFeed(c, width)
 	default:
-		emptyState(c, iconImage, a.t("common.noWorks"), "", nil)
+		emptyState(c, iconImage, emptyTitle, "", nil)
 	}
 	if st.canLoad() && (len(v.items) == 0 || st.masonry.AtEnd()) {
 		a.loadMoreNovels(st)
