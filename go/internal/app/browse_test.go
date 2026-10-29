@@ -829,3 +829,165 @@ func TestRankModeRequestsModeAndResetsFeed(t *testing.T) {
 		t.Fatalf("recommended fetched %d times, want 1", got)
 	}
 }
+
+// newSelectFeed is an app drawing a loaded feed of works, without images or a
+// network.
+func newSelectFeed(t *testing.T, works []pixiv.Illustration) (*App, *browseState, *ui.Tester) {
+	t.Helper()
+	st := &browseState{fetch: func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: works}, nil
+	}}
+	a, tt := newBrowseTest(st)
+	waitBrowse(t, st, "load", func(v browseView) bool { return len(v.items) == len(works) })
+	tt.Frame()
+	return a, st, tt
+}
+
+// TestSelectionModePicksInsteadOfOpening checks the select switch turns a
+// tile's click into a pick, a second click drops it, and the exit leaves the
+// feed opening works again.
+func TestSelectionModePicksInsteadOfOpening(t *testing.T) {
+	a, st, tt := newSelectFeed(t, fakeWorks(0, 3))
+	if err := tt.Click("选择"); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if !st.selecting {
+		t.Fatal("selection mode off after its switch")
+	}
+	tt.Frame()
+	if err := tt.Click("作品 1"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if !st.selected[1] {
+		t.Errorf("the click did not pick work 1: %v", st.selected)
+	}
+	if a.viewer != nil {
+		t.Fatalf("a pick opened the viewer: %+v", a.viewer)
+	}
+	tt.Frame()
+	if err := tt.Click("作品 1"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if st.selected[1] {
+		t.Error("a second click did not drop the pick")
+	}
+
+	if err := tt.Click("退出选择"); err != nil {
+		t.Fatalf("exit: %v", err)
+	}
+	if st.selecting || len(st.selected) != 0 {
+		t.Fatalf("the exit kept the mode or the picks: selecting=%v selected=%v", st.selecting, st.selected)
+	}
+	tt.Frame()
+	if err := tt.Click("作品 1"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if a.viewer == nil || a.viewer.work.ID != 1 {
+		t.Fatalf("a tile outside selection mode did not open work 1: %+v", a.viewer)
+	}
+}
+
+// TestSelectionSelectAllDownloadsPicked checks the batch queues the picked
+// works after select all, and that download with nothing picked says so.
+func TestSelectionSelectAllDownloadsPicked(t *testing.T) {
+	a, st, tt := newSelectFeed(t, fakeWorks(0, 3))
+	a.downloadsDir = t.TempDir()
+	if err := tt.Click("选择"); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if err := tt.Click("全选"); err != nil {
+		t.Fatalf("select all: %v", err)
+	}
+	if len(st.selected) != 3 {
+		t.Fatalf("selected %d works, want 3", len(st.selected))
+	}
+	tt.Frame()
+	if !tt.HasText("已选 3 项") {
+		t.Errorf("the pick count is not shown: %q", tt.Texts())
+	}
+	if err := tt.Click("下载选中"); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 3 {
+		t.Fatalf("queued %d tasks, want 3", len(tasks))
+	}
+
+	if err := tt.Click("取消全选"); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if len(st.selected) != 0 {
+		t.Fatalf("clear kept %d picks", len(st.selected))
+	}
+	if err := tt.Click("下载选中"); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if want := a.t("selection.none"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 3 {
+		t.Errorf("queued %d tasks after an empty pick, want 3", len(tasks))
+	}
+}
+
+// TestSelectionDownloadSkipsUgoira checks a picked animation is not queued and
+// the notice points at the viewer, as the loaded-batch button does.
+func TestSelectionDownloadSkipsUgoira(t *testing.T) {
+	a, _, tt := newSelectFeed(t, []pixiv.Illustration{ugoiraWork(), fakeWorks(0, 1)[0]})
+	a.downloadsDir = t.TempDir()
+	if err := tt.Click("选择"); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if err := tt.Click("全选"); err != nil {
+		t.Fatalf("select all: %v", err)
+	}
+	if err := tt.Click("下载选中"); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 1 {
+		t.Fatalf("queued %d tasks, want the 1 still image", len(tasks))
+	}
+	if want := a.tf("selection.ugoiraSkipped", 1); !strings.Contains(a.notice, want) {
+		t.Errorf("notice %q does not say %q", a.notice, want)
+	}
+}
+
+// TestSelectionDownloadWithoutDir checks saving off queues nothing and says
+// why.
+func TestSelectionDownloadWithoutDir(t *testing.T) {
+	a, _, tt := newSelectFeed(t, fakeWorks(0, 2))
+	a.downloadsDir = ""
+	if err := tt.Click("选择"); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if err := tt.Click("全选"); err != nil {
+		t.Fatalf("select all: %v", err)
+	}
+	if err := tt.Click("下载选中"); err != nil {
+		t.Fatalf("download: %v", err)
+	}
+	if want := a.t("viewer.noDownloadDir"); a.notice != want {
+		t.Errorf("notice %q, want %q", a.notice, want)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Errorf("queued %d tasks without a directory, want 0", len(tasks))
+	}
+}
+
+// TestSelectionClearedOnRestart checks a new list starts outside selection
+// mode with no picks left from the old one.
+func TestSelectionClearedOnRestart(t *testing.T) {
+	_, st, tt := newSelectFeed(t, fakeWorks(0, 3))
+	if err := tt.Click("选择"); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if err := tt.Click("全选"); err != nil {
+		t.Fatalf("select all: %v", err)
+	}
+	if len(st.selected) != 3 {
+		t.Fatalf("selected %d works, want 3", len(st.selected))
+	}
+	st.restart()
+	if st.selecting || len(st.selected) != 0 {
+		t.Fatalf("the restart kept the mode or the picks: selecting=%v selected=%v", st.selecting, st.selected)
+	}
+}

@@ -381,6 +381,16 @@
     "active": "已筛选：%s",
     "clear": "清除筛选"
   },
+  "selection": {
+    "select": "选择",
+    "exit": "退出选择",
+    "selected": "已选 %d 项",
+    "selectAll": "全选",
+    "clear": "取消全选",
+    "download": "下载选中",
+    "none": "没有选中任何作品",
+    "ugoiraSkipped": "%d 个动图已跳过，请在查看器中下载"
+  },
   "shortcuts": {
     "hint": "快捷键：Ctrl+K 搜索，Ctrl+, 设置，Ctrl+H 历史，Ctrl+D 下载，Esc 返回（macOS 用 Command 代替 Ctrl）"
   },

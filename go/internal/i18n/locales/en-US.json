@@ -381,6 +381,16 @@
     "active": "Filtered: %s",
     "clear": "Clear filter"
   },
+  "selection": {
+    "select": "Select",
+    "exit": "Exit selection",
+    "selected": "%d selected",
+    "selectAll": "Select all",
+    "clear": "Clear selection",
+    "download": "Download selected",
+    "none": "No works selected",
+    "ugoiraSkipped": "%d animations skipped; download them from the viewer"
+  },
   "shortcuts": {
     "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
   },

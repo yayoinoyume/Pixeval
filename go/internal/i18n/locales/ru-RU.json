@@ -381,6 +381,16 @@
     "active": "Фильтр: %s",
     "clear": "Сбросить фильтр"
   },
+  "selection": {
+    "select": "Выбрать",
+    "exit": "Выйти из выбора",
+    "selected": "Выбрано: %d",
+    "selectAll": "Выбрать все",
+    "clear": "Снять выбор",
+    "download": "Скачать выбранное",
+    "none": "Ничего не выбрано",
+    "ugoiraSkipped": "Пропущено анимаций: %d; скачайте их из просмотрщика"
+  },
   "shortcuts": {
     "hint": "Shortcuts: Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)"
   },
