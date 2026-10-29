@@ -35,6 +35,12 @@ type App struct {
 	// downloads runs the download queue, saving under downloadsDir.
 	downloads    *download.Manager
 	downloadsDir string
+	// downloadHistory is the completed downloads, newest first, and
+	// downloadRecorded the tasks already added to it, so a change callback does
+	// not record the same completion again.
+	downloadHistory    *download.History
+	downloadRecorded   map[string]bool
+	downloadRecordedMu sync.Mutex
 	// paused marks the tasks the user paused: a paused task reads as queued in
 	// a snapshot, so the download page cannot tell on its own.
 	paused map[string]bool
@@ -222,6 +228,8 @@ func New() *App {
 		images:           imagex.New(client, imageDir()),
 		downloads:        download.New(client, settings.DownloadConcurrency),
 		downloadsDir:     settingsDownloadDir(settings),
+		downloadHistory:  loadDownloadHistory(),
+		downloadRecorded: map[string]bool{},
 		settings:         settings,
 		settingsSaved:    make(chan error, 1),
 		paused:           map[string]bool{},
@@ -342,6 +350,45 @@ func downloadsPath() (string, error) {
 	return filepath.Join(dir, "pixeval-go", "downloads.json"), nil
 }
 
+// downloadHistoryPath is where the completed download records live.
+func downloadHistoryPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "pixeval-go", "download_history.json"), nil
+}
+
+// loadDownloadHistory reads the completed downloads an earlier run saved. A
+// missing or broken file starts empty instead of blocking the start.
+func loadDownloadHistory() *download.History {
+	path, err := downloadHistoryPath()
+	if err != nil {
+		log.Printf("download history: %v", err)
+		return download.NewHistory()
+	}
+	h, err := download.LoadHistory(path)
+	if err != nil {
+		log.Printf("download history: %v", err)
+	}
+	return h
+}
+
+// saveDownloadHistory writes the completed download records.
+func (a *App) saveDownloadHistory() {
+	if a.downloadHistory == nil {
+		return
+	}
+	path, err := downloadHistoryPath()
+	if err != nil {
+		log.Printf("download history: %v", err)
+		return
+	}
+	if err := a.downloadHistory.Save(path); err != nil {
+		log.Printf("download history: save: %v", err)
+	}
+}
+
 // restoreDownloads brings back the queue an earlier run left unfinished. A
 // missing or broken file starts empty instead of blocking the start.
 func (a *App) restoreDownloads() {
@@ -406,6 +453,7 @@ func (a *App) Start() {
 	// then downloads on its own goroutines and redraws the page on change.
 	a.restoreDownloads()
 	a.downloads.OnChange(func() {
+		a.recordDoneDownloads()
 		a.saveDownloads()
 		a.update(func() {})
 	})

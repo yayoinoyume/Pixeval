@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -242,13 +243,17 @@ const (
 	downloadFilterAll = iota
 	downloadFilterOrdinary
 	downloadFilterSubscription
+	downloadFilterHistory
 )
 
 // downloadFilterTasks keeps the tasks of the chosen group. The all group
-// keeps every task, in queue order.
+// keeps every task, in queue order; the history group has no tasks.
 func downloadFilterTasks(tasks []download.Task, filter int) []download.Task {
-	if filter == downloadFilterAll {
+	switch filter {
+	case downloadFilterAll:
 		return tasks
+	case downloadFilterHistory:
+		return nil
 	}
 	out := make([]download.Task, 0, len(tasks))
 	for _, task := range tasks {
@@ -289,12 +294,13 @@ func downloadStateColor(t tokens, s download.State) ui.Color {
 
 // downloadsPage draws the queue: a row per task, and the button clearing the
 // finished ones. A tab line groups the user's own downloads apart from the
-// subscription updates. The manager reports a paused task as queued, so the
-// pause state is kept here, on the main thread.
+// subscription updates and the completed history. The manager reports a
+// paused task as queued, so the pause state is kept here, on the main thread.
 func (a *App) downloadsPage(c *ui.Context) {
 	t := themeOf(c)
 	tasks := a.downloads.Snapshot()
-	if len(tasks) == 0 {
+	history := a.downloadHistoryEntries()
+	if len(tasks) == 0 && len(history) == 0 {
 		emptyState(c, iconDownload, a.t("download.empty"), a.t("download.emptyHint"), nil)
 		return
 	}
@@ -302,6 +308,14 @@ func (a *App) downloadsPage(c *ui.Context) {
 	ui.Column(c).Grow(1).FillHeight().Children(func() {
 		ui.Row(c).Gap(t.SpaceS).Padding(t.SpaceL, contentPadding, t.SpaceS, contentPadding).
 			AlignItems(ui.Center).Children(func() {
+			if a.downloadFilter == downloadFilterHistory {
+				ui.Text(c, a.t("download.history")).FontSize(t.TextSmall).
+					TextColor(t.TextMuted).Grow(1)
+				if ui.Button(c, a.t("download.clearHistory")).Disabled(len(history) == 0).Clicked() {
+					a.clearDownloadHistory()
+				}
+				return
+			}
 			ui.Text(c, a.tf("download.count", len(tasks))).FontSize(t.TextSmall).
 				TextColor(t.TextMuted).Grow(1)
 			if ui.Button(c, a.t("download.clearDone")).Disabled(!anyDownloadDone(tasks)).Clicked() {
@@ -311,8 +325,12 @@ func (a *App) downloadsPage(c *ui.Context) {
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
 			textTabs(c, t, &a.downloadFilter,
 				a.t("download.filterAll"), a.t("download.filterOrdinary"),
-				a.t("download.filterSubscription"))
+				a.t("download.filterSubscription"), a.t("download.history"))
 		})
+		if a.downloadFilter == downloadFilterHistory {
+			a.downloadHistoryList(c, history)
+			return
+		}
 		if len(shown) == 0 {
 			a.downloadGroupEmpty(c)
 			return
@@ -326,6 +344,105 @@ func (a *App) downloadsPage(c *ui.Context) {
 			})
 		})
 	})
+}
+
+// downloadHistoryEntries is the completed downloads, newest first, or none
+// when the page has no history yet.
+func (a *App) downloadHistoryEntries() []download.HistoryEntry {
+	if a.downloadHistory == nil {
+		return nil
+	}
+	return a.downloadHistory.Snapshot()
+}
+
+// downloadHistoryList draws the completed downloads, newest first.
+func (a *App) downloadHistoryList(c *ui.Context, entries []download.HistoryEntry) {
+	if len(entries) == 0 {
+		emptyState(c, iconHistory, a.t("download.historyEmpty"), "", nil)
+		return
+	}
+	t := themeOf(c)
+	ui.Scroll(c).Grow(1).Children(func() {
+		ui.Column(c).Padding(0, contentPadding, contentPadding, contentPadding).
+			Gap(t.SpaceS).Children(func() {
+			for _, entry := range entries {
+				a.downloadHistoryRow(c, entry)
+			}
+		})
+	})
+}
+
+// downloadHistoryRow draws one completed download: what it was, its page and
+// source, and when it finished.
+func (a *App) downloadHistoryRow(c *ui.Context, entry download.HistoryEntry) {
+	t := themeOf(c)
+	source := a.t("download.filterOrdinary")
+	if entry.Source == download.SourceSubscription {
+		source = a.t("download.filterSubscription")
+	}
+	ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, t.SpaceL).AlignItems(ui.Center).
+		Background(t.Surface).Radius(t.RadiusM).Border(1, t.Border).
+		Label(a.tf("a11y.download", entry.Title)).Children(func() {
+		ui.Column(c).Grow(1).Gap(2).MinWidth(0).Children(func() {
+			ui.Text(c, entry.Title).FontSize(t.TextBody).TextColor(t.Text).MaxLines(1)
+			ui.Text(c, entry.Artist).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
+		})
+		ui.Text(c, a.tf("download.page", entry.Page+1)).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		ui.Text(c, source).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		ui.Text(c, a.tf("download.completedAt", downloadCompletedAt(entry.CompletedAt))).
+			FontSize(t.TextSmall).TextColor(t.TextMuted)
+	})
+}
+
+// downloadCompletedAt is the local time a finished download shows.
+func downloadCompletedAt(at time.Time) string {
+	return at.Local().Format("2006-01-02 15:04")
+}
+
+// recordDoneDownloads adds each task that reached Done since the last scan to
+// the history. The recorded set keeps a later change callback from writing the
+// same completion again.
+func (a *App) recordDoneDownloads() {
+	if a.downloadHistory == nil || a.downloads == nil {
+		return
+	}
+	a.downloadRecordedMu.Lock()
+	defer a.downloadRecordedMu.Unlock()
+	if a.downloadRecorded == nil {
+		a.downloadRecorded = map[string]bool{}
+	}
+	added := false
+	for _, task := range a.downloads.Snapshot() {
+		if task.State != download.Done || a.downloadRecorded[task.ID] {
+			continue
+		}
+		a.downloadHistory.Add(download.HistoryEntry{
+			ID:          task.ID,
+			IllustID:    task.IllustID,
+			Title:       task.Title,
+			Artist:      task.Artist,
+			Dest:        task.Dest,
+			Page:        task.Page,
+			Source:      task.Source,
+			CompletedAt: time.Now(),
+		})
+		a.downloadRecorded[task.ID] = true
+		added = true
+	}
+	if added {
+		a.saveDownloadHistory()
+	}
+}
+
+// clearDownloadHistory empties the history without touching the queue.
+func (a *App) clearDownloadHistory() {
+	if a.downloadHistory == nil {
+		return
+	}
+	a.downloadHistory.Clear()
+	a.saveDownloadHistory()
+	a.notice = a.t("download.historyCleared")
+	a.update(func() {})
 }
 
 // downloadGroupEmpty says the chosen group has nothing, without pretending the

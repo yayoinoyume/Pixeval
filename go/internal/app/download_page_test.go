@@ -3,10 +3,13 @@ package app
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 
@@ -20,8 +23,24 @@ func newDownloadApp(t *testing.T) *App {
 	t.Helper()
 	a := New()
 	a.downloadsDir = t.TempDir()
+	a.downloadHistory = download.NewHistory()
+	a.downloadRecorded = map[string]bool{}
 	a.route = routeDownloads
 	return a
+}
+
+// failedImageTransport answers every image request with a permanent status, so
+// a task fails without retrying or reaching the network.
+type failedImageTransport struct{}
+
+func (failedImageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return &http.Response{
+		StatusCode: http.StatusNotFound,
+		Status:     "404 Not Found",
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
 }
 
 // TestDownloadsEmpty checks an empty queue says how to fill it.
@@ -257,6 +276,120 @@ func TestDownloadsClearDone(t *testing.T) {
 	}
 	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
 		t.Errorf("%d tasks after the clear, want 0", len(tasks))
+	}
+}
+
+// TestDownloadsHistoryTab checks the history tab shows a completed download's
+// title, author, page, source and completion time.
+func TestDownloadsHistoryTab(t *testing.T) {
+	a := newDownloadApp(t)
+	a.downloadHistory.Add(download.HistoryEntry{
+		ID:          "1_1",
+		IllustID:    1,
+		Title:       "历史作品",
+		Artist:      "历史画师",
+		Page:        1,
+		Source:      download.SourceSubscription,
+		CompletedAt: time.Date(2026, 5, 1, 12, 30, 0, 0, time.Local),
+	})
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("下载历史"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	for _, want := range []string{
+		"历史作品", "历史画师", "第 2 页", "订阅",
+		"完成于 2026-05-01 12:30", "清空历史",
+	} {
+		if !tt.HasText(want) {
+			t.Errorf("%q not shown: %q", want, tt.Texts())
+		}
+	}
+}
+
+// TestDownloadsHistoryEmpty checks the history tab says it has nothing when
+// there are no completed downloads.
+func TestDownloadsHistoryEmpty(t *testing.T) {
+	a := newDownloadApp(t)
+	a.downloads.Add([]download.Task{{ID: "1_0", IllustID: 1, Title: "排队作品"}})
+	a.downloadFilter = downloadFilterHistory
+	tt := ui.NewTester(a.View, 1000, 700)
+	if !tt.HasText("还没有下载历史") {
+		t.Errorf("history empty state missing: %q", tt.Texts())
+	}
+}
+
+// TestDownloadsClearHistoryKeepsQueue checks clearing the history leaves the
+// queue alone.
+func TestDownloadsClearHistoryKeepsQueue(t *testing.T) {
+	a := newDownloadApp(t)
+	a.downloads.Add([]download.Task{{ID: "1_0", IllustID: 1, Title: "排队作品"}})
+	a.downloadHistory.Add(download.HistoryEntry{
+		ID: "2_0", IllustID: 2, Title: "历史作品", CompletedAt: time.Now(),
+	})
+	a.downloadFilter = downloadFilterHistory
+	tt := ui.NewTester(a.View, 1000, 700)
+	if err := tt.Click("清空历史"); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if got := a.downloadHistory.Snapshot(); len(got) != 0 {
+		t.Errorf("%d history entries after the clear, want 0", len(got))
+	}
+	if got := a.downloads.Snapshot(); len(got) != 1 {
+		t.Errorf("%d queued tasks after the clear, want 1", len(got))
+	}
+}
+
+// TestDownloadsRecordOnlyDone checks only a completed task is recorded, and a
+// later scan does not record it again.
+func TestDownloadsRecordOnlyDone(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := newDownloadApp(t)
+	a.client.HTTP().Transport = failedImageTransport{}
+	a.downloads = download.New(a.client, 1)
+	a.downloads.OnChange(a.recordDoneDownloads)
+
+	done := filepath.Join(a.downloadsDir, "done.jpg")
+	if err := os.WriteFile(done, []byte("image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.downloads.Add([]download.Task{
+		{ID: "done", IllustID: 1, Title: "已完成", Artist: "画师", Dest: done, Page: 0},
+		{ID: "failed", IllustID: 2, Title: "失败", URL: "https://example.invalid/fail.jpg", Dest: filepath.Join(a.downloadsDir, "fail.jpg")},
+		{ID: "canceled", IllustID: 3, Title: "取消", URL: "https://example.invalid/cancel.jpg", Dest: filepath.Join(a.downloadsDir, "cancel.jpg")},
+	})
+	a.downloads.Cancel("canceled")
+	a.downloads.Start(context.Background())
+	a.downloads.Wait()
+
+	got := a.downloadHistory.Snapshot()
+	if len(got) != 1 || got[0].ID != "done" {
+		t.Fatalf("history %+v, want only the completed task", got)
+	}
+	if got[0].Title != "已完成" || got[0].Artist != "画师" || got[0].Page != 0 || got[0].Dest != done {
+		t.Errorf("recorded entry %+v, want the completed task's fields", got[0])
+	}
+
+	a.recordDoneDownloads()
+	if again := a.downloadHistory.Snapshot(); len(again) != 1 {
+		t.Errorf("%d history entries after a second scan, want 1", len(again))
+	}
+}
+
+// TestDownloadsLoadSavedHistory checks the start reads the history an earlier
+// run saved.
+func TestDownloadsLoadSavedHistory(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	h := download.NewHistory()
+	h.Add(download.HistoryEntry{ID: "1_0", IllustID: 1, Title: "上次完成的", CompletedAt: time.Now()})
+	if err := h.Save(filepath.Join(dir, "pixeval-go", "download_history.json")); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	a := New()
+	got := a.downloadHistory.Snapshot()
+	if len(got) != 1 || got[0].Title != "上次完成的" {
+		t.Fatalf("loaded history %+v, want the saved entry", got)
 	}
 }
 
