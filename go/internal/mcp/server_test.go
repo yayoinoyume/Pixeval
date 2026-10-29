@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -16,24 +17,26 @@ import (
 
 // fakeBackend answers the tools without the network and records the calls.
 type fakeBackend struct {
-	works     []pixiv.Illustration
-	users     []pixiv.UserPreview
-	user      *pixiv.UserDetail
-	novels    []pixiv.Novel
-	comments  []pixiv.Comment
-	saved     []SavedWork
-	downloads []DownloadedWork
-	subs      []SubscriptionInfo
-	articles  []pixiv.SpotlightArticle
-	series    []pixiv.SeriesSummary
-	tags      []pixiv.TrendingTag
-	summary   string
-	macro     string
-	history   []HistoryWork
-	novelBody string
-	recommend []pixiv.UserPreview
-	illustCmt []pixiv.Comment
-	err       error
+	works          []pixiv.Illustration
+	users          []pixiv.UserPreview
+	user           *pixiv.UserDetail
+	novels         []pixiv.Novel
+	comments       []pixiv.Comment
+	saved          []SavedWork
+	downloads      []DownloadedWork
+	subs           []SubscriptionInfo
+	articles       []pixiv.SpotlightArticle
+	series         []pixiv.SeriesSummary
+	tags           []pixiv.TrendingTag
+	summary        string
+	macro          string
+	history        []HistoryWork
+	novelBody      string
+	recommend      []pixiv.UserPreview
+	illustCmt      []pixiv.Comment
+	userDetailList []pixiv.UserDetail
+	dlTasks        []DownloadTask
+	err            error
 
 	searchQuery string
 	searchLimit int
@@ -64,6 +67,8 @@ type fakeBackend struct {
 	seriesKind       string
 	novelContentID   int64
 	commentsID       int64
+	worksIDs         []int64
+	usersIDs         []int64
 }
 
 func (f *fakeBackend) Search(_ context.Context, query string, limit int) ([]pixiv.Illustration, error) {
@@ -231,6 +236,20 @@ func (f *fakeBackend) Comments(_ context.Context, illustID int64) ([]pixiv.Comme
 	return f.illustCmt, f.err
 }
 
+func (f *fakeBackend) Works(_ context.Context, ids []int64) ([]pixiv.Illustration, error) {
+	f.worksIDs = ids
+	return f.works, f.err
+}
+
+func (f *fakeBackend) Users(_ context.Context, ids []int64) ([]pixiv.UserDetail, error) {
+	f.usersIDs = ids
+	return f.userDetailList, f.err
+}
+
+func (f *fakeBackend) DownloadTasks(_ context.Context) ([]DownloadTask, error) {
+	return f.dlTasks, f.err
+}
+
 // reply is a response with the fields a test checks left raw.
 type reply struct {
 	JSONRPC string          `json:"jsonrpc"`
@@ -347,6 +366,7 @@ func TestToolsList(t *testing.T) {
 		"series_watchlist", "trending_tags", "settings_summary",
 		"capabilities", "help", "download_macro", "analyze_download_macro",
 		"history", "extensions", "novel_content", "recommended_users", "comments",
+		"works", "users", "download_tasks", "analyze_work_filter",
 	}
 	if len(got.Tools) != len(want) {
 		t.Fatalf("%d tools, want %d", len(got.Tools), len(want))
@@ -962,5 +982,88 @@ func TestCommentsRejectsMissingID(t *testing.T) {
 		`{"jsonrpc":"2.0","id":38,"method":"tools/call","params":{"name":"comments","arguments":{}}}`)
 	if r.Error == nil || r.Error.Code != codeInvalidParams {
 		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestWorksAndUsersCalls(t *testing.T) {
+	b := &fakeBackend{
+		works: sampleWorks(),
+		userDetailList: []pixiv.UserDetail{{
+			User:    pixiv.User{ID: 7, Name: "Ame"},
+			Profile: pixiv.Profile{TotalIllusts: 2},
+		}},
+	}
+	h := newTestServer(b)
+
+	text := callToolText(t, h, "works", `{"ids":[101,0,101,102],"limit":5}`)
+	if want := []int64{101, 102}; !slices.Equal(b.worksIDs, want) {
+		t.Errorf("works ids %v, want %v", b.worksIDs, want)
+	}
+	if !strings.Contains(text, "#101 Rain — Ame") {
+		t.Errorf("works text %q", text)
+	}
+
+	text = callToolText(t, h, "users", `{"ids":[7,7,8]}`)
+	if want := []int64{7, 8}; !slices.Equal(b.usersIDs, want) {
+		t.Errorf("users ids %v, want %v", b.usersIDs, want)
+	}
+	if !strings.Contains(text, "#7 Ame") {
+		t.Errorf("users text %q", text)
+	}
+}
+
+func TestWorksAndUsersRejectEmptyIDs(t *testing.T) {
+	h := newTestServer(&fakeBackend{})
+	for _, name := range []string{"works", "users"} {
+		r := call(t, h, `{"jsonrpc":"2.0","id":39,"method":"tools/call","params":{"name":"`+name+`","arguments":{"ids":[]}}}`)
+		if r.Error == nil || r.Error.Code != codeInvalidParams {
+			t.Errorf("%s reply %+v", name, r)
+		}
+	}
+}
+
+func TestDownloadTasksCall(t *testing.T) {
+	b := &fakeBackend{dlTasks: []DownloadTask{{
+		ID: "t1", IllustID: 101, Title: "Rain", Artist: "Ame",
+		Page: 1, State: "running", Bytes: 10, Total: 20,
+	}}}
+	text := callToolText(t, newTestServer(b), "download_tasks", `{}`)
+	if !strings.Contains(text, "running #101 Rain — Ame") ||
+		!strings.Contains(text, "page 2, 10/20 bytes") {
+		t.Errorf("download_tasks text %q", text)
+	}
+}
+
+func TestDownloadTasksRejectsBadArguments(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":40,"method":"tools/call","params":{"name":"download_tasks","arguments":5}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestAnalyzeWorkFilterCall(t *testing.T) {
+	text := callToolText(t, newTestServer(&fakeBackend{}), "analyze_work_filter",
+		`{"text":"bookmarks > 10 and tag = \"rain\""}`)
+	if !strings.Contains(text, "work filter is valid") {
+		t.Errorf("text %q", text)
+	}
+}
+
+func TestAnalyzeWorkFilterRejectsMissingText(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":41,"method":"tools/call","params":{"name":"analyze_work_filter","arguments":{}}}`)
+	if r.Error == nil || r.Error.Code != codeInvalidParams {
+		t.Fatalf("reply %+v", r)
+	}
+}
+
+func TestAnalyzeWorkFilterReportsSyntaxError(t *testing.T) {
+	r := call(t, newTestServer(&fakeBackend{}),
+		`{"jsonrpc":"2.0","id":42,"method":"tools/call","params":{"name":"analyze_work_filter","arguments":{"text":"bookmarks >"}}}`)
+	var got toolResult
+	decodeResult(t, r, &got)
+	if !got.IsError || !strings.Contains(got.Content[0].Text, "expected") {
+		t.Fatalf("result %+v", got)
 	}
 }

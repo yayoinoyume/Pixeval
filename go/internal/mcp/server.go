@@ -68,6 +68,9 @@ type Backend interface {
 	NovelContent(ctx context.Context, id int64) (string, error)
 	RecommendedUsers(ctx context.Context) ([]pixiv.UserPreview, error)
 	Comments(ctx context.Context, illustID int64) ([]pixiv.Comment, error)
+	Works(ctx context.Context, ids []int64) ([]pixiv.Illustration, error)
+	Users(ctx context.Context, ids []int64) ([]pixiv.UserDetail, error)
+	DownloadTasks(ctx context.Context) ([]DownloadTask, error)
 }
 
 // Server answers MCP requests for one Backend. It keeps no session state, so a

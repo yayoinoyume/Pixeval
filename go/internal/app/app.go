@@ -825,6 +825,46 @@ func (a *App) Status() string {
 	return fmt.Sprintf("downloads: %d task(s) in %s", len(a.downloads.Snapshot()), a.downloadsDir)
 }
 
+// DownloadTasks returns the download queue's tasks; the MCP download tasks
+// tool. The snapshot is safe off the main thread.
+func (a *App) DownloadTasks(context.Context) ([]mcp.DownloadTask, error) {
+	if a.downloads == nil {
+		return nil, nil
+	}
+	tasks := a.downloads.Snapshot()
+	out := make([]mcp.DownloadTask, len(tasks))
+	for i, t := range tasks {
+		out[i] = mcp.DownloadTask{
+			ID:       t.ID,
+			IllustID: t.IllustID,
+			Title:    t.Title,
+			Artist:   t.Artist,
+			Page:     t.Page,
+			State:    downloadStateName(t.State),
+			Bytes:    t.Bytes,
+			Total:    t.Total,
+			Err:      t.Err,
+		}
+	}
+	return out, nil
+}
+
+// downloadStateName is a task state's name for MCP clients.
+func downloadStateName(s download.State) string {
+	switch s {
+	case download.Running:
+		return "running"
+	case download.Done:
+		return "done"
+	case download.Failed:
+		return "failed"
+	case download.Canceled:
+		return "canceled"
+	default:
+		return "queued"
+	}
+}
+
 // SearchUsers returns the users matching word; the MCP user search tool.
 func (a *App) SearchUsers(ctx context.Context, word string) ([]pixiv.UserPreview, error) {
 	page, err := a.client.SearchUsers(ctx, word)
@@ -1136,6 +1176,32 @@ func (a *App) Comments(ctx context.Context, illustID int64) ([]pixiv.Comment, er
 		return nil, err
 	}
 	return page.Items, nil
+}
+
+// Works returns the works with the given ids; the MCP works tool.
+func (a *App) Works(ctx context.Context, ids []int64) ([]pixiv.Illustration, error) {
+	out := make([]pixiv.Illustration, 0, len(ids))
+	for _, id := range ids {
+		w, err := a.client.Illustration(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *w)
+	}
+	return out, nil
+}
+
+// Users returns the profiles with the given ids; the MCP users tool.
+func (a *App) Users(ctx context.Context, ids []int64) ([]pixiv.UserDetail, error) {
+	out := make([]pixiv.UserDetail, 0, len(ids))
+	for _, id := range ids {
+		u, err := a.client.UserDetail(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *u)
+	}
+	return out, nil
 }
 
 // update runs fn on the main thread, or at once before the window exists.
