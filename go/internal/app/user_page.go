@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"sync"
 
 	"github.com/egoist/mygo/ui"
@@ -13,26 +14,36 @@ import (
 // avatarSize is the profile image's side in the user page header.
 const avatarSize = 96
 
-// The user page's works tabs, in the order they show: illustrations, manga and
-// novels.
+// userCardAvatar is the avatar's side in a following or followers list.
+const userCardAvatar = 40
+
+// The user page's tabs, in the order they show: the works tabs (illustrations,
+// manga and novels), then the user's following and followers.
 const (
 	userTabIllust = iota
 	userTabManga
 	userTabNovel
+	userTabFollowing
+	userTabFollowers
 )
 
 // userViewState is one user page: the profile and the user's works tabs. The
 // view runs on the main thread and reads the profile through snapshot; the
 // load goroutine writes it under mu.
 type userViewState struct {
+	// userID is the page's user, whose feeds arm as their tabs show.
+	userID int64
 	// feed is the illustration tab's works; mangaFeed and novelFeed are the
-	// other tabs'. Each keeps its own pages and place, so switching tabs loses
-	// nothing.
-	feed      *browseState
-	mangaFeed *browseState
-	novelFeed *novelFeedState
-	// tab is the works tab shown, one of userTabIllust, userTabManga and
-	// userTabNovel.
+	// other tabs'. followingFeed and followersFeed are the user's following
+	// and followers lists. Each tab keeps its own pages and place, so
+	// switching tabs loses nothing.
+	feed          *browseState
+	mangaFeed     *browseState
+	novelFeed     *novelFeedState
+	followingFeed *userListState
+	followersFeed *userListState
+	// tab is the tab shown, one of userTabIllust, userTabManga, userTabNovel,
+	// userTabFollowing and userTabFollowers.
 	tab int
 
 	mu           sync.Mutex
@@ -76,8 +87,9 @@ func (uv *userPageView) comment() string {
 	return uv.user.Comment
 }
 
-// openUser shows userID's page: the works tabs start here, and the profile
-// fills in when the fetch lands.
+// openUser shows userID's page: only the tab it opens on fetches from here,
+// and the others fetch when they first show. The profile fills in when the
+// fetch lands.
 func (a *App) openUser(userID int64) {
 	if userID <= 0 {
 		return
@@ -85,13 +97,9 @@ func (a *App) openUser(userID int64) {
 	illust := &browseState{}
 	illust.setFetch(a.userFeed(illust, userID, "illust"))
 	illust.arm()
-	manga := &browseState{}
-	manga.setFetch(a.userFeed(manga, userID, "manga"))
-	manga.arm()
-	novels := &novelFeedState{}
-	novels.setFetch(a.userNovelFeed(novels, userID))
-	novels.arm()
-	v := &userViewState{feed: illust, mangaFeed: manga, novelFeed: novels, loading: true}
+	v := &userViewState{userID: userID, feed: illust, mangaFeed: &browseState{},
+		novelFeed: &novelFeedState{}, followingFeed: &userListState{},
+		followersFeed: &userListState{}, loading: true}
 	a.backRoute, a.route, a.userView = a.route, routeUser, v
 	go a.loadUser(v, userID)
 }
@@ -118,6 +126,155 @@ func (a *App) userNovelFeed(st *novelFeedState, userID int64) func(context.Conte
 	}
 }
 
+// userListView is what a following or followers list draws. users is the
+// state's own: callers read it and must not change it.
+type userListView struct {
+	users   []pixiv.UserPreview
+	loading bool
+	started bool
+	err     string
+}
+
+// userListState is one user list: the users loaded so far, the cursor of the
+// next page, and the list's place. The view runs on the main thread; the load
+// goroutine changes the fields under mu.
+type userListState struct {
+	mu      sync.Mutex
+	users   []pixiv.UserPreview
+	next    string
+	loading bool
+	// started is set once a page loaded, so an empty next ends the list
+	// instead of asking for the first page again.
+	started bool
+	err     string
+	fetch   func(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error)
+	armed   bool
+	// failed holds the avatars that did not load, which are not asked for
+	// again.
+	failed map[string]bool
+
+	// list is the list's place, touched only by the view.
+	list ui.ListState
+}
+
+// userListFeed maps a user list to its pages: the first from first, the later
+// ones from the cursor.
+func (a *App) userListFeed(st *userListState, userID int64, first func(context.Context, int64) (*pixiv.Page[pixiv.UserPreview], error)) func(context.Context) (*pixiv.Page[pixiv.UserPreview], error) {
+	return func(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error) {
+		if next := st.cursor(); next != "" {
+			return a.client.NextUserPreviews(ctx, next)
+		}
+		return first(ctx, userID)
+	}
+}
+
+// snapshot returns what the view draws.
+func (st *userListState) snapshot() userListView {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return userListView{
+		users:   st.users,
+		loading: st.loading,
+		started: st.started,
+		err:     st.err,
+	}
+}
+
+// cursor is the next page's URL, empty for the first.
+func (st *userListState) cursor() string {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.next
+}
+
+func (st *userListState) setFetch(fetch func(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error)) {
+	st.mu.Lock()
+	st.fetch = fetch
+	st.mu.Unlock()
+}
+
+// isArmed reports whether the list may load.
+func (st *userListState) isArmed() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.armed
+}
+
+// arm allows the list to load, once its tab draws it.
+func (st *userListState) arm() {
+	st.mu.Lock()
+	st.armed = true
+	st.mu.Unlock()
+}
+
+// canLoad reports whether another page may be fetched: not while one loads,
+// not after a failure (the retry button clears it), and not once the list
+// ended.
+func (st *userListState) canLoad() bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.armed && !st.loading && st.err == "" && (!st.started || st.next != "")
+}
+
+// retry clears a failure, so the next frame loads the page again.
+func (st *userListState) retry() {
+	st.mu.Lock()
+	st.err = ""
+	st.mu.Unlock()
+}
+
+// avatarFailed reports whether a user's avatar failed to load.
+func (st *userListState) avatarFailed(key string) bool {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.failed[key]
+}
+
+func (st *userListState) failAvatar(key string) {
+	st.mu.Lock()
+	if st.failed == nil {
+		st.failed = map[string]bool{}
+	}
+	st.failed[key] = true
+	st.mu.Unlock()
+}
+
+// loadMoreUsers fetches the next page of a user list off the main thread and
+// redraws with it.
+func (a *App) loadMoreUsers(st *userListState) {
+	st.mu.Lock()
+	if !st.armed || st.loading || st.err != "" || st.started && st.next == "" {
+		st.mu.Unlock()
+		return
+	}
+	st.loading = true
+	fetch := st.fetch
+	st.mu.Unlock()
+
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), browseTimeout)
+		defer cancel()
+		page, err := fetch(ctx)
+
+		st.mu.Lock()
+		st.loading = false
+		switch {
+		case errors.Is(err, pixiv.ErrNoMore):
+			st.next = ""
+			st.started = true
+		case err != nil:
+			st.err = err.Error()
+		default:
+			st.started = true
+			st.users = append(st.users, page.Items...)
+			st.next = page.NextURL
+		}
+		st.mu.Unlock()
+
+		a.update(func() {})
+	}()
+}
+
 // loadUser fetches the profile off the main thread and leaves it to the next
 // frame.
 func (a *App) loadUser(v *userViewState, userID int64) {
@@ -134,6 +291,38 @@ func (a *App) loadUser(v *userViewState, userID int64) {
 		}
 		v.user, v.profile = detail.User, detail.Profile
 	})
+}
+
+// armUserTab lets a tab's feed load the first time its tab shows, so opening a
+// user page fetches only the tab it opens on. A tab already armed keeps its
+// pages and place.
+func (a *App) armUserTab(v *userViewState, tab int) {
+	switch tab {
+	case userTabManga:
+		if v.mangaFeed.isArmed() {
+			return
+		}
+		v.mangaFeed.setFetch(a.userFeed(v.mangaFeed, v.userID, "manga"))
+		v.mangaFeed.arm()
+	case userTabNovel:
+		if v.novelFeed.isArmed() {
+			return
+		}
+		v.novelFeed.setFetch(a.userNovelFeed(v.novelFeed, v.userID))
+		v.novelFeed.arm()
+	case userTabFollowing:
+		if v.followingFeed.isArmed() {
+			return
+		}
+		v.followingFeed.setFetch(a.userListFeed(v.followingFeed, v.userID, a.client.UserFollowing))
+		v.followingFeed.arm()
+	case userTabFollowers:
+		if v.followersFeed.isArmed() {
+			return
+		}
+		v.followersFeed.setFetch(a.userListFeed(v.followersFeed, v.userID, a.client.UserFollowers))
+		v.followersFeed.arm()
+	}
 }
 
 // userPage draws the profile above the user's works tabs.
@@ -174,53 +363,136 @@ func (a *App) userPage(c *ui.Context) {
 			})
 		})
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
-			textTabs(c, t, &v.tab, a.t("user.tabIllust"), a.t("user.tabManga"), a.t("user.tabNovel"))
+			textTabs(c, t, &v.tab, a.t("user.tabIllust"), a.t("user.tabManga"),
+				a.t("user.tabNovel"), a.t("user.tabFollowing"), a.t("user.tabFollowers"))
 		})
+		a.armUserTab(v, v.tab)
 		switch v.tab {
 		case userTabManga:
 			a.browsePage(c, v.mangaFeed)
 		case userTabNovel:
 			a.novelResultsFor(c, v.novelFeed, a.t("user.noNovels"))
+		case userTabFollowing:
+			a.userListPage(c, v.followingFeed, a.t("user.noFollowing"), "user.followingLoadFailed")
+		case userTabFollowers:
+			a.userListPage(c, v.followersFeed, a.t("user.noFollowers"), "user.followersLoadFailed")
 		default:
 			a.browsePage(c, v.feed)
 		}
 	})
 }
 
+// userListPage draws a following or followers list, and loads its next page
+// once it is at the end. emptyTitle is the title its empty state shows, and
+// failKey the message a failure shows.
+func (a *App) userListPage(c *ui.Context, st *userListState, emptyTitle, failKey string) {
+	t := themeOf(c)
+	v := st.snapshot()
+	if v.err != "" {
+		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, contentPadding).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconAlert).Size(18, 18).TextColor(t.Danger)
+			ui.Text(c, a.tf(failKey, v.err)).FontSize(t.TextSmall).
+				TextColor(t.Danger).Grow(1)
+			if ui.Button(c, a.t("common.retry")).Clicked() {
+				st.retry()
+			}
+		})
+		if len(v.users) == 0 {
+			// Nothing to show under the error, and no page to load.
+			return
+		}
+	}
+	switch {
+	case len(v.users) > 0:
+		ui.List(c, &st.list, len(v.users)).Grow(1).Rows(func(row ui.ListRow) {
+			a.userCard(row.Context, st, v.users, row.Index)
+		})
+	case !v.started:
+		ui.Column(c).Grow(1).Center().Children(func() {
+			ui.Text(c, a.t("common.loading")).FontSize(t.TextSmall).TextColor(t.TextMuted)
+		})
+	default:
+		emptyState(c, iconUser, emptyTitle, "", nil)
+	}
+	if st.canLoad() && (len(v.users) == 0 || st.list.AtEnd()) {
+		a.loadMoreUsers(st)
+	}
+}
+
+// userCard draws one user of a following or followers list: the avatar, the
+// name and the account. A click opens that user's page.
+func (a *App) userCard(c *ui.Context, st *userListState, users []pixiv.UserPreview, i int) {
+	user := users[i].User
+	url := user.ProfileImageUrls.Px50x50
+	t := themeOf(c)
+	row := ui.Row(c).FillWidth().Gap(t.SpaceM).AlignItems(ui.Center).
+		Padding(t.SpaceS, contentPadding, t.SpaceS, contentPadding).Radius(t.RadiusM).
+		Focusable().Label(user.Name).
+		Cursor(ui.CursorPointer).OnClick(func() {
+		a.openUser(user.ID)
+	})
+	if row.Hovered() {
+		row = row.Background(t.SurfaceAlt)
+	}
+	row.Children(func() {
+		a.avatar(c, userCardAvatar, url, user.Name, st.avatarFailed(url), func() {
+			st.failAvatar(url)
+		})
+		ui.Column(c).Grow(1).Gap(t.SpaceXS).MinWidth(0).Children(func() {
+			ui.Text(c, user.Name).FontSize(t.TextBody).FontWeight(600).TextColor(t.Text).MaxLines(1)
+			if user.Account != "" {
+				ui.Text(c, "@"+user.Account).FontSize(t.TextSmall).TextColor(t.TextMuted).MaxLines(1)
+			}
+		})
+	})
+}
+
 // userAvatar draws the profile image, the name's initial until it loads, and
 // the initial again if the image fails.
 func (a *App) userAvatar(c *ui.Context, v *userViewState, s userPageView) {
+	a.avatar(c, avatarSize, s.user.ProfileImageUrls.Px50x50, s.user.Name, s.avatarFailed, func() {
+		v.mu.Lock()
+		v.avatarFailed = true
+		v.mu.Unlock()
+	})
+}
+
+// avatar draws a user's profile image at side, the name's initial until it
+// loads, and the initial again once failed says the load failed. onFail
+// records a failed load.
+func (a *App) avatar(c *ui.Context, side int, url, name string, failed bool, onFail func()) {
 	t := themeOf(c)
-	url := s.user.ProfileImageUrls.Px50x50
-	box := ui.Box(c).Width(avatarSize).Height(avatarSize).Shrink(0).
+	box := ui.Box(c).Width(float32(side)).Height(float32(side)).Shrink(0).
 		Radius(t.RadiusFull).Background(t.SurfaceAlt).Clip().
-		Label(a.tf("a11y.avatar", s.user.Name))
-	if url == "" || s.avatarFailed {
+		Label(a.tf("a11y.avatar", name))
+	// The header's avatar takes the display size; a list's smaller one takes
+	// the title size, which fits it.
+	font := t.TextDisplay
+	if side < avatarSize {
+		font = t.TextTitle
+	}
+	if url == "" || failed {
 		box.Center().Children(func() {
-			ui.Text(c, initialOf(s.user.Name)).FontSize(t.TextDisplay).Bold().TextColor(t.TextMuted)
+			ui.Text(c, initialOf(name)).FontSize(font).Bold().TextColor(t.TextMuted)
 		})
 		return
 	}
 	box.Children(func() {
-		if bmp := a.images.Thumb(url, avatarSize, avatarSize, a.avatarReady(v, url)); bmp != nil {
+		if bmp := a.images.Thumb(url, side, side, a.avatarReady(url, side, onFail)); bmp != nil {
 			ui.Image(c, bmp).Fill().Fit(ui.Cover)
 		}
 	})
 }
 
 // avatarReady returns the callback an avatar load calls: a probe that finds
-// nothing means the load failed, and the avatar stays a block from then on
-// rather than loading again every frame.
-func (a *App) avatarReady(v *userViewState, url string) func() {
+// nothing means the load failed, and onFail records it so the avatar stays a
+// block from then on rather than loading again every frame.
+func (a *App) avatarReady(url string, side int, onFail func()) func() {
 	return func() {
-		if a.images.Thumb(url, avatarSize, avatarSize, nil) != nil {
+		if a.images.Thumb(url, side, side, nil) != nil {
 			return
 		}
-		a.update(func() {
-			v.mu.Lock()
-			v.avatarFailed = true
-			v.mu.Unlock()
-		})
+		a.update(onFail)
 	}
 }
 

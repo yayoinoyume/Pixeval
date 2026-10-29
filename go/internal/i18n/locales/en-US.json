@@ -213,7 +213,13 @@
     "tabIllust": "Illustrations",
     "tabManga": "Manga",
     "tabNovel": "Novels",
-    "noNovels": "This user has no novels yet"
+    "tabFollowing": "Following",
+    "tabFollowers": "Followers",
+    "noNovels": "This user has no novels yet",
+    "noFollowing": "This user follows no one yet",
+    "noFollowers": "This user has no followers yet",
+    "followingLoadFailed": "Cannot load the following list: %s",
+    "followersLoadFailed": "Cannot load the followers list: %s"
   },
   "series": {
     "open": "Series",
