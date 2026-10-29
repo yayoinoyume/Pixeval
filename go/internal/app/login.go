@@ -224,14 +224,24 @@ func (l *loginWindow) submitRefresh() {
 // finish saves the token, closes the window and tells the app.
 func (l *loginWindow) finish(t *pixiv.Token, saveFailed string) {
 	path, err := tokenPath()
-	if err == nil {
-		err = pixiv.SaveToken(path, t)
-	}
 	if err != nil {
 		l.fail(fmt.Errorf("%s: %w", saveFailed, err))
 		return
 	}
-	l.win.Close()
+	if err := pixiv.SaveToken(path, t); err != nil {
+		l.fail(fmt.Errorf("%s: %w", saveFailed, err))
+		return
+	}
+	// The token file is the session: a list that cannot be written must not
+	// fail the sign-in.
+	if err := l.app.rememberAccount(t); err != nil {
+		log.Printf("accounts: %v", err)
+	}
+	// A window opened here always exists; the check keeps finish usable
+	// without one, as tests that check what it saves need.
+	if l.win != nil {
+		l.win.Close()
+	}
 	l.app.onLoggedIn()
 }
 

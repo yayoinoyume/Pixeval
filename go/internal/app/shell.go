@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -221,25 +222,59 @@ func (a *App) header(c *ui.Context) {
 			}
 			return
 		}
-		a.userBadge(c)
+		a.accountMenu(c)
 	})
 }
 
-// userBadge is the signed-in account: an initial, the name and a quiet way
-// out, in one pill.
-func (a *App) userBadge(c *ui.Context) {
+// accountMenu is the signed-in account area: a quiet way out and the account
+// pill, whose menu lists the saved accounts with the current one checked,
+// adds one, and signs out.
+func (a *App) accountMenu(c *ui.Context) {
 	t := themeOf(c)
 	name := a.userName()
-	ui.Row(c).Height(36).Padding(t.SpaceXS).Gap(t.SpaceS).AlignItems(ui.Center).
-		Radius(t.RadiusS).Children(func() {
-		ui.Box(c).Size(28, 28).Radius(t.RadiusFull).Background(t.AccentSoft).Center().Children(func() {
-			ui.Text(c, initialOf(name)).FontSize(t.TextTiny).FontWeight(600).TextColor(t.Accent)
-		})
-		ui.Text(c, name).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text).MaxLines(1)
+	ui.Row(c).Height(36).Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+		// Sign out comes before the pill, so the pill stays the last stop the
+		// keyboard reaches in the header.
 		if iconButton(c, iconLogout, a.t("nav.logout"), 28, t.TextMuted, t.SurfaceAlt).Clicked() {
 			a.logout()
 		}
+		b := ui.ButtonBase(c).Height(32).Radius(t.RadiusS).Padding(t.SpaceXS).
+			Gap(t.SpaceS).Row().AlignItems(ui.Center).
+			Label(a.tf("account.current", name)).Tooltip(a.t("account.switch"))
+		b.Children(func() {
+			ui.Box(c).Size(28, 28).Radius(t.RadiusFull).Background(t.AccentSoft).Center().Children(func() {
+				ui.Text(c, initialOf(name)).FontSize(t.TextTiny).FontWeight(600).TextColor(t.Accent)
+			})
+			ui.Text(c, name).FontSize(t.TextSmall).FontWeight(500).TextColor(t.Text).MaxLines(1)
+		})
+		b.Menu(func(m *ui.Menu) {
+			active := a.accounts.ActiveID()
+			for _, acc := range a.accounts.Snapshot() {
+				if m.Item(accountLabel(acc)).Checked(acc.UserID == active).Chosen() {
+					a.switchAccount(acc.UserID)
+				}
+			}
+			m.Separator()
+			if m.Item(a.t("account.add")).Chosen() {
+				a.ShowLogin()
+			}
+			if m.Item(a.t("nav.logout")).Chosen() {
+				a.logout()
+			}
+		})
 	})
+}
+
+// accountLabel names a saved account in the menu: its display name, else its
+// account id, else its user id.
+func accountLabel(acc Account) string {
+	if acc.Name != "" {
+		return acc.Name
+	}
+	if acc.Account != "" {
+		return acc.Account
+	}
+	return strconv.FormatInt(acc.UserID, 10)
 }
 
 func (a *App) page(c *ui.Context) {

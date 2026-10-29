@@ -337,5 +337,11 @@
     "clear": "Vider la liste des bloqués",
     "empty": "Aucun utilisateur bloqué",
     "count": "%d utilisateur(s) bloqué(s)"
+  },
+  "account": {
+    "switch": "Changer de compte",
+    "add": "Ajouter un compte",
+    "current": "Compte actuel : %s",
+    "switchFailed": "Impossible de changer de compte ; le compte actuel est conservé"
   }
 }
