@@ -64,8 +64,10 @@ type App struct {
 	seriesView *seriesViewState
 	// related is the related-works page shown, nil until one opens.
 	related *relatedViewState
-	// novelView is the novel reading page shown, nil until one opens.
-	novelView *novelViewState
+	// novelView is the novel reading page shown, nil until one opens, and
+	// novelProgress the place each novel was left at.
+	novelView     *novelViewState
+	novelProgress *NovelProgress
 	// homeTab is the home feed shown: recommended, following or ranking.
 	homeTab int
 	// homeFeeds are the home tabs' feeds. Each keeps its own pages and place,
@@ -228,6 +230,7 @@ func New() *App {
 		watchLater:       loadWatchLater(),
 		watchLaterFailed: map[string]bool{},
 		blocked:          loadBlockedUsers(),
+		novelProgress:    loadNovelProgress(),
 		bookmarkFn: func(ctx context.Context, id int64, on bool) error {
 			if on {
 				return client.AddBookmark(ctx, id, false)
