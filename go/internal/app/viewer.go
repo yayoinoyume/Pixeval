@@ -1,8 +1,15 @@
 package app
 
 import (
+	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"image"
+	_ "image/jpeg"
+	"image/png"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -30,6 +37,10 @@ const (
 	ugoiraTimeout      = 2 * time.Minute
 	defaultUgoiraDelay = 100 * time.Millisecond
 )
+
+// imageExportTimeout bounds a copy or a save, whose picture comes over the
+// network.
+const imageExportTimeout = 2 * time.Minute
 
 // viewerState is the full-screen viewer of one work: the page shown, where
 // the user zoomed and panned it to, and the original being loaded. The view
@@ -111,6 +122,10 @@ type viewerState struct {
 	// failedImages holds the thumbnail and avatar URLs that did not load, so
 	// a broken one is not asked for again every frame.
 	failedImages map[string]bool
+
+	// exporting is set while a copy or a save runs, so a second click does
+	// not fetch the same picture twice.
+	exporting bool
 
 	// drag is the pointer dragging the image; lastX and lastY are where it
 	// was at the previous move.
@@ -496,6 +511,151 @@ func (a *App) toggleBookmark(v *viewerState) {
 			if err != nil {
 				a.notice = a.tf("viewer.bookmarkFailed", err.Error())
 			}
+		})
+	}()
+}
+
+// beginExport marks a copy or a save as running and reports whether it may
+// start, so a second click while one runs is dropped.
+func (v *viewerState) beginExport() bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.exporting {
+		return false
+	}
+	v.exporting = true
+	return true
+}
+
+// endExport clears the running mark and leaves msg as the next frame's notice.
+// The notice comes first, so a test that waits on the export also sees it.
+func (v *viewerState) endExport(a *App, msg string) {
+	a.notice = msg
+	v.mu.Lock()
+	v.exporting = false
+	v.mu.Unlock()
+}
+
+// exportViewerImage is the picture a copy or a save acts on, taken on the main
+// thread at the click: a still by its page's original URL and extension, an
+// animation by the frame shown, which has no file of its own.
+func exportViewerImage(v *viewerState) (url, ext string, frame *image.RGBA) {
+	if isUgoira(v.work) {
+		frames, index, _, _, _ := v.ugoiraState()
+		if frames == nil || index < 0 || index >= len(frames.Images) {
+			return "", "", nil
+		}
+		return "", "png", frames.Images[index]
+	}
+	return v.work.PageURL(v.page), downloadExt(v.work, v.page), nil
+}
+
+// pngBytes encodes img as PNG, the only format the clipboard takes.
+func pngBytes(img image.Image) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// fetchExportBytes fetches the exported picture as it is saved: a still's
+// original as the server sends it, an animation's frame encoded as PNG.
+func (a *App) fetchExportBytes(ctx context.Context, url string, frame *image.RGBA) ([]byte, error) {
+	if frame != nil {
+		return pngBytes(frame)
+	}
+	if url == "" {
+		return nil, errors.New("the page has no image url")
+	}
+	return a.fetchImageBytes(ctx, url)
+}
+
+// fetchExportPNG fetches the exported picture as PNG, which the clipboard
+// needs: a still's original is usually a JPEG, so its pixels are re-encoded.
+func (a *App) fetchExportPNG(ctx context.Context, url string, frame *image.RGBA) ([]byte, error) {
+	if frame != nil {
+		return pngBytes(frame)
+	}
+	data, err := a.fetchExportBytes(ctx, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	return pngBytes(img)
+}
+
+// copyViewerImage puts the picture the viewer shows on the clipboard: the
+// page's original for a still, the frame shown for an animation. The fetch and
+// the encode run off the main thread; the clipboard is written on it, as mygo
+// asks.
+func (a *App) copyViewerImage(v *viewerState) {
+	if v == nil {
+		return
+	}
+	url, _, frame := exportViewerImage(v)
+	if url == "" && frame == nil {
+		a.notice = a.tf("viewer.copyImageFailed", a.t("viewer.imageFailed"))
+		return
+	}
+	if !v.beginExport() {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), imageExportTimeout)
+		defer cancel()
+		data, err := a.fetchExportPNG(ctx, url, frame)
+		a.update(func() {
+			if err == nil {
+				err = a.clipboardWriteImage(data)
+			}
+			msg := a.t("viewer.imageCopied")
+			if err != nil {
+				msg = a.tf("viewer.copyImageFailed", err.Error())
+			}
+			v.endExport(a, msg)
+		})
+	}()
+}
+
+// saveViewerImage writes the picture the viewer shows into the download
+// directory, named for the work and the page. A still keeps the original's
+// bytes and extension; an animation is saved as the PNG of the frame shown.
+func (a *App) saveViewerImage(v *viewerState) {
+	if v == nil {
+		return
+	}
+	dir := a.downloadsDir
+	if dir == "" {
+		a.notice = a.t("viewer.noDownloadDir")
+		return
+	}
+	url, ext, frame := exportViewerImage(v)
+	if url == "" && frame == nil {
+		a.notice = a.tf("viewer.saveImageFailed", a.t("viewer.imageFailed"))
+		return
+	}
+	if !v.beginExport() {
+		return
+	}
+	name := downloadSafeRel(fmt.Sprintf("%d_p%d.%s", v.work.ID, v.page+1, ext))
+	dest := filepath.Join(dir, name)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), imageExportTimeout)
+		defer cancel()
+		data, err := a.fetchExportBytes(ctx, url, frame)
+		if err == nil {
+			err = os.WriteFile(dest, data, 0o644)
+		}
+		a.update(func() {
+			msg := a.tf("viewer.imageSaved", name)
+			if err != nil {
+				msg = a.tf("viewer.saveImageFailed", err.Error())
+			}
+			v.endExport(a, msg)
 		})
 	}()
 }
@@ -1036,6 +1196,12 @@ func (a *App) viewerActions(c *ui.Context, t tokens, v *viewerState, failed bool
 					c.Toast(a.tf("viewer.queued", queued))
 				}
 			}
+		}
+		if b := a.viewerAction(c, t, nil, a.t("viewer.copyImage"), false); b.Clicked() {
+			a.copyViewerImage(v)
+		}
+		if b := a.viewerAction(c, t, nil, a.t("viewer.saveImage"), false); b.Clicked() {
+			a.saveViewerImage(v)
 		}
 		if b := a.viewerAction(c, t, iconComment, a.t("comments.title"), a.commentsOpen); b.Clicked() {
 			a.toggleComments()

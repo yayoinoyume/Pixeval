@@ -194,6 +194,11 @@ type App struct {
 	// openExternalFn opens a URL in the default browser; tests replace it so a
 	// click does not leave the app.
 	openExternalFn func(url string) error
+	// fetchImageBytes downloads a picture's bytes off the main thread, and
+	// clipboardWriteImage puts a PNG on the clipboard; tests replace both to
+	// avoid the network and the system clipboard.
+	fetchImageBytes     func(ctx context.Context, url string) ([]byte, error)
+	clipboardWriteImage func(png []byte) error
 	// subsStore holds the followed users and series, loaded at start, and subs
 	// checks them on demand and every subscriptionInterval.
 	subsStore *subscription.Store
@@ -338,6 +343,10 @@ func New() *App {
 	}
 	// The check probes the install directory, so the settings page asks once.
 	a.updateSt.off = !a.updater.Enabled()
+	// A viewer's copy and save take the picture over the network and put it on
+	// the clipboard; tests replace both to avoid either.
+	a.fetchImageBytes = client.GetImage
+	a.clipboardWriteImage = mygo.Clipboard.WriteImage
 	// The saved limit applies before the first image loads.
 	a.images.SetDiskLimit(imageCacheLimitBytes(settings))
 	// The check runs on the timer goroutine, so it hands the works to the main
