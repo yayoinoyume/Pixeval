@@ -25,6 +25,9 @@ type fakeBackend struct {
 	downloads []DownloadedWork
 	subs      []SubscriptionInfo
 	articles  []pixiv.SpotlightArticle
+	series    []pixiv.SeriesSummary
+	tags      []pixiv.TrendingTag
+	summary   string
 	err       error
 
 	searchQuery string
@@ -47,6 +50,13 @@ type fakeBackend struct {
 	novelsWord       string
 	novelCommentsID  int64
 	relatedID        int64
+	newKind          string
+	myPixivKind      string
+	followingUsersID int64
+	followersCalls   int
+	myPixivUsersID   int64
+	relatedUsersID   int64
+	seriesKind       string
 }
 
 func (f *fakeBackend) Search(_ context.Context, query string, limit int) ([]pixiv.Illustration, error) {
@@ -143,6 +153,53 @@ func (f *fakeBackend) RelatedIllusts(_ context.Context, id int64) ([]pixiv.Illus
 
 func (f *fakeBackend) Spotlight(_ context.Context) ([]pixiv.SpotlightArticle, error) {
 	return f.articles, f.err
+}
+
+func (f *fakeBackend) NewWorks(_ context.Context, kind string) ([]pixiv.Illustration, error) {
+	f.newKind = kind
+	return f.works, f.err
+}
+
+func (f *fakeBackend) FollowingWorks(_ context.Context) ([]pixiv.Illustration, error) {
+	return f.works, f.err
+}
+
+func (f *fakeBackend) MyPixivWorks(_ context.Context, kind string) ([]pixiv.Illustration, error) {
+	f.myPixivKind = kind
+	return f.works, f.err
+}
+
+func (f *fakeBackend) FollowingUsers(_ context.Context, userID int64) ([]pixiv.UserPreview, error) {
+	f.followingUsersID = userID
+	return f.users, f.err
+}
+
+func (f *fakeBackend) Followers(_ context.Context) ([]pixiv.UserPreview, error) {
+	f.followersCalls++
+	return f.users, f.err
+}
+
+func (f *fakeBackend) MyPixivUsers(_ context.Context, userID int64) ([]pixiv.UserPreview, error) {
+	f.myPixivUsersID = userID
+	return f.users, f.err
+}
+
+func (f *fakeBackend) RelatedUsers(_ context.Context, userID int64) ([]pixiv.UserPreview, error) {
+	f.relatedUsersID = userID
+	return f.users, f.err
+}
+
+func (f *fakeBackend) SeriesWatchlist(_ context.Context, kind string) ([]pixiv.SeriesSummary, error) {
+	f.seriesKind = kind
+	return f.series, f.err
+}
+
+func (f *fakeBackend) TrendingTags(_ context.Context) ([]pixiv.TrendingTag, error) {
+	return f.tags, f.err
+}
+
+func (f *fakeBackend) SettingsSummary(_ context.Context) (string, error) {
+	return f.summary, f.err
 }
 
 // reply is a response with the fields a test checks left raw.
@@ -256,6 +313,9 @@ func TestToolsList(t *testing.T) {
 		"search_users", "user_detail", "user_illusts", "user_bookmarks",
 		"search_novels", "novel_comments", "watch_later", "download_history", "subscriptions",
 		"related_illustrations", "spotlight",
+		"new_works", "following_works", "my_pixiv_works",
+		"following_users", "followers", "my_pixiv_users", "related_users",
+		"series_watchlist", "trending_tags", "settings_summary",
 	}
 	if len(got.Tools) != len(want) {
 		t.Fatalf("%d tools, want %d", len(got.Tools), len(want))
@@ -456,6 +516,82 @@ func TestReadToolsCallBackend(t *testing.T) {
 	if text := callToolText(t, h, "spotlight", `{}`); !strings.Contains(text, "Article") ||
 		!strings.Contains(text, "https://www.pixivision.net/a/1") {
 		t.Errorf("spotlight text %q", text)
+	}
+}
+
+func TestFeedAndSocialReadTools(t *testing.T) {
+	published := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
+	b := &fakeBackend{
+		works: sampleWorks(),
+		users: []pixiv.UserPreview{{User: pixiv.User{ID: 7, Name: "Ame", Account: "ame"}}},
+		series: []pixiv.SeriesSummary{{
+			ID: 3, Title: "Rain Series", User: pixiv.User{ID: 7, Name: "Ame"},
+			PublishedContentCount: 4, LastPublishedContent: published,
+		}},
+		tags:    []pixiv.TrendingTag{{Tag: "rain", TranslatedName: "雨"}},
+		summary: "theme: dark",
+	}
+	h := newTestServer(b)
+
+	if text := callToolText(t, h, "new_works", `{"kind":"manga","limit":2}`); b.newKind != "manga" || !strings.Contains(text, "#101") {
+		t.Errorf("new_works kind %q text %q", b.newKind, text)
+	}
+	if text := callToolText(t, h, "new_works", `{}`); b.newKind != "illust" || !strings.Contains(text, "#101") {
+		t.Errorf("new_works default kind %q text %q", b.newKind, text)
+	}
+	if text := callToolText(t, h, "following_works", `{}`); !strings.Contains(text, "#101") {
+		t.Errorf("following_works text %q", text)
+	}
+	if text := callToolText(t, h, "my_pixiv_works", `{"kind":"manga"}`); b.myPixivKind != "manga" || !strings.Contains(text, "#101") {
+		t.Errorf("my_pixiv_works kind %q text %q", b.myPixivKind, text)
+	}
+	if text := callToolText(t, h, "following_users", `{"id":7}`); b.followingUsersID != 7 || !strings.Contains(text, "#7 Ame") {
+		t.Errorf("following_users id %d text %q", b.followingUsersID, text)
+	}
+	if text := callToolText(t, h, "following_users", `{}`); b.followingUsersID != 0 || !strings.Contains(text, "#7 Ame") {
+		t.Errorf("following_users default id %d text %q", b.followingUsersID, text)
+	}
+	if text := callToolText(t, h, "followers", `{}`); b.followersCalls != 1 || !strings.Contains(text, "#7 Ame") {
+		t.Errorf("followers calls %d text %q", b.followersCalls, text)
+	}
+	if text := callToolText(t, h, "my_pixiv_users", `{"id":7}`); b.myPixivUsersID != 7 || !strings.Contains(text, "#7 Ame") {
+		t.Errorf("my_pixiv_users id %d text %q", b.myPixivUsersID, text)
+	}
+	if text := callToolText(t, h, "related_users", `{"id":7}`); b.relatedUsersID != 7 || !strings.Contains(text, "#7 Ame") {
+		t.Errorf("related_users id %d text %q", b.relatedUsersID, text)
+	}
+	if text := callToolText(t, h, "series_watchlist", `{"kind":"novel"}`); b.seriesKind != "novel" ||
+		!strings.Contains(text, "#3 Rain Series — Ame") ||
+		!strings.Contains(text, "https://www.pixiv.net/novel/series/3") {
+		t.Errorf("series_watchlist kind %q text %q", b.seriesKind, text)
+	}
+	if text := callToolText(t, h, "series_watchlist", `{}`); b.seriesKind != "manga" ||
+		!strings.Contains(text, "https://www.pixiv.net/user/7/series/3") {
+		t.Errorf("series_watchlist default kind %q text %q", b.seriesKind, text)
+	}
+	if text := callToolText(t, h, "trending_tags", `{}`); !strings.Contains(text, "rain (雨)") {
+		t.Errorf("trending_tags text %q", text)
+	}
+	if text := callToolText(t, h, "settings_summary", `{}`); !strings.Contains(text, "theme: dark") {
+		t.Errorf("settings_summary text %q", text)
+	}
+}
+
+func TestFeedAndSocialReadToolBadArgs(t *testing.T) {
+	cases := []struct{ name, args string }{
+		{"new_works", `{"kind":"novel"}`},
+		{"my_pixiv_works", `{"kind":"novel"}`},
+		{"series_watchlist", `{"kind":"illust"}`},
+		{"following_users", `{"id":-1}`},
+		{"my_pixiv_users", `{}`},
+		{"related_users", `{"id":0}`},
+	}
+	for _, tc := range cases {
+		body := fmt.Sprintf(`{"jsonrpc":"2.0","id":12,"method":"tools/call","params":{"name":%q,"arguments":%s}}`, tc.name, tc.args)
+		r := call(t, newTestServer(&fakeBackend{}), body)
+		if r.Error == nil || r.Error.Code != codeInvalidParams {
+			t.Errorf("%s: reply %+v", tc.name, r)
+		}
 	}
 }
 

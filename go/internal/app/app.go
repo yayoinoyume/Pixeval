@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -953,6 +954,129 @@ func (a *App) Spotlight(ctx context.Context) ([]pixiv.SpotlightArticle, error) {
 		return nil, err
 	}
 	return page.Items, nil
+}
+
+// NewWorks returns the site-wide newest works of kind; the MCP new works tool.
+func (a *App) NewWorks(ctx context.Context, kind string) ([]pixiv.Illustration, error) {
+	page, err := a.client.NewIllustrations(ctx, pixiv.WorkKind(kind))
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// FollowingWorks returns the public works of followed users; the MCP
+// following works tool.
+func (a *App) FollowingWorks(ctx context.Context) ([]pixiv.Illustration, error) {
+	page, err := a.client.Following(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// MyPixivWorks returns works by the account's MyPixiv users; the MCP MyPixiv
+// works tool.
+func (a *App) MyPixivWorks(ctx context.Context, kind string) ([]pixiv.Illustration, error) {
+	page, err := a.client.MyPixivIllustrations(ctx, pixiv.WorkKind(kind))
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// signedInUserID is the signed-in account's Pixiv id, or 0 when logged out.
+func (a *App) signedInUserID() int64 {
+	if tok := a.client.Token(); tok != nil {
+		return int64(tok.User.ID)
+	}
+	return 0
+}
+
+// FollowingUsers returns the users userID follows publicly; a zero userID
+// means the signed-in account. The MCP following users tool.
+func (a *App) FollowingUsers(ctx context.Context, userID int64) ([]pixiv.UserPreview, error) {
+	if userID <= 0 {
+		userID = a.signedInUserID()
+	}
+	if userID <= 0 {
+		return nil, errors.New("not signed in")
+	}
+	page, err := a.client.UserFollowing(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// Followers returns the users following the signed-in account; the MCP
+// followers tool.
+func (a *App) Followers(ctx context.Context) ([]pixiv.UserPreview, error) {
+	userID := a.signedInUserID()
+	if userID <= 0 {
+		return nil, errors.New("not signed in")
+	}
+	page, err := a.client.UserFollowers(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// MyPixivUsers returns the users userID added to MyPixiv; the MCP MyPixiv
+// users tool.
+func (a *App) MyPixivUsers(ctx context.Context, userID int64) ([]pixiv.UserPreview, error) {
+	page, err := a.client.UserMyPixiv(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// RelatedUsers returns the users Pixiv lists beside userID; the MCP related
+// users tool.
+func (a *App) RelatedUsers(ctx context.Context, userID int64) ([]pixiv.UserPreview, error) {
+	page, err := a.client.RelatedUsers(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// SeriesWatchlist returns the followed series of kind; the MCP series
+// watchlist tool.
+func (a *App) SeriesWatchlist(ctx context.Context, kind string) ([]pixiv.SeriesSummary, error) {
+	page, err := a.client.SeriesWatchlist(ctx, pixiv.SeriesKind(kind))
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+// TrendingTags returns Pixiv's trending illustration tags; the MCP trending
+// tags tool.
+func (a *App) TrendingTags(ctx context.Context) ([]pixiv.TrendingTag, error) {
+	return a.client.TrendingTags(ctx)
+}
+
+// SettingsSummary describes the saved preferences for the MCP settings tool.
+// Secrets, the proxy URL and resolver lists stay out of it.
+func (a *App) SettingsSummary(context.Context) (string, error) {
+	s := a.settings
+	if s == nil {
+		return "", errors.New("settings are unavailable")
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "theme: %s\nlanguage: %s\n", s.Theme, s.Language)
+	fmt.Fprintf(&b, "download dir: %s\nconcurrency: %d\nmacro: %s\n",
+		s.DownloadDir, s.DownloadConcurrency, s.DownloadMacro)
+	fmt.Fprintf(&b, "show R-18: %t\ncard width: %g\n", s.ShowR18, s.CardWidth)
+	fmt.Fprintf(&b, "auto-download subscriptions: %t\nnotifications: %t\ncheck every %d min\n",
+		s.AutoDownloadSubscriptions, s.NotificationsEnabled, s.SubscriptionIntervalMinutes)
+	fmt.Fprintf(&b, "novel font %d, line height %g, width %g\n",
+		s.NovelFontSize, s.NovelLineHeight, s.NovelWidth)
+	fmt.Fprintf(&b, "image cache limit: %d MB", s.ImageCacheLimitMB)
+	return b.String(), nil
 }
 
 // update runs fn on the main thread, or at once before the window exists.

@@ -53,6 +53,16 @@ type Backend interface {
 	Subscriptions(ctx context.Context) ([]SubscriptionInfo, error)
 	RelatedIllusts(ctx context.Context, id int64) ([]pixiv.Illustration, error)
 	Spotlight(ctx context.Context) ([]pixiv.SpotlightArticle, error)
+	NewWorks(ctx context.Context, kind string) ([]pixiv.Illustration, error)
+	FollowingWorks(ctx context.Context) ([]pixiv.Illustration, error)
+	MyPixivWorks(ctx context.Context, kind string) ([]pixiv.Illustration, error)
+	FollowingUsers(ctx context.Context, userID int64) ([]pixiv.UserPreview, error)
+	Followers(ctx context.Context) ([]pixiv.UserPreview, error)
+	MyPixivUsers(ctx context.Context, userID int64) ([]pixiv.UserPreview, error)
+	RelatedUsers(ctx context.Context, userID int64) ([]pixiv.UserPreview, error)
+	SeriesWatchlist(ctx context.Context, kind string) ([]pixiv.SeriesSummary, error)
+	TrendingTags(ctx context.Context) ([]pixiv.TrendingTag, error)
+	SettingsSummary(ctx context.Context) (string, error)
 }
 
 // Server answers MCP requests for one Backend. It keeps no session state, so a

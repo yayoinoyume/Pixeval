@@ -114,6 +114,18 @@ var privateProperty = property{
 	Default:     false,
 }
 
+var seriesKindProperty = property{
+	Type:        "string",
+	Description: "Which series to list: manga or novel.",
+	Enum:        []string{"manga", "novel"},
+	Default:     "manga",
+}
+
+var optionalUserIDProperty = property{
+	Type:        "integer",
+	Description: "The user's Pixiv id; omit for the signed-in account.",
+}
+
 // toolDefs are the tools this server exposes, in the order a client shows them.
 var toolDefs = []tool{
 	{
@@ -303,6 +315,103 @@ var toolDefs = []tool{
 			Type:       "object",
 			Properties: map[string]property{"limit": listLimitProperty},
 		},
+	},
+	{
+		Name:        "new_works",
+		Description: "List the newest works posted across Pixiv, illustrations or manga.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"kind":  kindProperty,
+				"limit": listLimitProperty,
+			},
+		},
+	},
+	{
+		Name:        "following_works",
+		Description: "List the public works of the users the signed-in account follows.",
+		InputSchema: schema{
+			Type:       "object",
+			Properties: map[string]property{"limit": listLimitProperty},
+		},
+	},
+	{
+		Name:        "my_pixiv_works",
+		Description: "List the works of the users in the signed-in account's MyPixiv, illustrations or manga.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"kind":  kindProperty,
+				"limit": listLimitProperty,
+			},
+		},
+	},
+	{
+		Name:        "following_users",
+		Description: "List the users a Pixiv user follows publicly, the signed-in account when no id is given.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":    optionalUserIDProperty,
+				"limit": listLimitProperty,
+			},
+		},
+	},
+	{
+		Name:        "followers",
+		Description: "List the users who follow the signed-in account.",
+		InputSchema: schema{
+			Type:       "object",
+			Properties: map[string]property{"limit": listLimitProperty},
+		},
+	},
+	{
+		Name:        "my_pixiv_users",
+		Description: "List the users a Pixiv user added to MyPixiv.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":    userIDProperty,
+				"limit": listLimitProperty,
+			},
+			Required: []string{"id"},
+		},
+	},
+	{
+		Name:        "related_users",
+		Description: "List the users Pixiv lists beside one user.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"id":    userIDProperty,
+				"limit": listLimitProperty,
+			},
+			Required: []string{"id"},
+		},
+	},
+	{
+		Name:        "series_watchlist",
+		Description: "List the manga or novel series the signed-in account follows.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"kind":  seriesKindProperty,
+				"limit": listLimitProperty,
+			},
+		},
+	},
+	{
+		Name:        "trending_tags",
+		Description: "List the illustration tags Pixiv lists as trending now.",
+		InputSchema: schema{
+			Type:       "object",
+			Properties: map[string]property{"limit": listLimitProperty},
+		},
+	},
+	{
+		Name:        "settings_summary",
+		Description: "Read the app's saved preferences, without secrets such as the MCP token or API key.",
+		InputSchema: schema{Type: "object", Properties: map[string]property{}},
 	},
 }
 
@@ -568,9 +677,172 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 			return failure(err), nil
 		}
 		return articlesResult(limitItems(articles, clampListLimit(args.Limit))), nil
+	case "new_works":
+		var args struct {
+			Kind  string `json:"kind"`
+			Limit int    `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		kind, err := workKind(args.Kind)
+		if err != nil {
+			return callResult{}, err
+		}
+		works, err := b.NewWorks(ctx, kind)
+		if err != nil {
+			return failure(err), nil
+		}
+		return worksResult(limitItems(works, clampListLimit(args.Limit))), nil
+	case "following_works":
+		var args struct {
+			Limit int `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		works, err := b.FollowingWorks(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return worksResult(limitItems(works, clampListLimit(args.Limit))), nil
+	case "my_pixiv_works":
+		var args struct {
+			Kind  string `json:"kind"`
+			Limit int    `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		kind, err := workKind(args.Kind)
+		if err != nil {
+			return callResult{}, err
+		}
+		works, err := b.MyPixivWorks(ctx, kind)
+		if err != nil {
+			return failure(err), nil
+		}
+		return worksResult(limitItems(works, clampListLimit(args.Limit))), nil
+	case "following_users":
+		var args struct {
+			ID    int64 `json:"id"`
+			Limit int   `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID < 0 {
+			return callResult{}, errors.New("id must not be negative")
+		}
+		users, err := b.FollowingUsers(ctx, args.ID)
+		if err != nil {
+			return failure(err), nil
+		}
+		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+	case "followers":
+		var args struct {
+			Limit int `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		users, err := b.Followers(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+	case "my_pixiv_users":
+		var args struct {
+			ID    int64 `json:"id"`
+			Limit int   `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID <= 0 {
+			return callResult{}, errors.New("id is required")
+		}
+		users, err := b.MyPixivUsers(ctx, args.ID)
+		if err != nil {
+			return failure(err), nil
+		}
+		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+	case "related_users":
+		var args struct {
+			ID    int64 `json:"id"`
+			Limit int   `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if args.ID <= 0 {
+			return callResult{}, errors.New("id is required")
+		}
+		users, err := b.RelatedUsers(ctx, args.ID)
+		if err != nil {
+			return failure(err), nil
+		}
+		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+	case "series_watchlist":
+		var args struct {
+			Kind  string `json:"kind"`
+			Limit int    `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		kind, err := seriesKind(args.Kind)
+		if err != nil {
+			return callResult{}, err
+		}
+		series, err := b.SeriesWatchlist(ctx, kind)
+		if err != nil {
+			return failure(err), nil
+		}
+		return seriesResult(limitItems(series, clampListLimit(args.Limit)), kind), nil
+	case "trending_tags":
+		var args struct {
+			Limit int `json:"limit"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		tags, err := b.TrendingTags(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return tagsResult(limitItems(tags, clampListLimit(args.Limit))), nil
+	case "settings_summary":
+		summary, err := b.SettingsSummary(ctx)
+		if err != nil {
+			return failure(err), nil
+		}
+		return textResult(summary), nil
 	default:
 		return callResult{}, fmt.Errorf("unknown tool: %q", name)
 	}
+}
+
+// workKind is the kind an illustration feed asks for: illust when unset.
+func workKind(kind string) (string, error) {
+	if kind == "" {
+		return "illust", nil
+	}
+	if kind != "illust" && kind != "manga" {
+		return "", errors.New(`kind must be "illust" or "manga"`)
+	}
+	return kind, nil
+}
+
+// seriesKind is the kind a watchlist asks for: manga when unset.
+func seriesKind(kind string) (string, error) {
+	if kind == "" {
+		return "manga", nil
+	}
+	if kind != "manga" && kind != "novel" {
+		return "", errors.New(`kind must be "manga" or "novel"`)
+	}
+	return kind, nil
 }
 
 // decodeArgs unmarshals a tool's arguments, treating an absent object as empty.
@@ -678,6 +950,16 @@ func subscriptionsResult(subs []SubscriptionInfo) callResult {
 
 func articlesResult(articles []pixiv.SpotlightArticle) callResult {
 	return listResult(articles, "no articles found", articleText)
+}
+
+func seriesResult(series []pixiv.SeriesSummary, kind string) callResult {
+	return listResult(series, "no series found", func(s *pixiv.SeriesSummary) string {
+		return seriesText(s, kind)
+	})
+}
+
+func tagsResult(tags []pixiv.TrendingTag) callResult {
+	return listResult(tags, "no trending tags found", tagText)
 }
 
 // userText is one user a client can read and open: the profile line and its
@@ -793,6 +1075,36 @@ func articleText(a *pixiv.SpotlightArticle) string {
 	}
 	b.WriteString(a.ArticleURL)
 	return b.String()
+}
+
+// seriesText is one series in the watchlist, with its page URL.
+func seriesText(s *pixiv.SeriesSummary, kind string) string {
+	if s == nil {
+		return "no series found"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "#%d %s — %s\n", s.ID, s.Title, s.User.Name)
+	fmt.Fprintf(&b, "%d work(s)\n", s.PublishedContentCount)
+	if !s.LastPublishedContent.IsZero() {
+		fmt.Fprintf(&b, "last published %s\n", s.LastPublishedContent.Format(time.RFC3339))
+	}
+	if kind == "novel" {
+		fmt.Fprintf(&b, "https://www.pixiv.net/novel/series/%d", s.ID)
+	} else {
+		fmt.Fprintf(&b, "https://www.pixiv.net/user/%d/series/%d", s.User.ID, s.ID)
+	}
+	return b.String()
+}
+
+// tagText is one trending tag, with its translation when Pixiv gives one.
+func tagText(t *pixiv.TrendingTag) string {
+	if t == nil {
+		return "no tag found"
+	}
+	if t.TranslatedName == "" {
+		return t.Tag
+	}
+	return fmt.Sprintf("%s (%s)", t.Tag, t.TranslatedName)
 }
 
 // clip folds s to one line and keeps at most n runes, so a long comment does
