@@ -23,6 +23,7 @@ var (
 	iconLeft      = icon(`<path d="m14.5 6-6 6 6 6"/>`)
 	iconRight     = icon(`<path d="m9.5 6 6 6-6 6"/>`)
 	iconDown      = icon(`<path d="m6 9.5 6 6 6-6"/>`)
+	iconUp        = icon(`<path d="m6 14.5 6-6 6 6"/>`)
 	iconHeart     = icon(`<path d="M12 20.3 4.9 13.2a4.9 4.9 0 0 1 0-6.9 4.8 4.8 0 0 1 6.8 0l.3.3.3-.3a4.8 4.8 0 0 1 6.8 0 4.9 4.9 0 0 1 0 6.9Z"/>`)
 	iconHeartFill = icon(`<path d="M12 20.3 4.9 13.2a4.9 4.9 0 0 1 0-6.9 4.8 4.8 0 0 1 6.8 0l.3.3.3-.3a4.8 4.8 0 0 1 6.8 0 4.9 4.9 0 0 1 0 6.9Z" fill="currentColor" stroke="none"/>`)
 	iconRefresh   = icon(`<path d="M20 4.5v6h-6"/><path d="M19.2 10.5A7.5 7.5 0 1 0 17 17.4"/>`)

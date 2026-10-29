@@ -49,7 +49,7 @@ func TestShellTabOrder(t *testing.T) {
 	a.session = &pixiv.Token{User: pixiv.TokenUser{Name: "测试用户"}}
 	a.client.SetToken(a.session)
 	tt := ui.NewTester(a.View, 1000, 700)
-	for _, want := range []string{"首页", "搜索", "收藏", "作品", "用户", "资料库", "设置", "退出"} {
+	for _, want := range []string{"首页", "搜索", "收藏", "作品", "用户", "资料库", "设置", "编辑卡片", "退出"} {
 		tt.Key(0, ui.KeyTab)
 		if !tt.Focused(want) {
 			t.Fatalf("tab did not land on %q", want)

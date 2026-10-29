@@ -105,8 +105,10 @@ type App struct {
 	novelView     *novelViewState
 	novelProgress *NovelProgress
 	// homeCards are the home page's cards, in the order they draw, each with
-	// the one page its preview loaded.
-	homeCards []homeCard
+	// the one page its preview loaded. homeEditing says whether the page shows
+	// its card controls.
+	homeCards   []homeCard
+	homeEditing bool
 	// feed is the full feed a card's "view all" opened, nil on the home page.
 	feed *homeFeedView
 	// newFeed is the site-wide new works feed, and myPixivFeed the feed of
