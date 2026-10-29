@@ -65,6 +65,10 @@ type App struct {
 	// rankMode is the ranking feed's period and audience, chosen on the home
 	// page's ranking tab.
 	rankMode pixiv.RankMode
+	// newFeed is the site-wide new works feed, and myPixivFeed the feed of
+	// works by the users the signed-in user follows.
+	newFeed     *browseState
+	myPixivFeed *browseState
 	// search is the last illustration search's results, and searchNovels the
 	// last novel search's. searchKind is which of the two the search page
 	// shows.
@@ -216,6 +220,8 @@ func New() *App {
 		route:            routeHome,
 		cardText:         60,
 		homeFeeds:        newHomeFeeds(),
+		newFeed:          &browseState{},
+		myPixivFeed:      &browseState{},
 		rankMode:         pixiv.Day,
 		search:           &browseState{},
 		searchNovels:     &novelFeedState{},
@@ -394,6 +400,8 @@ func (a *App) logout() {
 			a.homeFeeds = newHomeFeeds()
 			a.armHome(a.homeTab)
 			a.bookmarks = &browseState{}
+			a.newFeed = &browseState{}
+			a.myPixivFeed = &browseState{}
 		})
 	}()
 }

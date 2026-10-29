@@ -1,6 +1,8 @@
 {
   "nav": {
     "home": "Главная",
+    "new": "Новые",
+    "mypixiv": "MyPixiv",
     "search": "Поиск",
     "subscriptions": "Подписки",
     "downloads": "Загрузки",
