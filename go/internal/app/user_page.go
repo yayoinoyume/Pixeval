@@ -9,6 +9,7 @@ import (
 
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 	"github.com/yayoinoyume/pixeval-go/internal/subscription"
+	"github.com/yayoinoyume/pixeval-go/internal/ui/widgets"
 )
 
 // avatarSize is the profile image's side in the user page header.
@@ -18,13 +19,15 @@ const avatarSize = 96
 const userCardAvatar = 40
 
 // The user page's tabs, in the order they show: the works tabs (illustrations,
-// manga and novels), then the user's following and followers.
+// manga and novels), then the user's following and followers, and the works
+// the user bookmarked.
 const (
 	userTabIllust = iota
 	userTabManga
 	userTabNovel
 	userTabFollowing
 	userTabFollowers
+	userTabBookmarks
 )
 
 // userViewState is one user page: the profile and the user's works tabs. The
@@ -42,8 +45,15 @@ type userViewState struct {
 	novelFeed     *novelFeedState
 	followingFeed *userListState
 	followersFeed *userListState
+	// bookmarksFeed is the bookmarks tab's public works, bookmarksPrivateFeed
+	// its private ones, and bookmarksTab the sub-tab shown, bookmarksPublic or
+	// bookmarksPrivate. Only the signed-in user's own page offers the private
+	// list.
+	bookmarksFeed        *browseState
+	bookmarksPrivateFeed *browseState
+	bookmarksTab         int
 	// tab is the tab shown, one of userTabIllust, userTabManga, userTabNovel,
-	// userTabFollowing and userTabFollowers.
+	// userTabFollowing, userTabFollowers and userTabBookmarks.
 	tab int
 
 	mu           sync.Mutex
@@ -99,7 +109,8 @@ func (a *App) openUser(userID int64) {
 	illust.arm()
 	v := &userViewState{userID: userID, feed: illust, mangaFeed: &browseState{},
 		novelFeed: &novelFeedState{}, followingFeed: &userListState{},
-		followersFeed: &userListState{}, loading: true}
+		followersFeed: &userListState{}, bookmarksFeed: &browseState{},
+		bookmarksPrivateFeed: &browseState{}, loading: true}
 	a.backRoute, a.route, a.userView = a.route, routeUser, v
 	go a.loadUser(v, userID)
 }
@@ -124,6 +135,26 @@ func (a *App) userNovelFeed(st *novelFeedState, userID int64) func(context.Conte
 		}
 		return a.client.UserNovels(ctx, userID)
 	}
+}
+
+// userBookmarksFeed maps a bookmarks sub-tab to its pages: the first from
+// BookmarkedIllustrations, the later ones from the cursor.
+func (a *App) userBookmarksFeed(st *browseState, userID int64, private bool) func(context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+	return func(ctx context.Context) (*pixiv.Page[pixiv.Illustration], error) {
+		if next := st.cursor(); next != "" {
+			return a.client.NextIllustrations(ctx, next)
+		}
+		return a.client.BookmarkedIllustrations(ctx, userID, private, 0)
+	}
+}
+
+// userIsSelf reports whether userID is the signed-in user, whose page offers
+// the private bookmarks list.
+func (a *App) userIsSelf(userID int64) bool {
+	if a.session == nil || a.session.User.ID == 0 {
+		return false
+	}
+	return int64(a.session.User.ID) == userID
 }
 
 // userListView is what a following or followers list draws. users is the
@@ -322,7 +353,28 @@ func (a *App) armUserTab(v *userViewState, tab int) {
 		}
 		v.followersFeed.setFetch(a.userListFeed(v.followersFeed, v.userID, a.client.UserFollowers))
 		v.followersFeed.arm()
+	case userTabBookmarks:
+		st, private := v.bookmarksFeed, false
+		if a.userIsSelf(v.userID) && v.bookmarksTab == bookmarksPrivate {
+			st, private = v.bookmarksPrivateFeed, true
+		}
+		if st.isArmed() {
+			return
+		}
+		st.setFetch(a.userBookmarksFeed(st, v.userID, private))
+		st.arm()
 	}
+}
+
+// resetUserBookmarks starts the sub-tab now shown over, so switching
+// visibility reloads that list; the page's other feeds keep their pages.
+func (a *App) resetUserBookmarks(v *userViewState) {
+	st, private := v.bookmarksFeed, false
+	if v.bookmarksTab == bookmarksPrivate {
+		st, private = v.bookmarksPrivateFeed, true
+	}
+	st.restart()
+	st.setFetch(a.userBookmarksFeed(st, v.userID, private))
 }
 
 // userPage draws the profile above the user's works tabs.
@@ -364,8 +416,17 @@ func (a *App) userPage(c *ui.Context) {
 		})
 		ui.Row(c).Padding(t.SpaceS, contentPadding, 0, contentPadding).Children(func() {
 			textTabs(c, t, &v.tab, a.t("user.tabIllust"), a.t("user.tabManga"),
-				a.t("user.tabNovel"), a.t("user.tabFollowing"), a.t("user.tabFollowers"))
+				a.t("user.tabNovel"), a.t("user.tabFollowing"), a.t("user.tabFollowers"),
+				a.t("user.tabBookmarks"))
 		})
+		if v.tab == userTabBookmarks && a.userIsSelf(v.userID) {
+			ui.Row(c).Padding(0, contentPadding, 0, contentPadding).Children(func() {
+				if textTabs(c, t, &v.bookmarksTab,
+					a.t("user.bookmarksPublic"), a.t("user.bookmarksPrivate")) {
+					a.resetUserBookmarks(v)
+				}
+			})
+		}
 		a.armUserTab(v, v.tab)
 		switch v.tab {
 		case userTabManga:
@@ -376,10 +437,56 @@ func (a *App) userPage(c *ui.Context) {
 			a.userListPage(c, v.followingFeed, a.t("user.noFollowing"), "user.followingLoadFailed")
 		case userTabFollowers:
 			a.userListPage(c, v.followersFeed, a.t("user.noFollowers"), "user.followersLoadFailed")
+		case userTabBookmarks:
+			st := v.bookmarksFeed
+			if a.userIsSelf(v.userID) && v.bookmarksTab == bookmarksPrivate {
+				st = v.bookmarksPrivateFeed
+			}
+			a.userBookmarksPage(c, st, a.t("user.noBookmarks"))
 		default:
 			a.browsePage(c, v.feed)
 		}
 	})
+}
+
+// userBookmarksPage draws one bookmarks sub-tab, and loads its next page once
+// it is at the end. emptyTitle is the title its empty state shows.
+func (a *App) userBookmarksPage(c *ui.Context, st *browseState, emptyTitle string) {
+	t := themeOf(c)
+	v := st.snapshot()
+	if v.err != "" {
+		ui.Row(c).Gap(t.SpaceM).Padding(t.SpaceM, contentPadding).AlignItems(ui.Center).Children(func() {
+			ui.Icon(c, iconAlert).Size(18, 18).TextColor(t.Danger)
+			ui.Text(c, a.tf("common.loadFailed", v.err)).FontSize(t.TextSmall).
+				TextColor(t.Danger).Grow(1)
+			if ui.Button(c, a.t("common.retry")).Clicked() {
+				st.retry()
+			}
+		})
+		if len(v.items) == 0 {
+			// Nothing to show under the error, and no page to load.
+			return
+		}
+	}
+	width := a.masonryWidth()
+	textHeight := cardTextHeight(t)
+	a.cardText = textHeight
+	items, tiles := feedTiles(st, v.items, v.tiles, width, textHeight)
+	switch {
+	case len(items) > 0:
+		ui.Column(c).Grow(1).Padding(t.SpaceM, contentPadding, contentPadding, contentPadding).Children(func() {
+			widgets.Masonry(c, &st.masonry, tiles, width, cardGap, func(i int) {
+				a.browseCard(c, st, items, i)
+			})
+		})
+	case !v.started:
+		skeletonFeed(c, width)
+	default:
+		emptyState(c, iconHeart, emptyTitle, "", nil)
+	}
+	if st.canLoad() && (len(v.items) == 0 || st.masonry.AtEnd()) {
+		a.loadMore(st)
+	}
 }
 
 // userListPage draws a following or followers list, and loads its next page
