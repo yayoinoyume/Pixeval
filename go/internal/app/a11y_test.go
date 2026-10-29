@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/ui"
@@ -95,6 +96,26 @@ func TestBrowseCardLabels(t *testing.T) {
 	}
 }
 
+// TestHomeLabelsCarryNoSeparatorDot checks the home page names its cards
+// without the middle dot: a screen reader reads a colon, not a glyph.
+func TestHomeLabelsCarryNoSeparatorDot(t *testing.T) {
+	a := newHomeApp(t)
+	for i := range a.homeCards {
+		armHomeCard(a.homeCards[i].feed, fakeWorks(i*100, 2))
+	}
+	for _, card := range a.homeCards {
+		labels := []string{homeViewAllLabel(a, card)}
+		for _, key := range []string{"home.moveUp", "home.moveDown", "home.removeCard"} {
+			labels = append(labels, a.homeCardActionLabel(key, card))
+		}
+		for _, label := range labels {
+			if strings.Contains(label, "·") {
+				t.Errorf("label %q carries the middle dot", label)
+			}
+		}
+	}
+}
+
 // TestHomeCardTitlesAreNotTabs checks the home page no longer offers a tab
 // line: the card titles are names, not tab stops, and Tab reaches the cards'
 // View all actions instead.
@@ -105,7 +126,7 @@ func TestHomeCardTitlesAreNotTabs(t *testing.T) {
 	}
 	tt := ui.NewTester(a.View, 1000, 700)
 	tt.Frame()
-	viewAll := a.t("home.viewAll") + " · " + a.homeCardTitle(a.homeCards[0])
+	viewAll := homeViewAllLabel(a, a.homeCards[0])
 	reached := false
 	for i := 0; i < 40 && !reached; i++ {
 		tt.Key(0, ui.KeyTab)

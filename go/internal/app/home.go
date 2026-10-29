@@ -53,9 +53,18 @@ var homeCardSources = []homeCardSource{
 	homeSourceNew, homeSourceMyPixiv, homeSourceBookmarks,
 }
 
-// homeCoverBase is the preview cover width the column count starts from. The
-// row fits as many covers as the page has room for, between three and six.
-const homeCoverBase = 180
+// The preview row fits as many covers as the page has room for, between three
+// and six, from a starting width. A narrow window starts from the smaller
+// width: a fifth column then fits at 1024, so the three default sections keep
+// their titles inside the window.
+const (
+	homeCoverBase       = 180
+	homeCoverNarrowBase = 150
+)
+
+// homeNarrowWidth is the window width at or below which the preview covers
+// start from homeCoverNarrowBase.
+const homeNarrowWidth = 1100
 
 // defaultHomeLayout is the first run's home page.
 func defaultHomeLayout() []homeCard {
@@ -198,13 +207,21 @@ func (a *App) homeSourceLabel(source homeCardSource) string {
 	return a.t("home.source." + string(source))
 }
 
-// homeCardTitle names a card in its title row and its full feed's header.
+// homeCardTitle names a card in its title row and its full feed's header. A
+// ranking card names its period in parentheses, so the header keeps it too.
 func (a *App) homeCardTitle(card homeCard) string {
 	title := a.homeSourceLabel(card.Source)
 	if card.Source == homeSourceRanking {
-		return title + " · " + a.rankModeLabel(card.normalizedRankMode())
+		return a.tf("home.rankingTitle", title, a.rankModeLabel(card.normalizedRankMode()))
 	}
 	return title
+}
+
+// homeRankModes are the periods a ranking card's edit menu offers, in its
+// order.
+var homeRankModes = []pixiv.RankMode{
+	pixiv.Day, pixiv.Week, pixiv.Month, pixiv.DayMale, pixiv.DayFemale,
+	pixiv.WeekOriginal, pixiv.WeekRookie,
 }
 
 // rankModeLabel is the label a ranking card shows for a ranking mode.
@@ -280,10 +297,10 @@ func (a *App) homeSourceFetch(st *browseState, source homeCardSource, mode pixiv
 
 // homePage draws the cards as one column, each with its first page. A
 // signed-out user is asked to sign in instead of fetching anything. In edit
-// mode each card offers its controls and the page ends with the ways to add
-// a card and to return to the default cards. The cards are copied here so a
-// control that changes them shows on the next frame, not halfway down this
-// one.
+// mode the page opens with the bar that adds a card and returns to the default
+// ones, and each card takes a frame with the controls for it. The cards are
+// copied here so a control that changes them shows on the next frame, not
+// halfway down this one.
 func (a *App) homePage(c *ui.Context) {
 	if a.session == nil {
 		a.loginPrompt(c)
@@ -295,59 +312,44 @@ func (a *App) homePage(c *ui.Context) {
 	ui.Scroll(c).Grow(1).Children(func() {
 		ui.Column(c).Padding(t.SpaceL, contentPadding, t.Space2XL, contentPadding).
 			Gap(t.Space2XL).Children(func() {
+			if a.homeEditing {
+				a.homeEditBar(c)
+			}
 			for i := range cards {
 				a.homeCardView(c, i, &cards[i])
-			}
-			if a.homeEditing {
-				a.homeEditTrailer(c)
 			}
 		})
 	})
 }
 
-// homeEditButton toggles the page's card editing from the header, and names
-// the way out while editing.
+// homeEditButton toggles the page's card editing from the header. While the
+// page edits it is the way out, filled with the accent so the state shows in
+// the header too.
 func (a *App) homeEditButton(c *ui.Context) {
 	t := themeOf(c)
-	label := a.t("home.edit")
 	if a.homeEditing {
-		label = a.t("home.editDone")
+		if ui.PrimaryButton(c, a.t("home.editDone")).Height(36).Radius(t.RadiusS).
+			Padding(0, t.SpaceL).Clicked() {
+			a.homeEditing = false
+		}
+		return
 	}
-	if ui.Button(c, label).Height(36).Radius(t.RadiusS).
+	if ui.Button(c, a.t("home.edit")).Height(36).Radius(t.RadiusS).
 		Padding(0, t.SpaceL).Clicked() {
-		a.homeEditing = !a.homeEditing
+		a.homeEditing = true
 	}
 }
 
-// homeCardControls is one card's edit row: move it up or down in the page, or
-// take it off. The first and last cards cannot move past the page's ends; the
-// last card still offers removal, which says why it stays.
-func (a *App) homeCardControls(c *ui.Context, i int, card homeCard) {
-	t := themeOf(c)
-	ui.Row(c).FillWidth().Gap(t.SpaceXS).Justify(ui.End).AlignItems(ui.Center).
-		Children(func() {
-			up := iconButton(c, iconUp, a.homeCardActionLabel("home.moveUp", card),
-				28, t.TextMuted, t.SurfaceAlt).Disabled(i == 0)
-			if up.Clicked() {
-				a.moveHomeCard(c, i, i-1)
-			}
-			down := iconButton(c, iconDown, a.homeCardActionLabel("home.moveDown", card),
-				28, t.TextMuted, t.SurfaceAlt).Disabled(i == len(a.homeCards)-1)
-			if down.Clicked() {
-				a.moveHomeCard(c, i, i+1)
-			}
-			if iconButton(c, iconClose, a.homeCardActionLabel("home.removeCard", card),
-				28, t.Danger, t.SurfaceAlt).Clicked() {
-				a.removeHomeCard(c, i)
-			}
-		})
-}
-
-// homeEditTrailer is the end of the edit page: the six sources a card can be
-// added for, and the way back to the first run's cards.
-func (a *App) homeEditTrailer(c *ui.Context) {
+// homeEditBar is the top of the edit page: it says the edits save as they
+// happen, offers the six sources a card can be added for, and the way back to
+// the first run's cards.
+func (a *App) homeEditBar(c *ui.Context) {
 	t := themeOf(c)
 	ui.Row(c).FillWidth().Gap(t.SpaceM).AlignItems(ui.Center).Children(func() {
+		ui.Text(c, a.t("home.editing")).FontSize(t.TextSmall).FontWeight(600).
+			TextColor(t.Accent)
+		ui.Text(c, a.t("home.editingHint")).FontSize(t.TextSmall).
+			TextColor(t.TextMuted).Grow(1).MaxLines(2)
 		ui.MenuButton(c, a.t("home.addCard"), func(m *ui.Menu) {
 			for _, source := range homeCardSources {
 				label := a.homeSourceLabel(source)
@@ -355,17 +357,68 @@ func (a *App) homeEditTrailer(c *ui.Context) {
 					a.addHomeCard(c, source)
 				}
 			}
-		})
-		if ui.Button(c, a.t("home.resetCards")).Clicked() {
+		}).Height(32)
+		if ui.Button(c, a.t("home.resetCards")).Height(32).Clicked() {
 			a.resetHomeCards(c)
 		}
 	})
 }
 
+// homeCardControls is one card's controls in its title row while editing: move
+// it up or down in the page, or take it off. The first and last cards cannot
+// move past the page's ends; the last card still offers removal, which says
+// why it stays.
+func (a *App) homeCardControls(c *ui.Context, i int, card homeCard) {
+	t := themeOf(c)
+	ui.Row(c).Gap(t.SpaceXS).AlignItems(ui.Center).Children(func() {
+		if iconButton(c, iconUp, a.homeCardActionLabel("home.moveUp", card),
+			32, t.TextMuted, t.SurfaceAlt).Disabled(i == 0).Clicked() {
+			a.moveHomeCard(c, i, i-1)
+		}
+		if iconButton(c, iconDown, a.homeCardActionLabel("home.moveDown", card),
+			32, t.TextMuted, t.SurfaceAlt).Disabled(i == len(a.homeCards)-1).Clicked() {
+			a.moveHomeCard(c, i, i+1)
+		}
+		if iconButton(c, iconTrash, a.homeCardActionLabel("home.removeCard", card),
+			32, t.Danger, t.SurfaceAlt).Clicked() {
+			a.removeHomeCard(c, i)
+		}
+	})
+}
+
+// homeRankModeMenu changes a ranking card's period while editing. The menu
+// names the period the card shows, and offers the ones rankModeLabel knows.
+func (a *App) homeRankModeMenu(c *ui.Context, i int, card homeCard) {
+	mode := card.normalizedRankMode()
+	b := ui.MenuButton(c, a.rankModeLabel(mode), func(m *ui.Menu) {
+		for _, option := range homeRankModes {
+			if m.Item(a.rankModeLabel(option)).Checked(option == mode).Chosen() {
+				a.setHomeRankMode(c, i, option)
+			}
+		}
+	}).Height(32)
+	b.Label(a.tf("home.actionFor", a.t("ranking.mode"), a.homeCardTitle(card)))
+}
+
+// setHomeRankMode puts a ranking card on another period, loads its first page
+// again and saves the page.
+func (a *App) setHomeRankMode(c *ui.Context, i int, mode pixiv.RankMode) {
+	if i < 0 || i >= len(a.homeCards) {
+		return
+	}
+	card := &a.homeCards[i]
+	if card.Source != homeSourceRanking || card.normalizedRankMode() == mode {
+		return
+	}
+	card.RankMode = mode
+	card.feed = &browseState{}
+	a.saveHomeCards(c)
+}
+
 // homeCardActionLabel names one card's edit control, for its tooltip, the
 // keyboard and assistive technology.
 func (a *App) homeCardActionLabel(key string, card homeCard) string {
-	return a.t(key) + " · " + a.homeCardTitle(card)
+	return a.tf("home.actionFor", a.t(key), a.homeCardTitle(card))
 }
 
 // hasHomeCard reports whether the page already shows source.
@@ -437,8 +490,9 @@ func (a *App) saveHomeCards(c *ui.Context) {
 	}
 }
 
-// homeCardView draws one card: its edit row while editing, its title, a row
-// of covers and the way to its full page.
+// homeCardView draws one card: its title row with the actions for it, and a
+// row of covers. While editing the card takes a temporary frame, and its title
+// row carries the controls that move, retarget or remove it.
 func (a *App) homeCardView(c *ui.Context, i int, card *homeCard) {
 	t := themeOf(c)
 	st := card.feed
@@ -448,12 +502,27 @@ func (a *App) homeCardView(c *ui.Context, i int, card *homeCard) {
 	}
 	v := st.snapshot()
 	title := a.homeCardTitle(*card)
-	ui.Column(c).FillWidth().Gap(t.SpaceM).Children(func() {
-		if a.homeEditing {
-			a.homeCardControls(c, i, *card)
-		}
-		displayText(c, title).FontSize(t.TextTitle).FontWeight(500).
-			TextColor(t.Text).MaxLines(1)
+	frame := ui.Column(c).FillWidth().Gap(t.SpaceM)
+	// The frame takes room from the card, so the covers are fitted to what is
+	// left inside it.
+	inset := float32(0)
+	if a.homeEditing {
+		frame = frame.Padding(t.SpaceM).Radius(t.RadiusM).
+			Background(t.Surface).Border(1, t.Border)
+		inset = t.SpaceM + 1
+	}
+	frame.Children(func() {
+		ui.Row(c).FillWidth().Gap(t.SpaceS).AlignItems(ui.Center).Children(func() {
+			displayText(c, title).FontSize(t.TextTitle).FontWeight(500).
+				TextColor(t.Text).Grow(1).MinWidth(0).MaxLines(2)
+			if a.homeEditing {
+				if card.Source == homeSourceRanking {
+					a.homeRankModeMenu(c, i, *card)
+				}
+				a.homeCardControls(c, i, *card)
+			}
+			a.homeViewAll(c, *card)
+		})
 		switch {
 		case v.err != "":
 			ui.Row(c).Gap(t.SpaceM).AlignItems(ui.Center).Children(func() {
@@ -465,7 +534,7 @@ func (a *App) homeCardView(c *ui.Context, i int, card *homeCard) {
 				}
 			})
 		case len(v.items) > 0:
-			cols, width := homeCoverGrid(c)
+			cols, width := homeCoverGrid(c, inset)
 			items := v.items
 			if len(items) > cols {
 				items = items[:cols]
@@ -476,7 +545,7 @@ func (a *App) homeCardView(c *ui.Context, i int, card *homeCard) {
 				}
 			})
 		case !v.started:
-			cols, width := homeCoverGrid(c)
+			cols, width := homeCoverGrid(c, inset)
 			ui.Row(c).FillWidth().Gap(cardGap).AlignItems(ui.Start).Children(func() {
 				for i := 0; i < cols; i++ {
 					ui.Box(c).Width(width).Height(width * 4 / 3).
@@ -493,9 +562,6 @@ func (a *App) homeCardView(c *ui.Context, i int, card *homeCard) {
 						TextColor(t.TextMuted).Padding(t.SpaceXS, 0, 0, 0)
 				})
 		}
-		ui.Row(c).FillWidth().Justify(ui.End).Children(func() {
-			a.homeViewAll(c, *card)
-		})
 	})
 	if st.canLoad() && !v.started {
 		a.loadMore(st)
@@ -531,12 +597,16 @@ func (a *App) homeCover(c *ui.Context, st *browseState, items []pixiv.Illustrati
 	})
 }
 
-// homeViewAll opens a card's full feed as a new browse feed.
+// homeViewAll is a card's section action, at the end of its title row: it
+// opens the card's full feed as a new browse feed.
 func (a *App) homeViewAll(c *ui.Context, card homeCard) {
 	t := themeOf(c)
-	title := a.homeCardTitle(card)
-	b := ui.ButtonBase(c).Padding(0).Radius(0).
-		Label(a.t("home.viewAll") + " · " + title)
+	label := a.tf("home.actionFor", a.t("home.viewAll"), a.homeCardTitle(card))
+	b := ui.ButtonBase(c).Height(32).Radius(t.RadiusS).Padding(0, t.SpaceS).
+		Label(label)
+	if b.Hovered() {
+		b = b.Background(t.SurfaceAlt)
+	}
 	b.Children(func() {
 		ui.Text(c, a.t("home.viewAll")).FontSize(t.TextSmall).TextColor(t.Accent)
 	})
@@ -570,11 +640,16 @@ func (a *App) feedPage(c *ui.Context) {
 }
 
 // homeCoverGrid fits the preview row to the page: as many covers as the width
-// has room for, between three and six, all the same 3:4 shape.
-func homeCoverGrid(c *ui.Context) (int, float32) {
+// has room for, between three and six, all the same 3:4 shape. inset is the
+// room a card's edit frame takes on each side.
+func homeCoverGrid(c *ui.Context, inset float32) (int, float32) {
 	gap := float32(cardGap)
-	avail := contentWidth(c)
-	cols := int((avail + gap) / (homeCoverBase + gap))
+	base := float32(homeCoverBase)
+	if winW, _ := c.Size(); winW <= homeNarrowWidth {
+		base = homeCoverNarrowBase
+	}
+	avail := max(contentWidth(c)-2*inset, 0)
+	cols := int((avail + gap) / (base + gap))
 	cols = min(max(cols, 3), 6)
 	return cols, (avail - gap*float32(cols-1)) / float32(cols)
 }
