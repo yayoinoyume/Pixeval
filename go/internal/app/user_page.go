@@ -632,47 +632,78 @@ func (a *App) avatarReady(url string, side int, onFail func()) func() {
 }
 
 // followButton draws the follow state and sends the request its click asks
-// for.
+// for: a user followed already gets one button that unfollows, any other user
+// gets a public follow and a private follow.
 func (a *App) followButton(c *ui.Context, v *userViewState, s userPageView) {
 	t := themeOf(c)
-	label := a.t("user.follow")
-	var b ui.Element
 	if s.user.IsFollowed {
-		b = ui.Button(c, a.t("user.following")).TextColor(t.Accent)
-	} else {
-		b = ui.PrimaryButton(c, label)
+		b := ui.Button(c, a.t("user.unfollow")).TextColor(t.Accent).Disabled(s.followBusy)
+		if b.Clicked() {
+			a.toggleFollow(v)
+		}
+		return
 	}
-	b = b.Disabled(s.followBusy)
-	if b.Clicked() {
+	if b := ui.PrimaryButton(c, a.t("user.follow")).Disabled(s.followBusy); b.Clicked() {
 		a.toggleFollow(v)
+	}
+	if b := ui.Button(c, a.t("user.followPrivate")).Disabled(s.followBusy); b.Clicked() {
+		a.followPrivate(v)
 	}
 }
 
-// toggleFollow follows or unfollows the user off the main thread. The button
-// is disabled while the request runs, and the user's state flips only once it
-// succeeds.
+// toggleFollow follows or unfollows the user off the main thread.
 func (a *App) toggleFollow(v *userViewState) {
+	if a.followFn == nil {
+		return
+	}
 	v.mu.Lock()
-	if v.followBusy || a.followFn == nil {
+	on, id := !v.user.IsFollowed, v.user.ID
+	v.mu.Unlock()
+	a.setFollow(v, on, "user.followFailed", func(ctx context.Context) error {
+		return a.followFn(ctx, id, on)
+	})
+}
+
+// followPrivate privately follows the user off the main thread, so the follow
+// stays off the user's profile.
+func (a *App) followPrivate(v *userViewState) {
+	if a.followPrivateFn == nil {
+		return
+	}
+	v.mu.Lock()
+	id := v.user.ID
+	v.mu.Unlock()
+	a.setFollow(v, true, "user.followPrivateFailed", func(ctx context.Context) error {
+		return a.followPrivateFn(ctx, id)
+	})
+}
+
+// setFollow runs a follow request off the main thread. The buttons are disabled
+// while it runs, the user's state becomes on only once it succeeds, and a
+// failure leaves the state and toasts failKey.
+func (a *App) setFollow(v *userViewState, on bool, failKey string, fn func(ctx context.Context) error) {
+	v.mu.Lock()
+	if v.followBusy {
 		v.mu.Unlock()
 		return
 	}
 	v.followBusy = true
-	on, id := !v.user.IsFollowed, v.user.ID
 	v.mu.Unlock()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
 		defer cancel()
-		err := a.followFn(ctx, id, on)
+		err := fn(ctx)
 		a.update(func() {
 			v.mu.Lock()
+			defer v.mu.Unlock()
+			// The notice comes before the state change: a test that waits on
+			// the state then also sees the message.
+			if err != nil {
+				a.notice = a.tf(failKey, err.Error())
+			}
 			v.followBusy = false
 			if err == nil {
 				v.user.IsFollowed = on
-			}
-			v.mu.Unlock()
-			if err != nil {
-				a.notice = a.tf("user.followFailed", err.Error())
 			}
 		})
 	}()

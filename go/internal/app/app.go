@@ -120,6 +120,10 @@ type App struct {
 	// followFn follows or unfollows a user off the main thread; tests replace
 	// it to avoid the network.
 	followFn func(ctx context.Context, id int64, on bool) error
+	// followPrivateFn privately follows a user off the main thread, so the
+	// follow stays off the user's profile; tests replace it to avoid the
+	// network.
+	followPrivateFn func(ctx context.Context, id int64) error
 	// fetchCommentPage, addCommentFn and deleteCommentFn answer the comment
 	// panel off the main thread; tests replace them to avoid the network.
 	fetchCommentPage func(ctx context.Context, illustID int64, offset int) (*pixiv.Page[pixiv.Comment], error)
@@ -228,6 +232,9 @@ func New() *App {
 				return client.Follow(ctx, id, false)
 			}
 			return client.Unfollow(ctx, id)
+		},
+		followPrivateFn: func(ctx context.Context, id int64) error {
+			return client.Follow(ctx, id, true)
 		},
 		fetchCommentPage: client.Comments,
 		addCommentFn:     client.AddComment,
