@@ -40,6 +40,8 @@ const (
 	routeSeries           route = "series"
 	routeNovel            route = "novel"
 	routeRelated          route = "related"
+	routeHelp             route = "help"
+	routeAbout            route = "about"
 )
 
 // routeLabel is the navigation label of the page.
@@ -51,6 +53,10 @@ func (a *App) routeLabel(r route) string {
 		return a.t("user.relatedUsers")
 	case routeRecommendedUsers:
 		return a.t("recommendedUsers.title")
+	case routeHelp:
+		return a.t("help.title")
+	case routeAbout:
+		return a.t("about.title")
 	}
 	return a.t("nav." + string(r))
 }
@@ -112,7 +118,7 @@ func (a *App) escape() {
 		return
 	}
 	switch a.route {
-	case routeUser, routeSeries, routeNovel, routeRelated, routeUserRelated:
+	case routeUser, routeSeries, routeNovel, routeRelated, routeUserRelated, routeHelp, routeAbout:
 		a.goBack()
 	}
 }
@@ -215,7 +221,7 @@ func (a *App) header(c *ui.Context) {
 	ui.Row(c).Height(84).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		if a.route == routeUser || a.route == routeSeries || a.route == routeRelated ||
-			a.route == routeUserRelated {
+			a.route == routeUserRelated || a.route == routeHelp || a.route == routeAbout {
 			if iconButton(c, iconLeft, a.t("common.back"), 32, t.TextMuted, t.SurfaceAlt).Clicked() {
 				a.goBack()
 			}
@@ -415,6 +421,10 @@ func (a *App) page(c *ui.Context) {
 		a.novelPage(c)
 	case routeRelated:
 		a.relatedPage(c)
+	case routeHelp:
+		a.helpPage(c)
+	case routeAbout:
+		a.aboutPage(c)
 	default:
 		t := themeOf(c)
 		ui.Column(c).Grow(1).Center().Children(func() {

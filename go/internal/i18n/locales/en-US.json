@@ -281,6 +281,18 @@
     "historyCleared": "Cleared",
     "resetDone": "Settings reset to default"
   },
+  "help": {
+    "title": "Help",
+    "shortcuts": "Ctrl+K search, Ctrl+, settings, Ctrl+H history, Ctrl+D downloads, Esc back (use Command instead of Ctrl on macOS)",
+    "features": "Browse recommended, following and ranking works; search illustrations and novels; view and download works; keep bookmarks and watch later."
+  },
+  "about": {
+    "title": "About",
+    "version": "Version %s",
+    "license": "Pixeval Go is free software under the GNU General Public License v3.",
+    "github": "Open on GitHub",
+    "openFailed": "Could not open the link: %s"
+  },
   "history": {
     "empty": "No history yet",
     "emptyHint": "Works you open are recorded here",
