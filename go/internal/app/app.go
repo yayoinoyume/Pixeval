@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/transfer"
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
@@ -212,6 +213,9 @@ type App struct {
 	// avoid the network and the system clipboard.
 	fetchImageBytes     func(ctx context.Context, url string) ([]byte, error)
 	clipboardWriteImage func(png []byte) error
+	// clipboardWriteText puts text on the clipboard, as the MCP card's copy
+	// button does; tests replace it to avoid the system clipboard.
+	clipboardWriteText func(text string) error
 	// notifyFn shows a desktop notification; tests replace it so a check never
 	// reaches the system's notification center.
 	notifyFn func(title, body string) error
@@ -366,6 +370,9 @@ func New() *App {
 	// the clipboard; tests replace both to avoid either.
 	a.fetchImageBytes = client.GetImage
 	a.clipboardWriteImage = mygo.Clipboard.WriteImage
+	a.clipboardWriteText = func(text string) error {
+		return mygo.Clipboard.Write(transfer.TextData(text))
+	}
 	// A notification needs the window's main loop, which a test binary has
 	// none of, and Show would wait for one forever.
 	a.notifyFn = func(title, body string) error {
@@ -533,15 +540,47 @@ func (a *App) Start() {
 		a.update(func() {})
 	})
 	go a.downloads.Start(context.Background())
-	// A busy port or a failed listen leaves the app running without MCP.
-	go func() {
-		if err := mcp.ListenAndServe(mcpAddr, a); err != nil {
-			log.Printf("mcp: %v", err)
-		}
-	}()
+	// A busy port or a failed listen leaves the app running without MCP. The
+	// server takes the saved bearer token, generated on the first start.
+	if token := a.ensureMCPToken(); token != "" {
+		go func() {
+			if err := mcp.ListenAndServe(mcpAddr, a, token); err != nil {
+				log.Printf("mcp: %v", err)
+			}
+		}()
+	}
 	// The subscription check looks for new works every subscriptionInterval.
 	a.subsRunning = true
 	a.subs.Start(context.Background(), a.subscriptionInterval())
+}
+
+// ensureMCPToken is the bearer token the local MCP server requires: the saved
+// one, or a fresh one saved for the next start. It is never logged: the
+// settings page is where the user reads it. An empty result means generating
+// or saving failed, and the server stays off rather than open.
+func (a *App) ensureMCPToken() string {
+	if a.settings == nil {
+		return ""
+	}
+	if a.settings.MCPToken != "" {
+		return a.settings.MCPToken
+	}
+	token, err := newMCPToken()
+	if err != nil {
+		log.Printf("mcp: generate token: %v", err)
+		return ""
+	}
+	a.settings.MCPToken = token
+	path, err := settingsPath()
+	if err != nil {
+		log.Printf("mcp: %v", err)
+		return ""
+	}
+	if err := Save(path, a.settings); err != nil {
+		log.Printf("mcp: save token: %v", err)
+		return ""
+	}
+	return token
 }
 
 // restoreSession adopts the saved token, refreshing it when expired. It runs

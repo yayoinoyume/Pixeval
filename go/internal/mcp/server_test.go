@@ -79,10 +79,20 @@ type reply struct {
 	} `json:"error"`
 }
 
+// testToken is the bearer token the test servers require and the test client
+// sends.
+const testToken = "test-token"
+
+// newTestServer is a server whose client knows testToken.
+func newTestServer(b Backend) *Server {
+	return New(b, testToken)
+}
+
 // call posts body to the server and decodes the reply.
 func call(t *testing.T, h http.Handler, body string) reply {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
@@ -130,7 +140,7 @@ func sampleWorks() []pixiv.Illustration {
 }
 
 func TestInitialize(t *testing.T) {
-	h := New(&fakeBackend{})
+	h := newTestServer(&fakeBackend{})
 	r := call(t, h, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
 	var got struct {
 		ProtocolVersion string         `json:"protocolVersion"`
@@ -153,7 +163,7 @@ func TestInitialize(t *testing.T) {
 }
 
 func TestToolsList(t *testing.T) {
-	h := New(&fakeBackend{})
+	h := newTestServer(&fakeBackend{})
 	r := call(t, h, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	var got struct {
 		Tools []struct {
@@ -182,7 +192,7 @@ func TestToolsList(t *testing.T) {
 
 func TestSearchCall(t *testing.T) {
 	b := &fakeBackend{works: sampleWorks()}
-	r := call(t, New(b), `{"jsonrpc":"2.0","id":3,"method":"tools/call",
+	r := call(t, newTestServer(b), `{"jsonrpc":"2.0","id":3,"method":"tools/call",
 		"params":{"name":"search_illustrations","arguments":{"query":"rain","limit":3}}}`)
 	var got toolResult
 	decodeResult(t, r, &got)
@@ -202,7 +212,7 @@ func TestSearchCall(t *testing.T) {
 
 func TestSearchDefaultLimit(t *testing.T) {
 	b := &fakeBackend{works: sampleWorks()}
-	r := call(t, New(b), `{"jsonrpc":"2.0","id":4,"method":"tools/call",
+	r := call(t, newTestServer(b), `{"jsonrpc":"2.0","id":4,"method":"tools/call",
 		"params":{"name":"search_illustrations","arguments":{"query":"rain"}}}`)
 	decodeResult(t, r, &toolResult{})
 	if b.searchLimit != defaultLimit {
@@ -212,7 +222,7 @@ func TestSearchDefaultLimit(t *testing.T) {
 
 func TestToolErrorIsResult(t *testing.T) {
 	b := &fakeBackend{err: errors.New("boom")}
-	r := call(t, New(b), `{"jsonrpc":"2.0","id":5,"method":"tools/call",
+	r := call(t, newTestServer(b), `{"jsonrpc":"2.0","id":5,"method":"tools/call",
 		"params":{"name":"recommended","arguments":{}}}`)
 	var got toolResult
 	decodeResult(t, r, &got)
@@ -225,7 +235,7 @@ func TestToolErrorIsResult(t *testing.T) {
 }
 
 func TestUnknownTool(t *testing.T) {
-	r := call(t, New(&fakeBackend{}), `{"jsonrpc":"2.0","id":6,"method":"tools/call",
+	r := call(t, newTestServer(&fakeBackend{}), `{"jsonrpc":"2.0","id":6,"method":"tools/call",
 		"params":{"name":"nope","arguments":{}}}`)
 	if r.Error == nil || r.Error.Code != codeInvalidParams {
 		t.Fatalf("reply %+v", r)
@@ -233,14 +243,14 @@ func TestUnknownTool(t *testing.T) {
 }
 
 func TestUnknownMethod(t *testing.T) {
-	r := call(t, New(&fakeBackend{}), `{"jsonrpc":"2.0","id":7,"method":"resources/list"}`)
+	r := call(t, newTestServer(&fakeBackend{}), `{"jsonrpc":"2.0","id":7,"method":"resources/list"}`)
 	if r.Error == nil || r.Error.Code != codeMethodNotFound {
 		t.Fatalf("reply %+v", r)
 	}
 }
 
 func TestParseError(t *testing.T) {
-	r := call(t, New(&fakeBackend{}), `{"jsonrpc":"2.0","id":8,`)
+	r := call(t, newTestServer(&fakeBackend{}), `{"jsonrpc":"2.0","id":8,`)
 	if r.Error == nil || r.Error.Code != codeParseError {
 		t.Fatalf("reply %+v", r)
 	}
@@ -252,8 +262,9 @@ func TestParseError(t *testing.T) {
 func TestNotificationHasNoBody(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/mcp",
 		strings.NewReader(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
-	New(&fakeBackend{}).ServeHTTP(rec, req)
+	newTestServer(&fakeBackend{}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusAccepted {
 		t.Errorf("status %d, want %d", rec.Code, http.StatusAccepted)
 	}
@@ -264,9 +275,83 @@ func TestNotificationHasNoBody(t *testing.T) {
 
 func TestGetIsMethodNotAllowed(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	req.Header.Set("Authorization", "Bearer "+testToken)
 	rec := httptest.NewRecorder()
-	New(&fakeBackend{}).ServeHTTP(rec, req)
+	newTestServer(&fakeBackend{}).ServeHTTP(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("status %d", rec.Code)
+	}
+}
+
+// postAs posts body with header as the Authorization value, or none when it is
+// empty, and returns the recorded reply.
+func postAs(t *testing.T, h http.Handler, header, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	if header != "" {
+		req.Header.Set("Authorization", header)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+// TestRequestWithoutTokenIsUnauthorized checks a caller that sends no token
+// gets 401 and nothing of the token back.
+func TestRequestWithoutTokenIsUnauthorized(t *testing.T) {
+	rec := postAs(t, newTestServer(&fakeBackend{}), "",
+		`{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if body := rec.Body.String(); strings.Contains(body, testToken) {
+		t.Errorf("body %q leaks the token", body)
+	}
+	if got := rec.Header().Get("WWW-Authenticate"); !strings.Contains(got, "Bearer") {
+		t.Errorf("WWW-Authenticate %q", got)
+	}
+}
+
+// TestRequestWithWrongTokenIsUnauthorized checks a caller that guesses wrong
+// is refused, whether the guess is another token or a bad header shape.
+func TestRequestWithWrongTokenIsUnauthorized(t *testing.T) {
+	h := newTestServer(&fakeBackend{})
+	body := `{"jsonrpc":"2.0","id":1,"method":"ping"}`
+	for _, header := range []string{
+		"Bearer wrong-token",
+		"Bearer ",
+		testToken,
+		"Basic " + testToken,
+		"Bearer " + testToken + " extra",
+	} {
+		rec := postAs(t, h, header, body)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("header %q: status %d, want %d", header, rec.Code, http.StatusUnauthorized)
+		}
+	}
+}
+
+// TestRequestWithTokenIsAnswered checks the right token, in any case of the
+// scheme, reaches the tools.
+func TestRequestWithTokenIsAnswered(t *testing.T) {
+	rec := postAs(t, newTestServer(&fakeBackend{}), "bearer "+testToken,
+		`{"jsonrpc":"2.0","id":2,"method":"ping"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"result"`) {
+		t.Errorf("body %q, want a result", rec.Body.String())
+	}
+}
+
+// TestEmptyTokenRefusesEveryone checks a server made without a token stays
+// closed, so a missing setting cannot expose the tools.
+func TestEmptyTokenRefusesEveryone(t *testing.T) {
+	h := New(&fakeBackend{}, "")
+	for _, header := range []string{"", "Bearer ", "Bearer " + testToken} {
+		rec := postAs(t, h, header, `{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("header %q: status %d, want %d", header, rec.Code, http.StatusUnauthorized)
+		}
 	}
 }

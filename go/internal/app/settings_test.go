@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -59,6 +60,62 @@ func TestSettingsRoundTrip(t *testing.T) {
 	}
 	if perm := fi.Mode().Perm(); perm != 0o600 {
 		t.Errorf("mode %o, want 600", perm)
+	}
+}
+
+// TestLoadTrimsMCPToken checks a hand edited token loses its surrounding
+// space, so the header the user copies still matches.
+func TestLoadTrimsMCPToken(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	data := `{"mcpToken":"  token  "}`
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if s.MCPToken != "token" {
+		t.Errorf("token %q, want token", s.MCPToken)
+	}
+}
+
+// TestMCPTokenGeneratedAndSaved checks the first start makes a 32 byte token,
+// saves it, and a later start reuses it instead of replacing it.
+func TestMCPTokenGeneratedAndSaved(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	if a.settings.MCPToken != "" {
+		t.Fatalf("token %q before the first start", a.settings.MCPToken)
+	}
+	token := a.ensureMCPToken()
+	if token == "" {
+		t.Fatal("no token generated")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(token)
+	if err != nil {
+		t.Fatalf("token %q is not base64url: %v", token, err)
+	}
+	if len(raw) != 32 {
+		t.Errorf("token holds %d bytes, want 32", len(raw))
+	}
+	if strings.Contains(token, "=") {
+		t.Errorf("token %q is padded", token)
+	}
+
+	path, err := settingsPath()
+	if err != nil {
+		t.Fatalf("settingsPath: %v", err)
+	}
+	saved, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if saved.MCPToken != token {
+		t.Errorf("saved token %q, want %q", saved.MCPToken, token)
+	}
+	if again := New().ensureMCPToken(); again != token {
+		t.Errorf("second start made %q, want the saved %q", again, token)
 	}
 }
 

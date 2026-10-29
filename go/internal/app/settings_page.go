@@ -282,6 +282,22 @@ func (a *App) settingsPage(c *ui.Context) {
 						}
 					})
 
+					a.settingsGroup(c, a.t("settings.groupMCP"), func(row settingsRow) {
+						row(a.t("settings.mcpAddress"), "", func() {
+							ui.Text(c, mcpAddr).FontSize(t.TextSmall).TextColor(t.TextMuted)
+						})
+						row(a.t("settings.mcpToken"), a.t("settings.mcpTokenHint"), func() {
+							ui.TextInput(c, &s.MCPToken).Width(420).Height(36).
+								Label(a.t("settings.mcpToken")).ReadOnly(true)
+							if ui.Button(c, a.t("settings.mcpCopy")).Clicked() {
+								a.copyMCPToken(c)
+							}
+							if ui.Button(c, a.t("settings.mcpRegenerate")).Clicked() {
+								a.regenerateMCPToken(c)
+							}
+						})
+					})
+
 					a.settingsGroup(c, a.t("settings.groupData"), func(row settingsRow) {
 						row("", "", func() {
 							if ui.Button(c, a.t("settings.clearBrowseHistory")).Clicked() {
@@ -633,6 +649,35 @@ func (a *App) applySavedSettings(c *ui.Context) {
 	}
 }
 
+// copyMCPToken puts the token local AI clients send on the clipboard.
+func (a *App) copyMCPToken(c *ui.Context) {
+	if a.settings == nil {
+		return
+	}
+	if err := a.clipboardWriteText(a.settings.MCPToken); err != nil {
+		c.Toast(a.tf("settings.saveFailed", err.Error()))
+		return
+	}
+	c.Toast(a.t("settings.mcpCopied"))
+}
+
+// regenerateMCPToken replaces the token local AI clients send and saves it.
+// The running server keeps the one it started with, so the toast says a restart
+// applies the new one.
+func (a *App) regenerateMCPToken(c *ui.Context) {
+	if a.settings == nil {
+		return
+	}
+	token, err := newMCPToken()
+	if err != nil {
+		c.Toast(a.tf("settings.saveFailed", err.Error()))
+		return
+	}
+	a.settings.MCPToken = token
+	a.saveSettings()
+	c.Toast(a.t("settings.mcpRegenerated"))
+}
+
 // resetSettings puts every preference back to its default and saves it. The
 // accounts, the download queue and the record files are other stores, so a
 // reset leaves them alone.
@@ -640,7 +685,11 @@ func (a *App) resetSettings() {
 	if a.settings == nil {
 		return
 	}
+	// The MCP token is a credential like an account, not a preference: a reset
+	// keeps it so a client the user set up keeps working.
+	token := a.settings.MCPToken
 	*a.settings = *Default()
+	a.settings.MCPToken = token
 	// A reset language applies at once, like the language select.
 	a.loadLanguage()
 	a.settingsResetPending = true
