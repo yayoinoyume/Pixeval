@@ -88,7 +88,10 @@
     "sauceSearch": "Найти источник",
     "sauceNoKey": "Сначала укажите ключ API SauceNAO в настройках",
     "sauceEmpty": "Подходящий источник не найден",
-    "sauceFailed": "Ошибка поиска: %s"
+    "sauceFailed": "Ошибка поиска: %s",
+    "trending": "В тренде",
+    "trendingFailed": "Не удалось загрузить тренды: %s",
+    "openLinkFailed": "Не удалось открыть ссылку: %s"
   },
   "spotlight": {
     "empty": "Нет статей обзора",

@@ -258,3 +258,60 @@ func TestRelatedIllustrationsPagesWithNextURL(t *testing.T) {
 		}
 	}
 }
+
+// TestTrendingTagsRequestsIllustTrending checks the search page's tags come
+// from the illust trending endpoint with the R18 filter, decoding their names.
+func TestTrendingTagsRequestsIllustTrending(t *testing.T) {
+	const body = `{"trend_tags":[{"tag":"猫","translated_name":"cat"},` +
+		`{"tag":"風景","translated_name":"landscape"}]}`
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, body))
+
+	tags, err := c.TrendingTags(context.Background())
+	if err != nil {
+		t.Fatalf("TrendingTags: %v", err)
+	}
+	if got.method != http.MethodGet {
+		t.Errorf("method = %q, want GET", got.method)
+	}
+	if got.path != "/v1/trending-tags/illust" {
+		t.Errorf("path = %q, want /v1/trending-tags/illust", got.path)
+	}
+	if q := got.query; q.Get("filter") != "for_android" || len(q) != 1 {
+		t.Errorf("query = %v, want only the R18 filter", q)
+	}
+	if got.auth != "Bearer test-token" {
+		t.Errorf("Authorization = %q, want a Bearer token", got.auth)
+	}
+	if len(tags) != 2 || tags[0].Tag != "猫" || tags[0].TranslatedName != "cat" || tags[1].Tag != "風景" {
+		t.Errorf("tags = %+v, want the decoded trend tags", tags)
+	}
+}
+
+// TestTrendingTagsEmpty checks an empty trend list decodes to none.
+func TestTrendingTagsEmpty(t *testing.T) {
+	c := newWriteClient(t, recordInto(&recordedRequest{}, `{"trend_tags":[]}`))
+
+	tags, err := c.TrendingTags(context.Background())
+	if err != nil {
+		t.Fatalf("TrendingTags: %v", err)
+	}
+	if len(tags) != 0 {
+		t.Errorf("tags = %+v, want none", tags)
+	}
+}
+
+// TestTrendingTagsFilterFollowsAllowR18 checks the tags drop the R18 filter
+// when the user allows R18 works.
+func TestTrendingTagsFilterFollowsAllowR18(t *testing.T) {
+	var got recordedRequest
+	c := newWriteClient(t, recordInto(&got, `{"trend_tags":[]}`))
+	c.SetAllowR18(true)
+
+	if _, err := c.TrendingTags(context.Background()); err != nil {
+		t.Fatalf("TrendingTags: %v", err)
+	}
+	if q := got.query; q.Has("filter") {
+		t.Errorf("query = %v, want no R18 filter", q)
+	}
+}

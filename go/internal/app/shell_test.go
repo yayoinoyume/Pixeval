@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -769,5 +770,245 @@ func TestSauceResultOpensSource(t *testing.T) {
 	}
 	if len(opened) != 1 || opened[0] != "https://www.pixiv.net/users/1" {
 		t.Errorf("opened = %v, want the source URL", opened)
+	}
+}
+
+// waitSearchTags waits for the search page's trending tags to land.
+func waitSearchTags(t *testing.T, a *App, want func(tags []pixiv.TrendingTag) bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		a.searchSideMu.Lock()
+		tags := a.searchTags
+		a.searchSideMu.Unlock()
+		if want(tags) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("trending tags did not land: %+v", tags)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// waitLinkError waits for the search page's pasted-link failure.
+func waitLinkError(t *testing.T, a *App) string {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		a.searchSideMu.Lock()
+		msg := a.searchLinkErr
+		a.searchSideMu.Unlock()
+		if msg != "" {
+			return msg
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the pasted link did not say why it failed")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// TestSearchTrendingChipsSearch checks the search page loads the trending
+// tags once, shows them under the box, and a chip searches its tag.
+func TestSearchTrendingChipsSearch(t *testing.T) {
+	a := newSearchApp(pageBodies())
+	a.searchHistory = &SearchHistory{}
+	a.search.query = ""
+	var loads atomic.Int32
+	a.trendingFn = func(context.Context) ([]pixiv.TrendingTag, error) {
+		loads.Add(1)
+		return []pixiv.TrendingTag{{Tag: "猫"}, {Tag: "风景", TranslatedName: "landscape"}}, nil
+	}
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitSearchTags(t, a, func(tags []pixiv.TrendingTag) bool { return len(tags) == 2 })
+	tt.Frame()
+	for _, want := range []string{"趋势标签", "猫", "风景"} {
+		if !tt.HasText(want) {
+			t.Fatalf("%q missing: %q", want, tt.Texts())
+		}
+	}
+	tt.Frame()
+	if got := loads.Load(); got != 1 {
+		t.Errorf("trending loads = %d, want one", got)
+	}
+
+	if err := tt.Click("猫"); err != nil {
+		t.Fatalf("Click chip: %v", err)
+	}
+	if a.search.query != "猫" {
+		t.Errorf("query %q after the chip click, want 猫", a.search.query)
+	}
+	waitBrowse(t, a.search, "load the chip's search",
+		func(v browseView) bool { return v.started })
+	queries := illustSearchQueries(t, a)
+	if len(queries) != 1 || queries[0].Get("word") != "猫" {
+		t.Errorf("illustration searches %v, want one for 猫", queries)
+	}
+}
+
+// TestParsePixivLink checks the search box reads a whole Pixiv URL's page and
+// id, and treats anything else as a search word.
+func TestParsePixivLink(t *testing.T) {
+	cases := []struct {
+		raw  string
+		link pixivLink
+		ok   bool
+	}{
+		{"https://www.pixiv.net/artworks/123", pixivLink{linkWork, 123}, true},
+		{"https://pixiv.net/i/123", pixivLink{linkWork, 123}, true},
+		{"https://www.pixiv.net/en/artworks/456?foo=1", pixivLink{linkWork, 456}, true},
+		{"https://pixiv.net/n/789", pixivLink{linkNovel, 789}, true},
+		{"https://www.pixiv.net/users/42/", pixivLink{linkUser, 42}, true},
+		{"  https://pixiv.net/artworks/7  ", pixivLink{linkWork, 7}, true},
+		{"12345", pixivLink{}, false},
+		{"pixiv.net/artworks/123", pixivLink{}, false},
+		{"https://example.com/artworks/1", pixivLink{}, false},
+		{"https://pixiv.net/artworks", pixivLink{}, false},
+		{"https://pixiv.net/artworks/abc", pixivLink{}, false},
+	}
+	for _, tc := range cases {
+		got, ok := parsePixivLink(tc.raw)
+		if ok != tc.ok || got != tc.link {
+			t.Errorf("parsePixivLink(%q) = %+v, %v; want %+v, %v", tc.raw, got, ok, tc.link, tc.ok)
+		}
+	}
+}
+
+// TestSearchPixivLinksOpenPages checks a pasted Pixiv URL opens its page
+// instead of searching for the URL, for a work, a novel and a user.
+func TestSearchPixivLinksOpenPages(t *testing.T) {
+	t.Run("work", func(t *testing.T) {
+		a := newSearchApp(pageBodies())
+		a.history = &History{}
+		a.searchHistory = &SearchHistory{}
+		var fetched atomic.Int64
+		a.illustrationFn = func(_ context.Context, id int64) (*pixiv.Illustration, error) {
+			fetched.Store(id)
+			return &pixiv.Illustration{ID: id, Title: "链接作品", PageCount: 1}, nil
+		}
+		a.search.query = "https://www.pixiv.net/artworks/123"
+		a.startSearch(a.search)
+
+		// Opening records the work in the history, whose lock orders the test
+		// after the goroutine that opened it.
+		deadline := time.Now().Add(2 * time.Second)
+		for len(a.history.Snapshot()) == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("the linked work did not open")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if got := fetched.Load(); got != 123 {
+			t.Errorf("fetched work %d, want 123", got)
+		}
+		if a.viewer == nil || a.viewer.work.ID != 123 {
+			t.Fatalf("viewer = %+v, want work 123", a.viewer)
+		}
+		if got := illustSearchQueries(t, a); len(got) != 0 {
+			t.Errorf("illustration searches %v, want none", got)
+		}
+		if got := a.searchHistory.Snapshot(); len(got) != 0 {
+			t.Errorf("words %v, want none", got)
+		}
+	})
+
+	t.Run("novel", func(t *testing.T) {
+		a := newSearchApp(pageBodies())
+		a.searchHistory = &SearchHistory{}
+		a.novelContent = func(context.Context, int64) (string, error) { return "正文", nil }
+		a.search.query = "https://pixiv.net/n/456"
+		a.startSearch(a.search)
+
+		if a.route != routeNovel {
+			t.Errorf("route %q, want %q", a.route, routeNovel)
+		}
+		if a.novelView == nil || a.novelView.novelID != 456 {
+			t.Fatalf("novel view = %+v, want novel 456", a.novelView)
+		}
+		if got := illustSearchQueries(t, a); len(got) != 0 {
+			t.Errorf("illustration searches %v, want none", got)
+		}
+		if got := a.searchHistory.Snapshot(); len(got) != 0 {
+			t.Errorf("words %v, want none", got)
+		}
+	})
+
+	t.Run("user", func(t *testing.T) {
+		a := newSearchApp(pageBodies())
+		a.searchHistory = &SearchHistory{}
+		a.search.query = "https://www.pixiv.net/users/789"
+		a.startSearch(a.search)
+
+		if a.route != routeUser {
+			t.Errorf("route %q, want %q", a.route, routeUser)
+		}
+		if a.userView == nil || a.userView.userID != 789 {
+			t.Fatalf("user view = %+v, want user 789", a.userView)
+		}
+		if got := illustSearchQueries(t, a); len(got) != 0 {
+			t.Errorf("illustration searches %v, want none", got)
+		}
+		if got := a.searchHistory.Snapshot(); len(got) != 0 {
+			t.Errorf("words %v, want none", got)
+		}
+	})
+}
+
+// TestSearchPixivLinkFailureShowsMessage checks a linked work that cannot be
+// fetched stays on the search page with the reason under the box.
+func TestSearchPixivLinkFailureShowsMessage(t *testing.T) {
+	a := newSearchApp(pageBodies())
+	a.searchHistory = &SearchHistory{}
+	a.illustrationFn = func(context.Context, int64) (*pixiv.Illustration, error) {
+		return nil, errors.New("网络错误")
+	}
+	a.search.query = "https://www.pixiv.net/artworks/123"
+	a.startSearch(a.search)
+
+	msg := waitLinkError(t, a)
+	want := a.tf("search.openLinkFailed", "网络错误")
+	if msg != want {
+		t.Errorf("link message %q, want %q", msg, want)
+	}
+	if a.viewer != nil {
+		t.Errorf("viewer open for a work that failed")
+	}
+	if got := a.searchHistory.Snapshot(); len(got) != 0 {
+		t.Errorf("words %v, want none", got)
+	}
+
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	if !tt.HasText(want) {
+		t.Errorf("the link failure is not shown: %q", tt.Texts())
+	}
+}
+
+// TestSearchBareNumberStillSearches checks only a whole Pixiv URL opens a
+// page: a plain number and another site's link stay search words.
+func TestSearchBareNumberStillSearches(t *testing.T) {
+	for _, word := range []string{"12345", "https://example.com/artworks/123", "pixiv.net/artworks/123"} {
+		t.Run(word, func(t *testing.T) {
+			a := newSearchApp(pageBodies())
+			a.searchHistory = &SearchHistory{}
+			a.search.query = word
+			a.startSearch(a.search)
+			waitBrowse(t, a.search, "load the search",
+				func(v browseView) bool { return v.started })
+
+			if a.viewer != nil || a.route != routeSearch {
+				t.Errorf("viewer %v, route %q; want the search page", a.viewer, a.route)
+			}
+			queries := illustSearchQueries(t, a)
+			if len(queries) != 1 || queries[0].Get("word") != word {
+				t.Errorf("illustration searches %v, want one for %q", queries, word)
+			}
+			if got := a.searchHistory.Snapshot(); len(got) != 1 || got[0] != word {
+				t.Errorf("words %v, want [%s]", got, word)
+			}
+		})
 	}
 }

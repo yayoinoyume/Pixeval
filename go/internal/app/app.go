@@ -122,6 +122,16 @@ type App struct {
 	searchErr       string
 	// searchHistory is the words the user searched for, newest first.
 	searchHistory *SearchHistory
+	// searchTags are the tags the search page shows under its box, loaded
+	// once its box first draws, and searchLinkErr says why a pasted Pixiv link
+	// did not open. Both fill in off the main thread, so searchSideMu guards
+	// them. trendingFn fetches the tags, wired when the window starts; tests
+	// replace it.
+	searchSideMu   sync.Mutex
+	searchTags     []pixiv.TrendingTag
+	searchLinkErr  string
+	trendingFn     func(ctx context.Context) ([]pixiv.TrendingTag, error)
+	trendingLoaded bool
 	// sauceURL is the reverse image search's image URL, as typed; sauce holds
 	// its results. sauceSearchFn runs the search off the main thread; tests
 	// replace it to avoid the network.
@@ -510,6 +520,9 @@ func imageDir() string {
 }
 
 func (a *App) Start() {
+	// The search page's trending tags are a shortcut, not a result: they load
+	// once its box first draws. Wired here so a headless draw asks for nothing.
+	a.trendingFn = a.client.TrendingTags
 	// The shell draws native UI and needs no webview; the login window does,
 	// so ask once before it can open.
 	a.webviewOK = mygo.WebViewAvailable()
