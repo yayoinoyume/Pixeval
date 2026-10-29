@@ -886,9 +886,11 @@ func TestNewPageMangaPagesWithCursor(t *testing.T) {
 		t.Fatalf("Click: %v", err)
 	}
 	waitBrowse(t, a.newFeed, "load the manga first page",
-		func(v browseView) bool { return len(v.items) == 20 && v.items[0].ID == 500 })
-	// loadMore is what the feed runs once the end of the list is reached.
-	a.loadMore(a.newFeed)
+		func(v browseView) bool { return len(v.items) >= 20 && v.items[0].ID == 500 })
+	// The page may already have asked for its cursor while the tester drew it.
+	if v := a.newFeed.snapshot(); len(v.items) == 20 {
+		a.loadMore(a.newFeed)
+	}
 	waitBrowse(t, a.newFeed, "load the manga next page",
 		func(v browseView) bool { return len(v.items) == 40 })
 	_, q := fake.requests()
