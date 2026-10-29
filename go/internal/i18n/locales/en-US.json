@@ -143,7 +143,10 @@
     "resume": "Resume",
     "pause": "Pause",
     "cancel": "Cancel",
-    "remove": "Remove"
+    "remove": "Remove",
+    "allLoaded": "Download loaded (%d)",
+    "none": "Nothing new to queue",
+    "allQueued": "%d pages queued"
   },
   "settings": {
     "theme": "Theme",

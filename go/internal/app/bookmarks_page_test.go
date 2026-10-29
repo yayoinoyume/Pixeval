@@ -205,3 +205,88 @@ func TestBookmarksUnbookmarkFailureReloads(t *testing.T) {
 		t.Errorf("the restored work is missing: %q", tt.Texts())
 	}
 }
+
+// TestBookmarksDownloadLoaded checks the loaded bookmarks queue their pages
+// from the header button.
+func TestBookmarksDownloadLoaded(t *testing.T) {
+	a := newBookmarksApp(t)
+	a.downloadsDir = t.TempDir()
+	a.bookmarksPageFn = func(context.Context, bool, string) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(0, 2)}, nil
+	}
+	tt := ui.NewTester(a.View, 1000, 700)
+	waitBrowse(t, a.bookmarks, "load the works", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	label := a.tf("download.allLoaded", 2)
+	if !tt.HasText(label) {
+		t.Fatalf("%q missing: %q", label, tt.Texts())
+	}
+	if err := tt.Click(label); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 2 {
+		t.Errorf("%d tasks queued, want 2", len(tasks))
+	}
+}
+
+// TestBookmarksDownloadLoadedEmpty checks an empty list offers no download
+// button.
+func TestBookmarksDownloadLoadedEmpty(t *testing.T) {
+	a := newBookmarksApp(t)
+	a.downloadsDir = t.TempDir()
+	a.bookmarksPageFn = func(context.Context, bool, string) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{}, nil
+	}
+	tt := ui.NewTester(a.View, 1000, 700)
+	waitBrowse(t, a.bookmarks, "load an empty page", func(v browseView) bool {
+		return v.started && len(v.items) == 0
+	})
+	tt.Frame()
+	if tt.HasText(a.tf("download.allLoaded", 0)) {
+		t.Errorf("the download button shows on an empty list: %q", tt.Texts())
+	}
+}
+
+// TestBookmarksDownloadLoadedWithoutDir checks saving off leaves a notice
+// instead of queueing, from the same helper the button calls.
+func TestBookmarksDownloadLoadedWithoutDir(t *testing.T) {
+	a := newBookmarksApp(t)
+	a.downloadsDir = ""
+	a.bookmarksPageFn = func(context.Context, bool, string) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(0, 2)}, nil
+	}
+	tt := ui.NewTester(a.View, 1000, 700)
+	waitBrowse(t, a.bookmarks, "load the works", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	label := a.tf("download.allLoaded", 2)
+	if err := tt.Click(label); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 0 {
+		t.Errorf("%d tasks queued without a directory, want 0", len(tasks))
+	}
+	if !tt.HasText(a.t("viewer.noDownloadDir")) && a.notice != a.t("viewer.noDownloadDir") {
+		t.Errorf("no-directory notice missing: %q", tt.Texts())
+	}
+}
+
+// TestBookmarksDownloadLoadedShowsNotice checks the click's notice reaches the
+// window: queued for the next frame, or drawn as a toast once it has one.
+func TestBookmarksDownloadLoadedShowsNotice(t *testing.T) {
+	a := newBookmarksApp(t)
+	a.downloadsDir = t.TempDir()
+	a.bookmarksPageFn = func(context.Context, bool, string) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(0, 2)}, nil
+	}
+	tt := ui.NewTester(a.View, 1000, 700)
+	waitBrowse(t, a.bookmarks, "load the works", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	if err := tt.Click(a.tf("download.allLoaded", 2)); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	want := a.tf("download.allQueued", 2)
+	tt.Frame()
+	if a.notice != want && !tt.HasText(want) {
+		t.Errorf("notice %q neither queued nor shown: %q", want, tt.Texts())
+	}
+}

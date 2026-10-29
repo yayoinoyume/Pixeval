@@ -59,6 +59,42 @@ func (a *App) downloadWork(w pixiv.Illustration) (queued int, ok bool) {
 	return a.downloads.Add(tasks), true
 }
 
+// downloadLoadedButton draws the button that queues the works a list has
+// already loaded; a list with no works shows none. works is the list the
+// button acts on.
+func (a *App) downloadLoadedButton(c *ui.Context, works []pixiv.Illustration) {
+	if len(works) == 0 {
+		return
+	}
+	if ui.Button(c, a.tf("download.allLoaded", len(works))).Clicked() {
+		a.downloadLoaded(works)
+	}
+}
+
+// downloadLoaded queues the loaded works, and leaves a notice saying how many
+// pages the queue took: it skips a page it already holds, so a second click
+// queues nothing. Without a download directory saving is off, and the notice
+// says so instead. The notice is handed to the next frame, so a click that
+// asks for no frame of its own still shows it.
+func (a *App) downloadLoaded(works []pixiv.Illustration) (queued int) {
+	for _, w := range works {
+		n, ok := a.downloadWork(w)
+		if !ok {
+			a.notice = a.t("viewer.noDownloadDir")
+			a.update(func() {})
+			return 0
+		}
+		queued += n
+	}
+	if queued == 0 {
+		a.notice = a.t("download.none")
+	} else {
+		a.notice = a.tf("download.allQueued", queued)
+	}
+	a.update(func() {})
+	return queued
+}
+
 // downloadMacro is the naming template the settings ask for, or the default
 // one when there are no settings yet.
 func (a *App) downloadMacro() string {

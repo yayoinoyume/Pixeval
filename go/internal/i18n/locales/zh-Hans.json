@@ -143,7 +143,10 @@
     "resume": "恢复",
     "pause": "暂停",
     "cancel": "取消",
-    "remove": "移除"
+    "remove": "移除",
+    "allLoaded": "下载已加载（%d）",
+    "none": "没有新的页面可加入队列",
+    "allQueued": "已把 %d 页加入下载队列"
   },
   "settings": {
     "theme": "主题",

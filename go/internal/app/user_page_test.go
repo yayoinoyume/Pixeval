@@ -785,3 +785,38 @@ func TestViewerOpensUser(t *testing.T) {
 		t.Errorf("route %q, want %q", a.route, routeUser)
 	}
 }
+
+// TestUserPageDownloadLoaded checks the illustration and manga tabs each
+// queue the works they have loaded.
+func TestUserPageDownloadLoaded(t *testing.T) {
+	a := newPageApp()
+	a.downloadsDir = t.TempDir()
+	a.openUser(7)
+	waitUser(t, a, func(v userPageView) bool { return !v.loading })
+	tt := ui.NewTester(a.View, 1000, 700)
+	tt.Frame()
+	waitBrowse(t, a.userView.feed, "load the illustrations", func(v browseView) bool { return len(v.items) == 1 })
+	tt.Frame()
+	label := a.tf("download.allLoaded", 1)
+	if !tt.HasText(label) {
+		t.Fatalf("%q missing: %q", label, tt.Texts())
+	}
+	if err := tt.Click(label); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 1 {
+		t.Errorf("%d tasks queued from the illustration tab, want 1", len(tasks))
+	}
+
+	if err := tt.Click(a.t("user.tabManga")); err != nil {
+		t.Fatalf("Click manga tab: %v", err)
+	}
+	waitBrowse(t, a.userView.mangaFeed, "load the manga", func(v browseView) bool { return len(v.items) == 1 })
+	tt.Frame()
+	if err := tt.Click(label); err != nil {
+		t.Fatalf("Click: %v", err)
+	}
+	if tasks := a.downloads.Snapshot(); len(tasks) != 2 {
+		t.Errorf("%d tasks queued after the manga tab, want 2", len(tasks))
+	}
+}
