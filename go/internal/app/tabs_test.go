@@ -58,6 +58,140 @@ func TestTabsNewAndSwitch(t *testing.T) {
 	}
 }
 
+// TestTabsKeepTheirOwnUserPages checks two tabs can hold different user
+// pages: switching restores each user's own page rather than the other's.
+func TestTabsKeepTheirOwnUserPages(t *testing.T) {
+	a := newHomeApp(t)
+	a.openUser(7)
+	first := a.userView
+	a.newTab()
+	if a.userView != nil {
+		t.Fatalf("the new tab kept the user page of the tab before: %+v", a.userView)
+	}
+	a.openUser(9)
+	second := a.userView
+	if second == nil {
+		t.Fatal("the second user page did not open")
+	}
+	if second == first {
+		t.Fatal("the second user page reused the first one's state")
+	}
+
+	a.switchTab(0)
+	if a.route != routeUser || a.userView != first {
+		t.Errorf("tab 0 shows %q page %p, want %q page %p", a.route, a.userView, routeUser, first)
+	}
+	if a.userView == nil || a.userView.userID != 7 {
+		t.Errorf("tab 0 shows user %v, want user 7", a.userView)
+	}
+	if got := a.tabs[1].state.userView; got != second {
+		t.Errorf("tab 1 saved user page %p, want %p", got, second)
+	}
+
+	a.switchTab(1)
+	if a.userView != second {
+		t.Errorf("tab 1 shows user page %p, want %p", a.userView, second)
+	}
+	if a.userView == nil || a.userView.userID != 9 {
+		t.Errorf("tab 1 shows user %v, want user 9", a.userView)
+	}
+}
+
+// TestTabsKeepTheirOwnFeedsAndTitles checks two tabs can hold different full
+// feeds, and each tab keeps the title its feed opened with rather than the
+// one the other tab shows.
+func TestTabsKeepTheirOwnFeedsAndTitles(t *testing.T) {
+	const width, height = 1024, 720
+	a := newHomeApp(t)
+	firstCard, secondCard := a.homeCards[0], a.homeCards[1]
+	a.openHomeFeed(firstCard)
+	firstFeed, firstTitle := a.feed, a.homeCardTitle(firstCard)
+	a.newTab()
+	a.openHomeFeed(secondCard)
+	secondFeed, secondTitle := a.feed, a.homeCardTitle(secondCard)
+	if firstFeed == secondFeed {
+		t.Fatal("the second feed reused the first one's state")
+	}
+	if firstTitle == secondTitle {
+		t.Fatalf("both cards are titled %q, the test needs two names", firstTitle)
+	}
+
+	a.switchTab(0)
+	if a.route != routeFeed || a.feed != firstFeed {
+		t.Errorf("tab 0 shows %q feed %p, want %q feed %p", a.route, a.feed, routeFeed, firstFeed)
+	}
+	if a.tabs[0].title != firstTitle || a.tabs[1].title != secondTitle {
+		t.Errorf("tab titles %q and %q, want %q and %q",
+			a.tabs[0].title, a.tabs[1].title, firstTitle, secondTitle)
+	}
+
+	tt := ui.NewTester(a.View, width, height)
+	tt.Frame()
+	for _, title := range []string{firstTitle, secondTitle} {
+		r, ok := tt.Find(a.tf("tabs.label", title))
+		if !ok {
+			t.Errorf("the tab titled %q is missing while the other feed shows: %q", title, tt.Texts())
+			continue
+		}
+		if r.X < 0 || r.X+r.W > width {
+			t.Errorf("the tab titled %q at %v overflows the %d wide window", title, r, width)
+		}
+	}
+
+	a.switchTab(1)
+	if a.feed != secondFeed {
+		t.Errorf("tab 1 shows feed %p, want %p", a.feed, secondFeed)
+	}
+}
+
+// TestTabsNewTabStartsWithEmptyPages checks a new tab brings its own empty
+// pages, so the pages whose state the window normally creates still draw
+// instead of sharing the tab before them.
+func TestTabsNewTabStartsWithEmptyPages(t *testing.T) {
+	a := newHomeApp(t)
+	old := a.pageState()
+	a.newTab()
+	st := a.pageState()
+	if st.spotlight == nil || st.newFeed == nil || st.myPixivFeed == nil ||
+		st.bookmarks == nil || st.search == nil || st.searchNovels == nil ||
+		st.searchUsers == nil || st.recommendedUsers == nil ||
+		st.myFollowing == nil || st.myFollowers == nil || st.myPixivUsersList == nil {
+		t.Fatal("the new tab is missing page state")
+	}
+	if st.spotlight == old.spotlight || st.newFeed == old.newFeed ||
+		st.myPixivFeed == old.myPixivFeed || st.bookmarks == old.bookmarks ||
+		st.search == old.search || st.recommendedUsers == old.recommendedUsers {
+		t.Error("the new tab shares a page with the tab before")
+	}
+
+	tt := ui.NewTester(a.View, 1024, 720)
+	for _, r := range []route{routeNew, routeMyPixiv, routeBookmarks, routeSearch,
+		routeRecommendedUsers, routeMyFollowing, routeMyFollowers, routeMyPixivUsers,
+		routeSpotlight, routeSeriesList} {
+		a.goRoute(r)
+		tt.Frame()
+	}
+}
+
+// TestTabsCloseLastDropsItsPage checks closing the last tab returns Home and
+// drops the page it held, title included, rather than keeping a stale page.
+func TestTabsCloseLastDropsItsPage(t *testing.T) {
+	a := newHomeApp(t)
+	a.openUser(7)
+	a.syncTab()
+	a.closeTab(0)
+	if len(a.tabs) != 1 || a.tabIndex != 0 {
+		t.Fatalf("tabs %v at %d after closing the last, want one at 0", a.tabs, a.tabIndex)
+	}
+	if a.route != routeHome || a.userView != nil {
+		t.Errorf("route %q user page %p after closing the last, want %q and none",
+			a.route, a.userView, routeHome)
+	}
+	if want := a.pageTitle(routeHome); a.tabs[0].title != want {
+		t.Errorf("the remaining tab is titled %q, want %q", a.tabs[0].title, want)
+	}
+}
+
 // TestTabsFollowBack checks going back records the page it returns to on the
 // tab showing.
 func TestTabsFollowBack(t *testing.T) {
