@@ -79,8 +79,8 @@ type App struct {
 	// backRoute is the page a user page or series page returns to.
 	backRoute route
 	// tabs are the open tabs in strip order and tabIndex is the one showing.
-	// A tab remembers the page and back page it was on; the pages' data is
-	// shared, so a tab is a place, not a copy of the works.
+	// A tab remembers the page, back page, title and page data it showed, so
+	// two tabs can hold different users or feeds at once.
 	tabs     []appTab
 	tabIndex int
 	// viewer is the full-screen illustration viewer, nil while it is closed.
@@ -405,7 +405,6 @@ func New() *App {
 		openExternalFn:   mygo.Shell.OpenExternal,
 		openPathFn:       mygo.Shell.OpenPath,
 		route:            routeHome,
-		tabs:             homeTabs(),
 		cardText:         60,
 		homeCards:        loadHomeLayout(),
 		newFeed:          &browseState{},
@@ -449,6 +448,8 @@ func New() *App {
 	// thread; the subscription page toasts the result when it next draws.
 	subs.OnNewFetched = a.onNewSubscriptions
 	a.loadLanguage()
+	// The starting tab's title is in the language the settings ask for.
+	a.tabs = a.homeTabs()
 	// The MCP server reads the published copy, so it exists from the start.
 	a.publishSettings()
 	return a
@@ -758,7 +759,7 @@ func (a *App) resetAccountPages() {
 	a.novelView = nil
 	// The tabs are places, not account data, but one may hold a page that
 	// showed the account before it: a new account starts at Home in one tab.
-	a.tabs = homeTabs()
+	a.tabs = a.homeTabs()
 	a.tabIndex = 0
 	a.route = routeHome
 	a.backRoute = ""

@@ -16,43 +16,171 @@ const topBarHeight = 84
 // tabMaxWidth is the widest a tab grows before its title truncates.
 const tabMaxWidth = 180
 
-// appTab is one tab: the page it shows and the page its back control returns
-// to. The pages themselves are the app's shared state, so a tab remembers
-// where it was, not its own copy of the data.
+// appTab is one tab: the page it shows, the page its back control returns
+// to, its own title and a snapshot of the pages' data, so two tabs can show
+// different users, series or feeds without overwriting each other.
 type appTab struct {
 	route     route
 	backRoute route
+	title     string
+	state     tabPageState
+}
+
+// tabPageState is the data the pages show, as one tab left it. Each tab holds
+// its own, so switching restores that tab's user page or feed rather than the
+// one another tab opened last.
+type tabPageState struct {
+	// feed is the full home feed a card's "view all" opened.
+	feed *homeFeedView
+	// userView, seriesView, related, novelView and spotlight are the detail
+	// pages a tab opened.
+	userView   *userViewState
+	seriesView *seriesViewState
+	related    *relatedViewState
+	novelView  *novelViewState
+	spotlight  *spotlightState
+	// newFeed and myPixivFeed are the works feeds, each with the kind it
+	// shows.
+	newFeed     *browseState
+	myPixivFeed *browseState
+	newKind     int
+	myPixivKind int
+	// bookmarks is the bookmarks feed and bookmarksTab its public or private
+	// tab.
+	bookmarks    *browseState
+	bookmarksTab int
+	// relatedUsers and myPixivUsers are a user's related and MyPixiv lists.
+	relatedUsers *relatedUsersViewState
+	myPixivUsers *myPixivUsersViewState
+	// recommendedUsers, myFollowing, myFollowers and myPixivUsersList are the
+	// people lists that stand alone in the rail.
+	recommendedUsers *userListState
+	myFollowing      *userListState
+	myFollowers      *userListState
+	myPixivUsersList *userListState
+	// search, searchNovels and searchUsers are the three searches, and
+	// searchKind the one the page shows.
+	search       *browseState
+	searchNovels *novelFeedState
+	searchUsers  *userListState
+	searchKind   int
+	// seriesFeeds are the series watchlist's lists, one per kind, and
+	// seriesTab the kind shown.
+	seriesFeeds [seriesTabCount]*seriesListState
+	seriesTab   int
+}
+
+// pageState reads the data the pages show.
+func (a *App) pageState() tabPageState {
+	return tabPageState{
+		feed:             a.feed,
+		userView:         a.userView,
+		seriesView:       a.seriesView,
+		related:          a.related,
+		novelView:        a.novelView,
+		spotlight:        a.spotlight,
+		newFeed:          a.newFeed,
+		myPixivFeed:      a.myPixivFeed,
+		newKind:          a.newKind,
+		myPixivKind:      a.myPixivKind,
+		bookmarks:        a.bookmarks,
+		bookmarksTab:     a.bookmarksTab,
+		relatedUsers:     a.relatedUsers,
+		myPixivUsers:     a.myPixivUsers,
+		recommendedUsers: a.recommendedUsers,
+		myFollowing:      a.myFollowing,
+		myFollowers:      a.myFollowers,
+		myPixivUsersList: a.myPixivUsersList,
+		search:           a.search,
+		searchNovels:     a.searchNovels,
+		searchUsers:      a.searchUsers,
+		searchKind:       a.searchKind,
+		seriesFeeds:      a.seriesFeeds,
+		seriesTab:        a.seriesTab,
+	}
+}
+
+// restorePageState makes st the data the pages show.
+func (a *App) restorePageState(st tabPageState) {
+	a.feed = st.feed
+	a.userView = st.userView
+	a.seriesView = st.seriesView
+	a.related = st.related
+	a.novelView = st.novelView
+	a.spotlight = st.spotlight
+	a.newFeed = st.newFeed
+	a.myPixivFeed = st.myPixivFeed
+	a.newKind = st.newKind
+	a.myPixivKind = st.myPixivKind
+	a.bookmarks = st.bookmarks
+	a.bookmarksTab = st.bookmarksTab
+	a.relatedUsers = st.relatedUsers
+	a.myPixivUsers = st.myPixivUsers
+	a.recommendedUsers = st.recommendedUsers
+	a.myFollowing = st.myFollowing
+	a.myFollowers = st.myFollowers
+	a.myPixivUsersList = st.myPixivUsersList
+	a.search = st.search
+	a.searchNovels = st.searchNovels
+	a.searchUsers = st.searchUsers
+	a.searchKind = st.searchKind
+	a.seriesFeeds = st.seriesFeeds
+	a.seriesTab = st.seriesTab
+}
+
+// newTabState is the data a new tab starts with: empty pages, so a page
+// visited for the first time on that tab has state to fill.
+func newTabState() tabPageState {
+	return tabPageState{
+		spotlight:        &spotlightState{},
+		newFeed:          &browseState{},
+		myPixivFeed:      &browseState{},
+		bookmarks:        &browseState{},
+		search:           &browseState{},
+		searchNovels:     &novelFeedState{},
+		searchUsers:      &userListState{},
+		recommendedUsers: &userListState{},
+		myFollowing:      &userListState{},
+		myFollowers:      &userListState{},
+		myPixivUsersList: &userListState{},
+	}
 }
 
 // homeTabs is the one Home tab a window starts with, and the one an account
 // switch leaves.
-func homeTabs() []appTab {
-	return []appTab{{route: routeHome}}
+func (a *App) homeTabs() []appTab {
+	return []appTab{{route: routeHome, title: a.pageTitle(routeHome), state: newTabState()}}
 }
 
-// syncTab records the page showing on the active tab, so switching away and
-// back restores it.
+// syncTab records the page, back page, title and page data showing on the
+// active tab, so switching away and back restores them.
 func (a *App) syncTab() {
 	if a.tabIndex < 0 || a.tabIndex >= len(a.tabs) {
 		return
 	}
-	a.tabs[a.tabIndex] = appTab{route: a.route, backRoute: a.backRoute}
+	a.tabs[a.tabIndex] = appTab{
+		route:     a.route,
+		backRoute: a.backRoute,
+		title:     a.pageTitle(a.route),
+		state:     a.pageState(),
+	}
 }
 
 // newTab opens Home in a tab after the active one and shows it.
 func (a *App) newTab() {
 	a.syncTab()
-	a.tabs = append(a.tabs, appTab{route: routeHome})
+	a.tabs = append(a.tabs, appTab{route: routeHome, title: a.pageTitle(routeHome), state: newTabState()})
 	a.tabIndex = len(a.tabs) - 1
 	a.showTab()
 }
 
-// showTab makes the active tab's page the one showing.
+// showTab makes the active tab's page, title and data the ones showing.
 func (a *App) showTab() {
 	tab := a.tabs[a.tabIndex]
 	a.closeViewer()
 	navMenuState.open = ""
 	a.route, a.backRoute = tab.route, tab.backRoute
+	a.restorePageState(tab.state)
 }
 
 // switchTab shows tab i.
@@ -81,7 +209,7 @@ func (a *App) closeTab(i int) {
 		return
 	}
 	if len(a.tabs) == 1 {
-		a.tabs[0] = appTab{route: routeHome}
+		a.tabs[0] = appTab{route: routeHome, title: a.pageTitle(routeHome), state: newTabState()}
 		a.tabIndex = 0
 		a.showTab()
 		return
@@ -121,7 +249,7 @@ func (a *App) tabBar(c *ui.Context) {
 // tabItem draws one tab: its page's title, its own close control, and an
 // accent rule under it while it is the one showing.
 func (a *App) tabItem(c *ui.Context, t tokens, tab appTab, i int) {
-	title := a.pageTitle(tab.route)
+	title := tab.title
 	active := i == a.tabIndex
 	bg := ui.Transparent
 	if active {
