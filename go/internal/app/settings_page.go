@@ -127,6 +127,20 @@ func (a *App) frontingValue(label string) string {
 	return pixiv.DomainFrontingFragmentation
 }
 
+// networkSummary is the network mode the card shows while its advanced
+// fields are folded: a proxy wins over domain fronting, as it does in the
+// client.
+func (a *App) networkSummary(s *Settings) string {
+	switch {
+	case strings.TrimSpace(s.ProxyURL) != "":
+		return a.t("settings.networkSummaryProxy")
+	case s.PixivDomainFronting:
+		return a.tf("settings.networkSummaryFronting", a.frontingLabel(s.PixivDomainFrontingType))
+	default:
+		return a.t("settings.networkSummaryDirect")
+	}
+}
+
 // settingsRow draws one preference: its name and explanation on the left,
 // its control on the right.
 type settingsRow func(label, hint string, control func())
@@ -211,7 +225,11 @@ func (a *App) settingsPage(c *ui.Context) {
 
 					a.settingsGroup(c, a.t("settings.groupNetwork"), func(row settingsRow) {
 						advanced := ui.Local(c.Root(), "settings.networkAdvanced", func() bool { return false })
-						row(a.t("settings.proxy"), a.t("settings.proxyHint"), func() {
+						proxyHint := a.t("settings.proxyHint")
+						if !*advanced {
+							proxyHint = a.networkSummary(s)
+						}
+						row(a.t("settings.proxy"), proxyHint, func() {
 							ui.TextInput(c, &s.ProxyURL).Width(240).Height(36).Label(a.t("settings.proxy"))
 							ui.Column(c).Gap(2).Children(func() {
 								ui.Text(c, a.t("settings.domainFronting")).FontSize(t.TextTiny).
@@ -319,6 +337,9 @@ func (a *App) settingsPage(c *ui.Context) {
 						})
 						a.updateStatus(c)
 						ui.Box(c).Height(1).FillWidth().Background(t.Border)
+					})
+
+					a.settingsGroup(c, a.t("nav.extensions"), func(_ settingsRow) {
 						a.extensionsRow(c)
 					})
 
@@ -385,7 +406,7 @@ func (a *App) settingsPage(c *ui.Context) {
 							ui.Text(c, mcpAddr).FontSize(t.TextSmall).TextColor(t.TextMuted)
 						})
 						row(a.t("settings.mcpToken"), a.t("settings.mcpTokenHint"), func() {
-							ui.TextInput(c, &s.MCPToken).Width(420).Height(36).
+							ui.TextInput(c, &s.MCPToken).Width(280).Height(36).
 								Label(a.t("settings.mcpToken")).ReadOnly(true)
 							if ui.Button(c, a.t("settings.mcpCopy")).Clicked() {
 								a.copyMCPToken(c)
