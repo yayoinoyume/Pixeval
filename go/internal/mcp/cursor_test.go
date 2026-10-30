@@ -73,6 +73,58 @@ func TestCursorRejectsAnotherKind(t *testing.T) {
 	}
 }
 
+// TestCursorStoreEvictsOldestAtCapacity checks a flood of cursors cannot grow
+// the store past cursorMaxEntries, and the cursor closest to expiring goes
+// first.
+func TestCursorStoreEvictsOldestAtCapacity(t *testing.T) {
+	s := newCursorStore()
+	now := time.Now()
+	s.now = func() time.Time {
+		now = now.Add(time.Millisecond)
+		return now
+	}
+	first := s.Put("ranking", 0, "https://api/first", nil)
+	for i := 1; i < cursorMaxEntries; i++ {
+		s.Put("ranking", 0, "https://api/next", nil)
+	}
+	if got := len(s.entries); got != cursorMaxEntries {
+		t.Fatalf("store holds %d entries, want %d", got, cursorMaxEntries)
+	}
+	newest := s.Put("ranking", 0, "https://api/newest", nil)
+	if got := len(s.entries); got != cursorMaxEntries {
+		t.Fatalf("store holds %d entries past the cap, want %d", got, cursorMaxEntries)
+	}
+	if _, err := s.Take(first, 0, "ranking"); err == nil {
+		t.Error("the oldest cursor survived eviction")
+	}
+	if _, err := s.Take(newest, 0, "ranking"); err != nil {
+		t.Errorf("the newest cursor was evicted: %v", err)
+	}
+}
+
+// TestCursorRestoreKeepsExpiry checks a restored cursor is readable again under
+// its token, but only until the expiry it was minted with.
+func TestCursorRestoreKeepsExpiry(t *testing.T) {
+	s := newCursorStore()
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	token := s.Put("recommended", 7, "https://api/next", nil)
+	entry, err := s.Take(token, 7, "recommended")
+	if err != nil {
+		t.Fatalf("Take: %v", err)
+	}
+	s.Restore(token, entry)
+	if _, err := s.Take(token, 7, "recommended"); err != nil {
+		t.Fatalf("Take after Restore: %v", err)
+	}
+
+	s.Restore(token, entry)
+	now = now.Add(cursorTTL + time.Second)
+	if _, err := s.Take(token, 7, "recommended"); err == nil || !strings.Contains(err.Error(), "expired") {
+		t.Fatalf("Take after TTL = %v, want an expired error", err)
+	}
+}
+
 // TestCursorRejectsForgedToken checks a token the server never made is refused.
 func TestCursorRejectsForgedToken(t *testing.T) {
 	s := newCursorStore()
