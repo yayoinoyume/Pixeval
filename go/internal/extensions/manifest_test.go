@@ -121,9 +121,9 @@ func TestManifestAllowsSymlinkInside(t *testing.T) {
 	}
 }
 
-// TestDiscoverSkipsInvalid checks discovery keeps valid folders sorted and
-// skips a missing manifest, an invalid one and plain files.
-func TestDiscoverSkipsInvalid(t *testing.T) {
+// TestDiscoverReportsInvalid checks discovery keeps valid folders sorted and
+// reports a missing manifest and an invalid one, while ignoring plain files.
+func TestDiscoverReportsInvalid(t *testing.T) {
 	root := t.TempDir()
 	installFakeExtension(t, root, "b", "normal", nil)
 	installFakeExtension(t, root, "a", "normal", nil)
@@ -138,12 +138,20 @@ func TestDiscoverSkipsInvalid(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "notes.txt"), []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := discover(root)
+	got, invalid, err := discover(root)
 	if err != nil {
 		t.Fatalf("discover: %v", err)
 	}
 	if len(got) != 2 || got[0].ID != "a" || got[1].ID != "b" {
 		t.Fatalf("discover %+v, want a and b", got)
+	}
+	if len(invalid) != 2 || invalid[0].Folder != "bad" || invalid[1].Folder != "missing" {
+		t.Fatalf("invalid %+v, want bad and missing", invalid)
+	}
+	for _, item := range invalid {
+		if item.Error == "" {
+			t.Errorf("invalid folder %q has no error", item.Folder)
+		}
 	}
 }
 

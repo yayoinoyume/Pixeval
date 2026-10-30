@@ -363,6 +363,8 @@
     "emptyHint": "Put each extension in its own folder here, with an extension.json manifest.",
     "openFolder": "Open extensions folder",
     "reload": "Reload",
+    "reloadOne": "Reload %s",
+    "invalid": "Invalid extension in %s",
     "toggle": "Enable %s",
     "version": "Version %s",
     "capabilities": "Capabilities: %s",

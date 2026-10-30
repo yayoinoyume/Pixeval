@@ -318,6 +318,74 @@ func TestExtensionsPageReloadPicksUpNew(t *testing.T) {
 	}
 }
 
+// TestExtensionsPageShowsInvalidManifest checks a folder with a broken
+// manifest is visible, and reloading just that folder picks up the fix.
+func TestExtensionsPageShowsInvalidManifest(t *testing.T) {
+	a, tt, root := newExtensionsPage(t, false, "normal")
+	badDir := filepath.Join(root, "bad")
+	if err := os.MkdirAll(badDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(badDir, "extension.json"), []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if err := tt.Click(a.t("ext.reload")); err != nil {
+		t.Fatalf("Click reload: %v", err)
+	}
+	tt.Frame()
+	if !tt.HasText(a.tf("ext.invalid", "bad")) {
+		t.Errorf("invalid extension row missing: %q", tt.Texts())
+	}
+	if !tt.HasText(a.tf("ext.reloadOne", "bad")) {
+		t.Errorf("reload button missing for the invalid row: %q", tt.Texts())
+	}
+	if tt.HasText(a.t("ext.empty")) {
+		t.Errorf("empty state shown despite an invalid extension: %q", tt.Texts())
+	}
+
+	installAppFakeExtension(t, root, "bad", "normal")
+	if err := tt.Click(a.tf("ext.reloadOne", "bad")); err != nil {
+		t.Fatalf("Click reload one: %v", err)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("Fake bad"); !ok {
+		t.Errorf("fixed extension missing after reloading it: %q", tt.Texts())
+	}
+	if tt.HasText(a.tf("ext.invalid", "bad")) {
+		t.Errorf("invalid row still shown after fixing it: %q", tt.Texts())
+	}
+}
+
+// TestExtensionsPageReloadsOneExtension checks the card button reloads only
+// its own folder, not the whole extensions folder.
+func TestExtensionsPageReloadsOneExtension(t *testing.T) {
+	a, tt, root := newExtensionsPage(t, true, "normal")
+	tt.Frame()
+	installAppFakeExtension(t, root, "late", "normal")
+	if err := tt.Click(a.tf("ext.reloadOne", "Fake demo")); err != nil {
+		t.Fatalf("Click reload one: %v", err)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("Fake late"); ok {
+		t.Errorf("reloading one extension discovered another: %q", tt.Texts())
+	}
+	if exts := a.extensions.Extensions(); len(exts) != 1 || exts[0].ID != "demo" {
+		t.Errorf("extensions after reloading one: %+v", exts)
+	}
+
+	if err := os.RemoveAll(filepath.Join(root, "demo")); err != nil {
+		t.Fatal(err)
+	}
+	if err := tt.Click(a.tf("ext.reloadOne", "Fake demo")); err != nil {
+		t.Fatalf("Click reload one after removing: %v", err)
+	}
+	tt.Frame()
+	if _, ok := tt.Find("Fake demo"); ok {
+		t.Errorf("removed extension still shown: %q", tt.Texts())
+	}
+}
+
 // TestExtensionsPageFitsNarrowWindow checks the extension page in a 1024 by
 // 720 window: its actions, cards and texts stay inside the width instead of
 // running off the side.
@@ -346,6 +414,7 @@ func TestExtensionsPageFitsNarrowWindow(t *testing.T) {
 		"A fake extension",
 		a.tf("ext.capabilities", ext.CapabilityDownloadName),
 		a.t("ext.statusDisabled"),
+		a.tf("ext.reloadOne", "Fake demo"),
 	} {
 		r, ok := tt.Find(label)
 		if !ok || r.W == 0 {
