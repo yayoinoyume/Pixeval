@@ -1,6 +1,8 @@
 package app
 
 import (
+	"slices"
+
 	"github.com/egoist/mygo/ui"
 )
 
@@ -102,8 +104,12 @@ func (a *App) tabBar(c *ui.Context) {
 		AlignItems(ui.Center).BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		ui.ScrollHorizontal(c).Grow(1).MinWidth(0).FillHeight().Gap(t.SpaceXS).
 			AlignItems(ui.Center).Children(func() {
-			for i := range a.tabs {
-				a.tabItem(c, t, i)
+			// A close control shortens a.tabs while this frame still draws
+			// the strip, so the loop walks a snapshot and tabItem never
+			// indexes the live list.
+			tabs := slices.Clone(a.tabs)
+			for i := range tabs {
+				a.tabItem(c, t, tabs[i], i)
 			}
 		})
 		if iconButton(c, iconPlus, a.t("tabs.new"), 28, t.TextMuted, t.SurfaceAlt).Clicked() {
@@ -114,8 +120,8 @@ func (a *App) tabBar(c *ui.Context) {
 
 // tabItem draws one tab: its page's title, its own close control, and an
 // accent rule under it while it is the one showing.
-func (a *App) tabItem(c *ui.Context, t tokens, i int) {
-	title := a.pageTitle(a.tabs[i].route)
+func (a *App) tabItem(c *ui.Context, t tokens, tab appTab, i int) {
+	title := a.pageTitle(tab.route)
 	active := i == a.tabIndex
 	bg := ui.Transparent
 	if active {
