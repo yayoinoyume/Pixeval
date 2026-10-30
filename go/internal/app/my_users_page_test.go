@@ -270,6 +270,9 @@ func TestMySocialUsersClearedOnAccountSwitch(t *testing.T) {
 	if v := a.myFollowing.snapshot(); len(v.users) != 0 || v.started {
 		t.Fatalf("the next account's list starts with %+v, want empty", v)
 	}
+	// The switch returns to Home in one tab, so the list loads when its page
+	// is shown again.
+	a.goRoute(routeMyFollowing)
 	tt.Frame()
 	waitUsers(t, a.myFollowing, func(v userListView) bool { return len(v.users) == 1 })
 	tr := a.client.HTTP().Transport.(*pageTransport)

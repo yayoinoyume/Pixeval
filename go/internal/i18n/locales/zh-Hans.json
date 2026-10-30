@@ -30,6 +30,11 @@
     "groupBrowse": "浏览",
     "groupLibrary": "库"
   },
+  "tabs": {
+    "new": "新建标签页",
+    "label": "标签页：%s",
+    "close": "关闭标签页：%s"
+  },
   "home": {
     "edit": "编辑卡片",
     "editDone": "完成",

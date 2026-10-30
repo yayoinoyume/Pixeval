@@ -115,6 +115,7 @@ var navMenuState struct {
 // View builds the shell: the navigation on the left, the page title and the
 // sign-in state above the page. The viewer takes the whole window instead.
 func (a *App) View(c *ui.Context) {
+	a.syncTab()
 	a.applyTheme(c)
 	a.applySavedSettings(c)
 	a.showNotice(c)
@@ -127,6 +128,7 @@ func (a *App) View(c *ui.Context) {
 		a.nav(c)
 		ui.Column(c).Grow(1).FillHeight().Children(func() {
 			a.header(c)
+			a.tabBar(c)
 			a.page(c)
 		})
 	})
@@ -143,6 +145,10 @@ func (a *App) shortcuts(c *ui.Context) {
 	c.OnShortcut(ui.Cmd, ui.KeyComma, func() { a.goRoute(routeSettings) })
 	c.OnShortcut(ui.Cmd, ui.KeyH, func() { a.goRoute(routeHistory) })
 	c.OnShortcut(ui.Cmd, ui.KeyD, func() { a.goRoute(routeDownloads) })
+	c.OnShortcut(ui.Cmd, ui.KeyT, a.newTab)
+	c.OnShortcut(ui.Cmd, ui.KeyW, func() { a.closeTab(a.tabIndex) })
+	c.OnShortcut(ui.Cmd, ui.KeyTab, func() { a.cycleTab(1) })
+	c.OnShortcut(ui.Cmd|ui.Shift, ui.KeyTab, func() { a.cycleTab(-1) })
 	c.OnShortcut(0, ui.KeyEscape, a.escape)
 	if a.viewer != nil {
 		c.OnShortcut(0, ui.KeyLeft, func() { a.viewerGo(-1) })
@@ -161,6 +167,7 @@ func (a *App) goRoute(r route) {
 		settingsConfirmPending = settingsConfirmNone
 	}
 	a.route = r
+	a.syncTab()
 }
 
 // escape closes the viewer, or leaves the user, series or novel page for the
@@ -363,11 +370,21 @@ func navGlyph(r route) *ui.SVG {
 	return navIcon(r)
 }
 
+// displayLineHeight is the page title's line box, as a multiple of its size.
+const displayLineHeight = 1.12
+
+// headerHeight is the title row's height: the tab strip takes the rest of
+// the top bar, and the row grows with the display text when the desktop
+// scales it.
+func headerHeight(t tokens) float32 {
+	return max(topBarHeight-tabBarHeight, t.TextDisplay*displayLineHeight+8)
+}
+
 // header is the Material app bar: the page title and the account state above
 // the page.
 func (a *App) header(c *ui.Context) {
 	t := themeOf(c)
-	ui.Row(c).Height(84).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
+	ui.Row(c).Height(headerHeight(t)).Gap(t.SpaceM).Padding(0, contentPadding).AlignItems(ui.Center).
 		BorderWidth(0, 0, 1, 0).BorderColor(t.Border).Children(func() {
 		if a.route == routeFeed || a.route == routeUser || a.route == routeSeries ||
 			a.route == routeRelated || a.route == routeUserRelated ||
@@ -378,7 +395,7 @@ func (a *App) header(c *ui.Context) {
 			}
 		}
 		displayText(c, a.pageTitle(a.route)).FontSize(t.TextDisplay).FontWeight(500).
-			LineHeight(1.12).TextColor(t.Text).Grow(1).MaxLines(1).MinWidth(0)
+			LineHeight(displayLineHeight).TextColor(t.Text).Grow(1).MaxLines(1).MinWidth(0)
 		if a.session == nil {
 			if ui.PrimaryButton(c, a.t("nav.login")).Height(36).Radius(t.RadiusS).
 				Padding(0, t.SpaceL).Clicked() {
@@ -604,6 +621,7 @@ func (a *App) page(c *ui.Context) {
 // goBack leaves a user, series or related page for the viewer or page it was
 // opened from.
 func (a *App) goBack() {
+	defer a.syncTab()
 	if a.route == routeFeed {
 		// The full feed is a page of its own; the home cards keep their place.
 		a.feed = nil

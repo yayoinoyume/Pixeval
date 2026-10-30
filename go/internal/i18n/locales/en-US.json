@@ -30,6 +30,11 @@
     "groupBrowse": "Browse",
     "groupLibrary": "Library"
   },
+  "tabs": {
+    "new": "New tab",
+    "label": "Tab: %s",
+    "close": "Close tab: %s"
+  },
   "home": {
     "edit": "Edit cards",
     "editDone": "Done",

@@ -30,6 +30,11 @@
     "groupBrowse": "Parcourir",
     "groupLibrary": "Bibliothèque"
   },
+  "tabs": {
+    "new": "Nouvel onglet",
+    "label": "Onglet : %s",
+    "close": "Fermer l'onglet : %s"
+  },
   "home": {
     "edit": "Modifier les cartes",
     "editDone": "Terminé",
