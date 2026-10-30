@@ -74,6 +74,11 @@ type App struct {
 	route     route
 	// backRoute is the page a user page or series page returns to.
 	backRoute route
+	// tabs are the open tabs in strip order and tabIndex is the one showing.
+	// A tab remembers the page and back page it was on; the pages' data is
+	// shared, so a tab is a place, not a copy of the works.
+	tabs     []appTab
+	tabIndex int
 	// viewer is the full-screen illustration viewer, nil while it is closed.
 	viewer *viewerState
 	// comments is the open viewer's comment panel, and commentsOpen shows it.
@@ -391,6 +396,7 @@ func New() *App {
 		openExternalFn:   mygo.Shell.OpenExternal,
 		openPathFn:       mygo.Shell.OpenPath,
 		route:            routeHome,
+		tabs:             homeTabs(),
 		cardText:         60,
 		homeCards:        loadHomeLayout(),
 		newFeed:          &browseState{},
@@ -734,10 +740,12 @@ func (a *App) resetAccountPages() {
 	a.seriesFeeds = [seriesTabCount]*seriesListState{{}, {}}
 	a.related = nil
 	a.novelView = nil
-	switch a.route {
-	case routeUser, routeUserRelated, routeUserMyPixiv, routeSeries, routeRelated, routeNovel, routeFeed:
-		a.route = routeHome
-	}
+	// The tabs are places, not account data, but one may hold a page that
+	// showed the account before it: a new account starts at Home in one tab.
+	a.tabs = homeTabs()
+	a.tabIndex = 0
+	a.route = routeHome
+	a.backRoute = ""
 }
 
 // logout forgets the session off the main thread: the token file goes, then
