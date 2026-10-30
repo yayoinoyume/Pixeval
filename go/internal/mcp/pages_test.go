@@ -257,6 +257,44 @@ func TestMoreNextPageErrorIsResult(t *testing.T) {
 	}
 }
 
+// TestMoreKeepsCursorAfterFetchFailure checks a failed next page leaves the
+// cursor readable, so the caller retries with the same token instead of
+// restarting the list, and that a successful retry still consumes it.
+func TestMoreKeepsCursorAfterFetchFailure(t *testing.T) {
+	b := &pagedFake{
+		fakeBackend: &fakeBackend{},
+		page: &pixiv.Page[pixiv.Illustration]{
+			Items:   []pixiv.Illustration{{ID: 1}},
+			NextURL: "https://app-api.pixiv.net/v1/next?offset=1",
+		},
+		nextErr: errors.New("boom"),
+	}
+	srv := newTestServer(b)
+	cursor := cursorFromText(callToolText(t, srv, "recommended", `{}`))
+	if cursor == "" {
+		t.Fatal("no cursor to test with")
+	}
+	body := fmt.Sprintf(`{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"more","arguments":{"cursor":%q}}}`, cursor)
+
+	var failed toolResult
+	decodeResult(t, call(t, srv, body), &failed)
+	if !failed.IsError || !strings.Contains(failed.Content[0].Text, "retry with the same cursor") {
+		t.Fatalf("failed result %+v, want a retry hint", failed)
+	}
+
+	b.nextErr = nil
+	b.nextPage = &pixiv.Page[pixiv.Illustration]{Items: []pixiv.Illustration{{ID: 2}}}
+	more := callToolText(t, srv, "more", fmt.Sprintf(`{"cursor":%q}`, cursor))
+	if !strings.Contains(more, "#2 ") {
+		t.Errorf("more text %q, want the retried page's work", more)
+	}
+
+	r := call(t, srv, body)
+	if r.Error == nil || r.Error.Code != codeInvalidParams || !strings.Contains(r.Error.Message, "invalid") {
+		t.Fatalf("reply %+v, want the consumed cursor to be invalid", r)
+	}
+}
+
 // TestMoreKeepsLastPageTail checks a page with no next URL still keeps the
 // works limit cut, so a short limit never drops the end of the list.
 func TestMoreKeepsLastPageTail(t *testing.T) {

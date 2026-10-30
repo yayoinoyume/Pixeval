@@ -732,7 +732,7 @@ var toolDefs = []tool{
 	},
 	{
 		Name:        "more",
-		Description: "Read the next page of a list tool's results from its nextCursor. A cursor is single use and expires after 10 minutes.",
+		Description: "Read the next page of a list tool's results from its nextCursor. A cursor is single use and expires after 10 minutes; when the page fetch fails the same cursor can be retried.",
 		InputSchema: schema{
 			Type: "object",
 			Properties: map[string]property{
@@ -1606,7 +1606,10 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		}
 		page, err := nextWorksPage(ctx, b, entry.nextURL)
 		if err != nil {
-			return failure(err), nil
+			// Put the cursor back so a network failure does not cost the caller
+			// its place in the list: the same token retries the same page.
+			cursors.Restore(token, entry)
+			return failure(fmt.Errorf("%w; retry with the same cursor", err)), nil
 		}
 		return pagedWorksResult(cursors, accountID, entry.kind, page.Items, page.NextURL, limit), nil
 	default:
