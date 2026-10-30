@@ -16,6 +16,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
+	ext "github.com/yayoinoyume/pixeval-go/internal/extensions"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
@@ -69,7 +70,7 @@ func (a *App) downloadWorkSource(w pixiv.Illustration, source string, sourceID i
 			Title:      w.Title,
 			Artist:     w.User.Name,
 			URL:        w.PageURL(i),
-			Dest:       downloadDest(a.downloadsDir, tmpl, ctx),
+			Dest:       a.downloadDest(a.downloadsDir, tmpl, ctx),
 			Page:       i,
 			Source:     source,
 			SourceID:   sourceID,
@@ -106,7 +107,7 @@ func (a *App) downloadUgoiraWork(w pixiv.Illustration, source string) (queued in
 		Title:    w.Title,
 		Artist:   w.User.Name,
 		URL:      meta.ZipURL,
-		Dest:     downloadDest(a.downloadsDir, downloadTemplate(a.downloadMacro()), ctx),
+		Dest:     a.downloadDest(a.downloadsDir, downloadTemplate(a.downloadMacro()), ctx),
 		Source:   source,
 	}
 	return a.downloads.Add([]download.Task{task}), true, nil
@@ -263,6 +264,39 @@ func downloadDest(dir string, tmpl *download.Template, ctx download.Context) str
 		dest = filepath.Join(dir, fmt.Sprintf("%d_%03d.%s", ctx.ID, ctx.PicSetIndex, ctx.Ext))
 	}
 	return dest
+}
+
+// downloadDest is downloadDest with the enabled download_name extensions
+// applied to the file name. Only a plain file name is accepted from an
+// extension; a failure leaves the template's name in place.
+func (a *App) downloadDest(dir string, tmpl *download.Template, ctx download.Context) string {
+	dest := downloadDest(dir, tmpl, ctx)
+	if a.extensions == nil {
+		return dest
+	}
+	name := a.extensions.TransformDownloadName(filepath.Base(dest), ext.DownloadContext{
+		ID:     ctx.ID,
+		Title:  ctx.Title,
+		Artist: ctx.ArtistName,
+		Page:   ctx.PicSetIndex,
+		Ext:    ctx.Ext,
+	})
+	if !downloadExtensionName(name) {
+		return dest
+	}
+	return filepath.Join(filepath.Dir(dest), name)
+}
+
+// downloadExtensionName reports whether an extension's result is a plain file
+// name, not a path of its own.
+func downloadExtensionName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if filepath.IsAbs(name) || filepath.VolumeName(name) != "" {
+		return false
+	}
+	return !strings.ContainsAny(name, `/\`) && !strings.ContainsRune(name, 0)
 }
 
 // downloadSafeRel rebuilds a relative path from rendered text, dropping what

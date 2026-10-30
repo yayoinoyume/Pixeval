@@ -351,11 +351,24 @@
     "openFailed": "Impossible d'ouvrir le lien : %s"
   },
   "ext": {
-    "hostMissing": "Cette version n'a pas d'hôte d'extensions",
-    "hostMissingHint": "Les fichiers d'extension ne sont jamais chargés : rien ici ne permet d'ajouter, d'activer ou de supprimer une extension.",
-    "why": "Les extensions de Pixeval sont des composants natifs conçus pour .NET. La version Go ne peut pas charger les mêmes fichiers ; les prendre en charge demande une autre interface, qui n'existe pas encore.",
-    "available": "Disponible aujourd'hui : modèles de nommage des téléchargements, suivi des abonnements, domain fronting et MCP.",
-    "settingsHint": "Cette version ne charge pas les extensions"
+    "empty": "Aucune extension installée",
+    "emptyHint": "Placez chaque extension dans son propre dossier ici, avec un manifeste extension.json.",
+    "openFolder": "Ouvrir le dossier des extensions",
+    "reload": "Recharger",
+    "toggle": "Activer %s",
+    "version": "Version %s",
+    "capabilities": "Capacités : %s",
+    "statusDisabled": "Désactivée",
+    "statusStopped": "Activée, non démarrée",
+    "statusRunning": "En cours",
+    "statusError": "Erreur",
+    "protocol": "Une extension est un exécutable local. Elle parle JSON-RPC 2.0 délimité par des lignes sur l'entrée et la sortie standard ; extension.json déclare id, name, version, exec et capabilities.",
+    "security": "Les extensions s'exécutent avec votre compte et sans bac à sable : n'ajoutez que du code de confiance.",
+    "openFailed": "Impossible d'ouvrir le dossier des extensions : %s",
+    "reloadFailed": "Impossible de recharger les extensions : %s",
+    "saveFailed": "Impossible d'enregistrer le réglage de l'extension : %s",
+    "hostUnavailable": "L'hôte d'extensions n'a pas pu démarrer.",
+    "settingsHint": "Gérer les extensions locales"
   },
   "history": {
     "empty": "Aucun historique pour l'instant",

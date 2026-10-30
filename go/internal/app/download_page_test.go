@@ -14,6 +14,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
+	ext "github.com/yayoinoyume/pixeval-go/internal/extensions"
 	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
@@ -829,5 +830,87 @@ func TestDownloadLoadedSkipsUgoira(t *testing.T) {
 	}
 	if calls := tr.metaCount(); calls != 0 {
 		t.Errorf("metadata fetched %d times, want 0", calls)
+	}
+}
+
+// newExtensionDownloadApp is an app with a temporary download directory and,
+// when mode is not empty, a fake download_name extension installed and
+// optionally enabled.
+func newExtensionDownloadApp(t *testing.T, mode string, enabled bool) (*App, string) {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root, err := ext.DefaultDir()
+	if err != nil {
+		t.Fatalf("DefaultDir: %v", err)
+	}
+	if mode != "" {
+		installAppFakeExtension(t, root, "demo", mode)
+	}
+	a := New()
+	if a.extensions != nil {
+		t.Cleanup(a.extensions.StopAll)
+	}
+	a.downloadsDir = t.TempDir()
+	if enabled {
+		if err := a.extensions.SetEnabled("demo", true); err != nil {
+			t.Fatalf("SetEnabled: %v", err)
+		}
+	}
+	return a, a.downloadsDir
+}
+
+// TestDownloadNameExtensionTransforms checks an enabled download_name
+// extension renames the page and keeps it in the template's folder.
+func TestDownloadNameExtensionTransforms(t *testing.T) {
+	a, dir := newExtensionDownloadApp(t, "normal", true)
+	ctx := download.Context{ID: 7, Title: "title", ArtistName: "artist", PicSetIndex: 1, Ext: "jpg"}
+	got := a.downloadDest(dir, downloadTemplate(`@{id}_@{pic_set_index}.@{ext}`), ctx)
+	want := filepath.Join(dir, "x_7_1.jpg")
+	if got != want {
+		t.Errorf("dest %q, want %q", got, want)
+	}
+}
+
+// TestDownloadNameExtensionFallsBack checks a failed or invalid extension
+// answer leaves the template's name in place.
+func TestDownloadNameExtensionFallsBack(t *testing.T) {
+	for _, mode := range []string{"fail", "badname", "absname", "empty"} {
+		t.Run(mode, func(t *testing.T) {
+			a, dir := newExtensionDownloadApp(t, mode, true)
+			ctx := download.Context{ID: 7, PicSetIndex: 1, Ext: "jpg"}
+			tmpl := downloadTemplate(`@{id}_@{pic_set_index}.@{ext}`)
+			got := a.downloadDest(dir, tmpl, ctx)
+			want := downloadDest(dir, tmpl, ctx)
+			if got != want {
+				t.Errorf("dest %q, want %q", got, want)
+			}
+			if exts := a.extensions.Extensions(); exts[0].Status != ext.StatusError {
+				t.Errorf("extension after %q: %+v", mode, exts[0])
+			}
+		})
+	}
+}
+
+// TestDownloadNameWithoutEnabledExtension checks a disabled extension and an
+// empty folder leave the template's name alone.
+func TestDownloadNameWithoutEnabledExtension(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		mode    string
+		enabled bool
+	}{
+		{"no extensions", "", false},
+		{"disabled extension", "normal", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, dir := newExtensionDownloadApp(t, tc.mode, tc.enabled)
+			ctx := download.Context{ID: 7, PicSetIndex: 1, Ext: "jpg"}
+			tmpl := downloadTemplate(`@{id}_@{pic_set_index}.@{ext}`)
+			got := a.downloadDest(dir, tmpl, ctx)
+			want := downloadDest(dir, tmpl, ctx)
+			if got != want {
+				t.Errorf("dest %q, want %q", got, want)
+			}
+		})
 	}
 }

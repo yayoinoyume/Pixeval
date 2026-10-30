@@ -351,11 +351,24 @@
     "openFailed": "Could not open the link: %s"
   },
   "ext": {
-    "hostMissing": "This version has no extension host",
-    "hostMissingHint": "Extension files are never loaded, so there is nothing here to add, enable, or remove.",
-    "why": "Pixeval's extensions are native components built for .NET. The Go version cannot load the same files; supporting extensions needs a separate interface that does not exist yet.",
-    "available": "What works now: download naming templates, subscription updates, domain fronting, and MCP.",
-    "settingsHint": "This version does not load extensions"
+    "empty": "No extensions installed",
+    "emptyHint": "Put each extension in its own folder here, with an extension.json manifest.",
+    "openFolder": "Open extensions folder",
+    "reload": "Reload",
+    "toggle": "Enable %s",
+    "version": "Version %s",
+    "capabilities": "Capabilities: %s",
+    "statusDisabled": "Disabled",
+    "statusStopped": "Enabled, not started",
+    "statusRunning": "Running",
+    "statusError": "Error",
+    "protocol": "An extension is a local executable. It speaks newline-delimited JSON-RPC 2.0 over standard input and output; extension.json declares id, name, version, exec and capabilities.",
+    "security": "Extensions run as your user and are not sandboxed: only add code you trust.",
+    "openFailed": "Could not open the extensions folder: %s",
+    "reloadFailed": "Could not reload extensions: %s",
+    "saveFailed": "Could not save the extension setting: %s",
+    "hostUnavailable": "The extension host could not start.",
+    "settingsHint": "Manage local extensions"
   },
   "history": {
     "empty": "No history yet",
