@@ -116,6 +116,79 @@ func TestTabsCloseInactiveKeepsTheActiveOne(t *testing.T) {
 	}
 }
 
+// TestTabsCloseButtonClosesInFrame checks a real click on a tab's close
+// control closes it in that frame: the strip shortens the tab list while it
+// still draws, so it must not index the list by the length it started with.
+func TestTabsCloseButtonClosesInFrame(t *testing.T) {
+	cases := []struct {
+		name      string
+		routes    []route
+		close     int
+		wantTabs  []route
+		wantIndex int
+		wantRoute route
+	}{
+		{
+			name:      "first",
+			routes:    []route{routeSettings, routeHistory, routeDownloads},
+			close:     0,
+			wantTabs:  []route{routeHistory, routeDownloads},
+			wantIndex: 1,
+			wantRoute: routeDownloads,
+		},
+		{
+			name:      "middle",
+			routes:    []route{routeSettings, routeHistory, routeDownloads},
+			close:     1,
+			wantTabs:  []route{routeSettings, routeDownloads},
+			wantIndex: 1,
+			wantRoute: routeDownloads,
+		},
+		{
+			name:      "last",
+			routes:    []route{routeSettings, routeHistory},
+			close:     1,
+			wantTabs:  []route{routeSettings},
+			wantIndex: 0,
+			wantRoute: routeSettings,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			a := newHomeApp(t)
+			a.goRoute(tc.routes[0])
+			for _, r := range tc.routes[1:] {
+				a.newTab()
+				a.goRoute(r)
+			}
+			tt := ui.NewTester(a.View, 1024, 720)
+			tt.Frame()
+
+			closed := a.tf("tabs.close", a.pageTitle(tc.routes[tc.close]))
+			if err := tt.Click(closed); err != nil {
+				t.Fatalf("Click the %s tab's close control: %v", tc.name, err)
+			}
+			tt.Frame()
+
+			if len(a.tabs) != len(tc.wantTabs) || a.tabIndex != tc.wantIndex {
+				t.Fatalf("tabs %v at %d after closing the %s, want %v at %d",
+					a.tabs, a.tabIndex, tc.name, tc.wantTabs, tc.wantIndex)
+			}
+			for i, want := range tc.wantTabs {
+				if a.tabs[i].route != want {
+					t.Errorf("tab %d shows %q, want %q", i, a.tabs[i].route, want)
+				}
+			}
+			if a.route != tc.wantRoute {
+				t.Errorf("route %q after closing the %s, want %q", a.route, tc.name, tc.wantRoute)
+			}
+			if _, ok := tt.Find(closed); ok {
+				t.Errorf("the closed tab's close control %q is still drawn", closed)
+			}
+		})
+	}
+}
+
 // TestTabsLastTabReturnsHome checks the last tab is not closed: it goes back
 // to Home instead.
 func TestTabsLastTabReturnsHome(t *testing.T) {
