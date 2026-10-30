@@ -436,7 +436,7 @@ func TestToolsList(t *testing.T) {
 		"works", "users", "download_tasks", "analyze_work_filter",
 		"set_watch_later", "follow_user", "control_download",
 		"add_subscription", "remove_subscription", "sync_subscriptions",
-		"add_comment", "delete_comment", "set_download_macro",
+		"add_comment", "delete_comment", "set_download_macro", "more",
 	}
 	if len(got.Tools) != len(want) {
 		t.Fatalf("%d tools, want %d", len(got.Tools), len(want))
@@ -888,7 +888,7 @@ func TestCapabilitiesCall(t *testing.T) {
 	}
 	for _, want := range []string{
 		"pixeval-go", "2025-06-18", "bearer", "capabilities", "history",
-		fmt.Sprintf("list limit: %d by default", defaultLimit),
+		fmt.Sprintf("list limit: %d by default", defaultLimit), "paging:",
 	} {
 		if !strings.Contains(got.Content[0].Text, want) {
 			t.Errorf("text misses %q: %s", want, got.Content[0].Text)

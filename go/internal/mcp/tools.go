@@ -730,11 +730,24 @@ var toolDefs = []tool{
 			Required: []string{"text"},
 		},
 	},
+	{
+		Name:        "more",
+		Description: "Read the next page of a list tool's results from its nextCursor. A cursor is single use and expires after 10 minutes.",
+		InputSchema: schema{
+			Type: "object",
+			Properties: map[string]property{
+				"cursor": {Type: "string", Description: "The nextCursor a list tool returned."},
+				"count":  listLimitProperty,
+			},
+			Required: []string{"cursor"},
+		},
+	},
 }
 
 // runTool decodes a tool's arguments and runs it. A tool failure comes back as
 // an isError result, so the client can show the reason.
-func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (callResult, error) {
+func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, raw json.RawMessage) (callResult, error) {
+	accountID := accountIDOf(b)
 	switch name {
 	case "search_illustrations":
 		var args struct {
@@ -747,7 +760,16 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		if strings.TrimSpace(args.Query) == "" {
 			return callResult{}, errors.New("query is required")
 		}
-		works, err := b.Search(ctx, args.Query, clampLimit(args.Limit))
+		limit := clampLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.SearchPage(ctx, args.Query)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "search_illustrations", page.Items, page.NextURL, limit), nil
+		}
+		works, err := b.Search(ctx, args.Query, limit)
 		if err != nil {
 			return failure(err), nil
 		}
@@ -759,7 +781,16 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		if err := decodeArgs(raw, &args); err != nil {
 			return callResult{}, err
 		}
-		works, err := b.Recommended(ctx, clampLimit(args.Limit))
+		limit := clampLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.RecommendedPage(ctx)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "recommended", page.Items, page.NextURL, limit), nil
+		}
+		works, err := b.Recommended(ctx, limit)
 		if err != nil {
 			return failure(err), nil
 		}
@@ -791,7 +822,16 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		if err != nil {
 			return callResult{}, err
 		}
-		works, err := b.Ranking(ctx, string(mode), clampLimit(args.Limit))
+		limit := clampLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.RankingPage(ctx, string(mode))
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "ranking", page.Items, page.NextURL, limit), nil
+		}
+		works, err := b.Ranking(ctx, string(mode), limit)
 		if err != nil {
 			return failure(err), nil
 		}
@@ -887,6 +927,15 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		if kind != "illust" && kind != "manga" {
 			return callResult{}, errors.New(`kind must be "illust" or "manga"`)
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.UserIllustsPage(ctx, args.ID, kind)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "user_illusts", page.Items, page.NextURL, limit), nil
+		}
 		works, err := b.UserIllusts(ctx, args.ID, kind)
 		if err != nil {
 			return failure(err), nil
@@ -899,6 +948,15 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		}
 		if err := decodeArgs(raw, &args); err != nil {
 			return callResult{}, err
+		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.UserBookmarksPage(ctx, 0, args.Private)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "user_bookmarks", page.Items, page.NextURL, limit), nil
 		}
 		// Zero asks the backend for the signed-in account.
 		works, err := b.UserBookmarks(ctx, 0, args.Private)
@@ -985,6 +1043,15 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		if args.ID <= 0 {
 			return callResult{}, errors.New("id is required")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.RelatedIllustsPage(ctx, args.ID)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "related_illustrations", page.Items, page.NextURL, limit), nil
+		}
 		works, err := b.RelatedIllusts(ctx, args.ID)
 		if err != nil {
 			return failure(err), nil
@@ -1014,6 +1081,15 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		if err != nil {
 			return callResult{}, err
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.NewWorksPage(ctx, kind)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "new_works", page.Items, page.NextURL, limit), nil
+		}
 		works, err := b.NewWorks(ctx, kind)
 		if err != nil {
 			return failure(err), nil
@@ -1025,6 +1101,15 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		}
 		if err := decodeArgs(raw, &args); err != nil {
 			return callResult{}, err
+		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.FollowingWorksPage(ctx)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "following_works", page.Items, page.NextURL, limit), nil
 		}
 		works, err := b.FollowingWorks(ctx)
 		if err != nil {
@@ -1042,6 +1127,15 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 		kind, err := workKind(args.Kind)
 		if err != nil {
 			return callResult{}, err
+		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := pageOf(b, func(pb PageBackend) (*pixiv.Page[pixiv.Illustration], error) {
+			return pb.MyPixivWorksPage(ctx, kind)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedWorksResult(cursors, accountID, "my_pixiv_works", page.Items, page.NextURL, limit), nil
 		}
 		works, err := b.MyPixivWorks(ctx, kind)
 		if err != nil {
@@ -1484,6 +1578,37 @@ func runTool(ctx context.Context, b Backend, name string, raw json.RawMessage) (
 			return failure(err), nil
 		}
 		return textResult("download macro set: " + strings.TrimSpace(args.Text)), nil
+	case "more":
+		var args struct {
+			Cursor string `json:"cursor"`
+			Count  int    `json:"count"`
+		}
+		if err := decodeArgs(raw, &args); err != nil {
+			return callResult{}, err
+		}
+		if cursors == nil {
+			return callResult{}, errors.New("more is unavailable")
+		}
+		token := strings.TrimSpace(args.Cursor)
+		if token == "" {
+			return callResult{}, errors.New("cursor is required")
+		}
+		entry, err := cursors.Take(token, accountID, "")
+		if err != nil {
+			return callResult{}, err
+		}
+		limit := clampListLimit(args.Count)
+		if len(entry.pending) > 0 {
+			return pagedWorksResult(cursors, accountID, entry.kind, entry.pending, entry.nextURL, limit), nil
+		}
+		if entry.nextURL == "" {
+			return callResult{}, errors.New("cursor has no more results")
+		}
+		page, err := nextWorksPage(ctx, b, entry.nextURL)
+		if err != nil {
+			return failure(err), nil
+		}
+		return pagedWorksResult(cursors, accountID, entry.kind, page.Items, page.NextURL, limit), nil
 	default:
 		return callResult{}, fmt.Errorf("unknown tool: %q", name)
 	}
@@ -1669,6 +1794,8 @@ func capabilitiesText() string {
 	fmt.Fprintf(&b, "tools: %d\n%s\n", len(toolDefs), strings.Join(names, ", "))
 	fmt.Fprintf(&b, "list limit: %d by default for the list tools, %d for the newer read tools, %d at most",
 		defaultLimit, defaultListLimit, maxLimit)
+	fmt.Fprintf(&b, "\npaging: %s return nextCursor when the backend can page; call more with that cursor for the next page. Other lists return one page.",
+		strings.Join(pagedTools, ", "))
 	return b.String()
 }
 

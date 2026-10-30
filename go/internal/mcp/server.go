@@ -82,18 +82,22 @@ type Backend interface {
 	SetDownloadMacro(ctx context.Context, text string) error
 }
 
-// Server answers MCP requests for one Backend. It keeps no session state, so a
-// single value serves every client. Every request must carry the bearer token
-// it was made with.
+// Server answers MCP requests for one Backend. It keeps no per-client session
+// state: the only state is the short-lived cursors the list tools hand out, so
+// a single value serves every client. Every request must carry the bearer
+// token it was made with.
 type Server struct {
 	backend Backend
 	token   string
+	// cursors keeps the next pages the list tools handed out; one server
+	// value serves every request, so a cursor outlives its HTTP request.
+	cursors *cursorStore
 }
 
 // New is a Server for b that only accepts token as its bearer token. An empty
 // token accepts nothing, so a misconfigured server stays closed.
 func New(b Backend, token string) *Server {
-	return &Server{backend: b, token: token}
+	return &Server{backend: b, token: token, cursors: newCursorStore()}
 }
 
 // ListenAndServe serves b on addr at /mcp until the listener fails. Clients
@@ -256,7 +260,7 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (callResult,
 	if err := json.Unmarshal(raw, &call); err != nil {
 		return callResult{}, fmt.Errorf("bad params: %w", err)
 	}
-	return runTool(ctx, s.backend, call.Name, call.Arguments)
+	return runTool(ctx, s.backend, s.cursors, call.Name, call.Arguments)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
