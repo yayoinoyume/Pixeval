@@ -59,11 +59,22 @@ type tabPageState struct {
 	myFollowers      *userListState
 	myPixivUsersList *userListState
 	// search, searchNovels and searchUsers are the three searches, and
-	// searchKind the one the page shows.
-	search       *browseState
-	searchNovels *novelFeedState
-	searchUsers  *userListState
-	searchKind   int
+	// searchKind the one the page shows. The filters below are the
+	// illustration search's controls, so each tab keeps its own filters beside
+	// its own results.
+	search          *browseState
+	searchNovels    *novelFeedState
+	searchUsers     *userListState
+	searchKind      int
+	searchSort      string
+	searchTarget    string
+	searchStartDate string
+	searchEndDate   string
+	searchMinWidth  string
+	searchMaxWidth  string
+	searchMinHeight string
+	searchMaxHeight string
+	searchErr       string
 	// seriesFeeds are the series watchlist's lists, one per kind, and
 	// seriesTab the kind shown.
 	seriesFeeds [seriesTabCount]*seriesListState
@@ -95,6 +106,15 @@ func (a *App) pageState() tabPageState {
 		searchNovels:     a.searchNovels,
 		searchUsers:      a.searchUsers,
 		searchKind:       a.searchKind,
+		searchSort:       a.searchSort,
+		searchTarget:     a.searchTarget,
+		searchStartDate:  a.searchStartDate,
+		searchEndDate:    a.searchEndDate,
+		searchMinWidth:   a.searchMinWidth,
+		searchMaxWidth:   a.searchMaxWidth,
+		searchMinHeight:  a.searchMinHeight,
+		searchMaxHeight:  a.searchMaxHeight,
+		searchErr:        a.searchErr,
 		seriesFeeds:      a.seriesFeeds,
 		seriesTab:        a.seriesTab,
 	}
@@ -124,6 +144,15 @@ func (a *App) restorePageState(st tabPageState) {
 	a.searchNovels = st.searchNovels
 	a.searchUsers = st.searchUsers
 	a.searchKind = st.searchKind
+	a.searchSort = st.searchSort
+	a.searchTarget = st.searchTarget
+	a.searchStartDate = st.searchStartDate
+	a.searchEndDate = st.searchEndDate
+	a.searchMinWidth = st.searchMinWidth
+	a.searchMaxWidth = st.searchMaxWidth
+	a.searchMinHeight = st.searchMinHeight
+	a.searchMaxHeight = st.searchMaxHeight
+	a.searchErr = st.searchErr
 	a.seriesFeeds = st.seriesFeeds
 	a.seriesTab = st.seriesTab
 }
@@ -143,7 +172,39 @@ func newTabState() tabPageState {
 		myFollowing:      &userListState{},
 		myFollowers:      &userListState{},
 		myPixivUsersList: &userListState{},
+		searchSort:       searchSortDateDesc,
+		searchTarget:     searchTargetPartial,
 	}
+}
+
+// feeds are the works feeds the tab holds, so a block drops its works from
+// every tab's lists, not only the showing one.
+func (st tabPageState) feeds() []*browseState {
+	feeds := []*browseState{st.newFeed, st.myPixivFeed, st.bookmarks, st.search}
+	if st.feed != nil {
+		feeds = append(feeds, st.feed.st)
+	}
+	if st.userView != nil {
+		feeds = append(feeds, st.userView.feed, st.userView.mangaFeed,
+			st.userView.bookmarksFeed, st.userView.bookmarksPrivateFeed)
+	}
+	if st.seriesView != nil {
+		feeds = append(feeds, st.seriesView.feed)
+	}
+	if st.related != nil {
+		feeds = append(feeds, st.related.feed)
+	}
+	return feeds
+}
+
+// tabFeeds are the works feeds the open tabs hold, the showing tab's live
+// pages included, so a block prunes what is not showing too.
+func (a *App) tabFeeds() []*browseState {
+	feeds := a.pageState().feeds()
+	for i := range a.tabs {
+		feeds = append(feeds, a.tabs[i].state.feeds()...)
+	}
+	return feeds
 }
 
 // homeTabs is the one Home tab a window starts with, and the one an account
@@ -158,12 +219,54 @@ func (a *App) syncTab() {
 	if a.tabIndex < 0 || a.tabIndex >= len(a.tabs) {
 		return
 	}
+	st := a.pageState()
 	a.tabs[a.tabIndex] = appTab{
 		route:     a.route,
 		backRoute: a.backRoute,
-		title:     a.pageTitle(a.route),
-		state:     a.pageState(),
+		title:     a.tabTitle(a.route, st),
+		state:     st,
 	}
+}
+
+// tabTitle names a tab: the user, series or novel its page loaded, or the
+// page's own name until one does.
+func (a *App) tabTitle(r route, st tabPageState) string {
+	switch r {
+	case routeUser:
+		if st.userView != nil {
+			if name := st.userView.snapshot().user.Name; name != "" {
+				return name
+			}
+		}
+	case routeSeries:
+		if st.seriesView != nil {
+			if title := st.seriesView.snapshot().detail.Title; title != "" {
+				return title
+			}
+		}
+	case routeNovel:
+		if st.novelView != nil && st.novelView.title != "" {
+			return st.novelView.title
+		}
+	}
+	return a.pageTitle(r)
+}
+
+// retitleTabs recomputes every tab's title in the current language, the ones
+// not showing included. Each tab's page state is restored while its title is
+// worked out, because a feed, user, series or novel tab names itself from the
+// page it holds.
+func (a *App) retitleTabs() {
+	if len(a.tabs) == 0 {
+		return
+	}
+	a.syncTab()
+	showing := a.pageState()
+	for i := range a.tabs {
+		a.restorePageState(a.tabs[i].state)
+		a.tabs[i].title = a.tabTitle(a.tabs[i].route, a.tabs[i].state)
+	}
+	a.restorePageState(showing)
 }
 
 // newTab opens Home in a tab after the active one and shows it.

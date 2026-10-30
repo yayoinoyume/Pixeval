@@ -157,22 +157,48 @@ func (a *App) unbookmark(st *browseState, id int64) {
 	if !st.remove(id) {
 		return
 	}
+	gen := st.generation()
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), bookmarkTimeout)
 		defer cancel()
 		err := a.bookmarkFn(ctx, id, false)
 		a.update(func() {
-			// A logout dropped this feed; there is nothing to load back.
-			if err == nil || a.bookmarks != st {
+			// The request failed, so the work is still bookmarked: reload the
+			// list it left, whichever tab shows now. A restart since then (the
+			// other sub-tab, another account) owns a different list, so it is
+			// left alone.
+			if err == nil || st.generation() != gen || !a.tabBookmarkFeed(st) {
 				return
 			}
-			a.restartBookmarks()
+			st.restart()
 			// Load at once: a frame may not draw this page again, and the
 			// list would stay empty.
-			a.loadMore(a.bookmarks)
+			a.loadMore(st)
 			a.notice = a.tf("bookmarks.unbookmarkFailed", err.Error())
 		})
 	}()
+}
+
+// generation is the list the feed holds: a restart moves it, so a result that
+// lands late can tell whether its list is still the one it started on.
+func (st *browseState) generation() int {
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	return st.gen
+}
+
+// tabBookmarkFeed reports whether st is an open tab's bookmarks feed. The
+// showing tab's live feed counts too, for a frame before it synced.
+func (a *App) tabBookmarkFeed(st *browseState) bool {
+	if a.bookmarks == st {
+		return true
+	}
+	for i := range a.tabs {
+		if a.tabs[i].state.bookmarks == st {
+			return true
+		}
+	}
+	return false
 }
 
 // remove takes the work id out of the feed.

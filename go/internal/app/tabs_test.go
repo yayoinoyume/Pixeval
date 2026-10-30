@@ -492,3 +492,196 @@ func TestTabsSpeakEveryLanguage(t *testing.T) {
 		}
 	}
 }
+
+// TestTabsLanguageChangeRetitlesEveryTab checks a language change translates
+// the tabs that are not showing too, including a feed tab whose title names
+// its card.
+func TestTabsLanguageChangeRetitlesEveryTab(t *testing.T) {
+	a := newHomeApp(t)
+	a.settings.Language = i18n.LangZhHans
+	a.loadLanguage()
+	a.openHomeFeed(a.homeCards[0])
+	oldFeedTitle := a.tabs[0].title
+	a.newTab()
+	a.goRoute(routeSettings)
+
+	a.settings.Language = i18n.LangEnUS
+	a.loadLanguage()
+
+	wantFeed := a.homeCardTitle(a.homeCards[0])
+	if got := a.tabs[0].title; got != wantFeed {
+		t.Errorf("the feed tab is titled %q, want %q", got, wantFeed)
+	}
+	if wantFeed == oldFeedTitle {
+		t.Fatalf("the feed title did not change language: %q", wantFeed)
+	}
+	if got, want := a.tabs[1].title, a.t("nav.settings"); got != want {
+		t.Errorf("the settings tab is titled %q, want %q", got, want)
+	}
+	if a.route != routeSettings {
+		t.Errorf("route %q after the language change, want %q", a.route, routeSettings)
+	}
+}
+
+// TestTabsKeepTheirOwnSearchFilters checks each tab keeps the search filters
+// beside the results they produced, so switching shows a matching pair.
+func TestTabsKeepTheirOwnSearchFilters(t *testing.T) {
+	type filters struct {
+		sort, target, start, end, minW, maxW, minH, maxH, err string
+	}
+	read := func(a *App) filters {
+		return filters{a.searchSort, a.searchTarget, a.searchStartDate, a.searchEndDate,
+			a.searchMinWidth, a.searchMaxWidth, a.searchMinHeight, a.searchMaxHeight, a.searchErr}
+	}
+	a := newHomeApp(t)
+	a.goRoute(routeSearch)
+	a.searchSort = searchSortPopular
+	a.searchTarget = searchTargetExact
+	a.searchStartDate = "2020-01-02"
+	a.searchEndDate = "2021-03-04"
+	a.searchMinWidth = "600"
+	a.searchMaxWidth = "0"
+	a.searchMinHeight = "700"
+	a.searchMaxHeight = "4000"
+	a.searchErr = "第一页的错误"
+	first := a.search
+	first.items = fakeWorks(0, 2)
+	wantFirst := read(a)
+	a.syncTab()
+
+	a.newTab()
+	a.goRoute(routeSearch)
+	a.searchSort = searchSortDateAsc
+	a.searchTarget = searchTargetTitleCaption
+	a.searchStartDate = "2022-05-06"
+	a.searchEndDate = ""
+	a.searchMinWidth = "1"
+	a.searchMaxWidth = "2"
+	a.searchMinHeight = "3"
+	a.searchMaxHeight = "4"
+	a.searchErr = "第二页的错误"
+	second := a.search
+	second.items = fakeWorks(10, 2)
+	wantSecond := read(a)
+	a.syncTab()
+
+	a.switchTab(0)
+	if a.search != first {
+		t.Error("tab 0 shows the other tab's search results")
+	}
+	if got := read(a); got != wantFirst {
+		t.Errorf("tab 0 filters %+v, want %+v", got, wantFirst)
+	}
+	if got := a.search.snapshot().items; len(got) != 2 || got[0].ID != 0 {
+		t.Errorf("tab 0 results %+v, want works 0 and 1", got)
+	}
+
+	a.switchTab(1)
+	if a.search != second {
+		t.Error("tab 1 shows the other tab's search results")
+	}
+	if got := read(a); got != wantSecond {
+		t.Errorf("tab 1 filters %+v, want %+v", got, wantSecond)
+	}
+	if got := a.search.snapshot().items; len(got) != 2 || got[0].ID != 10 {
+		t.Errorf("tab 1 results %+v, want works 10 and 11", got)
+	}
+}
+
+// TestTabsNameTheirUserSeriesAndNovelPages checks a tab takes the name its
+// page loaded, and keeps the page's own label until a name arrives.
+func TestTabsNameTheirUserSeriesAndNovelPages(t *testing.T) {
+	a := newHomeApp(t)
+	user := &userViewState{userID: 7}
+	user.user = pixiv.User{ID: 7, Name: "画师甲"}
+	a.userView = user
+	a.goRoute(routeUser)
+	if got := a.tabs[0].title; got != "画师甲" {
+		t.Errorf("the user tab is titled %q, want %q", got, "画师甲")
+	}
+
+	a.newTab()
+	series := &seriesViewState{}
+	series.detail = pixiv.SeriesDetail{ID: 9, Title: "系列甲"}
+	a.seriesView = series
+	a.goRoute(routeSeries)
+	if got := a.tabs[1].title; got != "系列甲" {
+		t.Errorf("the series tab is titled %q, want %q", got, "系列甲")
+	}
+
+	a.newTab()
+	a.novelView = &novelViewState{novelID: 11, title: "小说甲"}
+	a.goRoute(routeNovel)
+	if got := a.tabs[2].title; got != "小说甲" {
+		t.Errorf("the novel tab is titled %q, want %q", got, "小说甲")
+	}
+
+	a.newTab()
+	a.userView = nil
+	a.goRoute(routeUser)
+	if got, want := a.tabs[3].title, a.pageTitle(routeUser); got != want {
+		t.Errorf("the unloaded user tab is titled %q, want %q", got, want)
+	}
+}
+
+// worksByUser is n fake works by userID, for the block tests.
+func worksByUser(userID int64, first, n int) []pixiv.Illustration {
+	works := fakeWorks(first, n)
+	for i := range works {
+		works[i].User.ID = userID
+	}
+	return works
+}
+
+// TestTabsBlockedAuthorLeavesEveryTabFeed checks blocking an author drops
+// their works from the tabs that are not showing too.
+func TestTabsBlockedAuthorLeavesEveryTabFeed(t *testing.T) {
+	a := newHomeApp(t)
+	blocked := worksByUser(7, 0, 2)
+	kept := worksByUser(8, 10, 1)
+	first := &browseState{items: append(append([]pixiv.Illustration(nil), blocked...), kept...)}
+	a.newFeed = first
+	a.syncTab()
+
+	a.newTab()
+	second := a.newFeed
+	second.items = append(append([]pixiv.Illustration(nil), blocked...), kept...)
+	a.syncTab()
+
+	a.blockUser(pixiv.User{ID: 7, Name: "作者七"})
+	for _, tc := range []struct {
+		name string
+		st   *browseState
+	}{{"first tab", first}, {"second tab", second}} {
+		if got := tc.st.snapshot().items; len(got) != 1 || got[0].User.ID != 8 {
+			t.Errorf("%s kept %+v, want only user 8's work", tc.name, got)
+		}
+	}
+}
+
+// TestTabsBlockedTagLeavesEveryTabFeed checks blocking a tag drops the works
+// carrying it from the tabs that are not showing too.
+func TestTabsBlockedTagLeavesEveryTabFeed(t *testing.T) {
+	a := newHomeApp(t)
+	blocked := worksByUser(1, 0, 1)
+	blocked[0].Tags = []pixiv.Tag{{Name: "猫"}}
+	kept := worksByUser(2, 1, 1)
+	first := &browseState{items: append(append([]pixiv.Illustration(nil), blocked...), kept...)}
+	a.newFeed = first
+	a.syncTab()
+
+	a.newTab()
+	second := a.newFeed
+	second.items = append(append([]pixiv.Illustration(nil), blocked...), kept...)
+	a.syncTab()
+
+	a.blockTag("猫")
+	for _, tc := range []struct {
+		name string
+		st   *browseState
+	}{{"first tab", first}, {"second tab", second}} {
+		if got := tc.st.snapshot().items; len(got) != 1 || got[0].ID != 1 {
+			t.Errorf("%s kept %+v, want only work 1", tc.name, got)
+		}
+	}
+}
