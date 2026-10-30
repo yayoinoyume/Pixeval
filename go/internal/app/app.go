@@ -18,6 +18,7 @@ import (
 	"github.com/egoist/mygo/ui"
 
 	"github.com/yayoinoyume/pixeval-go/internal/download"
+	ext "github.com/yayoinoyume/pixeval-go/internal/extensions"
 	"github.com/yayoinoyume/pixeval-go/internal/i18n"
 	"github.com/yayoinoyume/pixeval-go/internal/imagex"
 	"github.com/yayoinoyume/pixeval-go/internal/mcp"
@@ -44,6 +45,9 @@ type App struct {
 	// downloads runs the download queue, saving under downloadsDir.
 	downloads    *download.Manager
 	downloadsDir string
+	// extensions hosts the local extensions: separate executables started on
+	// first use and stopped when the window closes.
+	extensions *ext.Host
 	// downloadHistory is the completed downloads, newest first, and
 	// downloadRecorded the tasks already added to it, so a change callback does
 	// not record the same completion again.
@@ -324,6 +328,10 @@ func New() *App {
 	}
 	subs := subscription.New(pixivFetcher{client: client})
 	subs.Store = subsStore
+	extHost, err := ext.OpenDefault()
+	if err != nil {
+		log.Printf("extensions: %v", err)
+	}
 	a := &App{
 		client:           client,
 		loginHTTP:        loginClient,
@@ -333,6 +341,7 @@ func New() *App {
 		images:           imagex.New(client, imageDir()),
 		downloads:        download.New(client, settings.DownloadConcurrency),
 		downloadsDir:     settingsDownloadDir(settings),
+		extensions:       extHost,
 		downloadHistory:  loadDownloadHistory(),
 		downloadRecorded: map[string]bool{},
 		settings:         settings,
@@ -588,6 +597,13 @@ func (a *App) Start() {
 		MinWidth:  960,
 		MinHeight: 600,
 		Content:   ui.View(a.View),
+	})
+	// An extension may be running in its own process; closing the window must
+	// not leave it behind.
+	a.win.OnClosed(func() {
+		if a.extensions != nil {
+			a.extensions.StopAll()
+		}
 	})
 	// A refresh can take a network round trip: the window opens first and
 	// applySession fills in the session when it lands.
