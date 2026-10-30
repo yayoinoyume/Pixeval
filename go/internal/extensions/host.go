@@ -215,7 +215,8 @@ func (h *Host) SetEnabled(id string, on bool) error {
 // TransformDownloadName runs name through every enabled extension that
 // declares download_name, in id order. A failure marks that extension as
 // broken and leaves the name as the previous extension left it, so a broken
-// extension never loses the original file name.
+// extension never loses the original file name. A broken extension is skipped
+// without another start attempt until it is re-enabled or the host is reloaded.
 func (h *Host) TransformDownloadName(name string, ctx DownloadContext) string {
 	if h == nil {
 		return name
@@ -224,6 +225,9 @@ func (h *Host) TransformDownloadName(name string, ctx DownloadContext) string {
 	defer h.mu.Unlock()
 	for _, m := range h.manifests {
 		if !h.enabled[m.ID] || !hasCapability(m, CapabilityDownloadName) {
+			continue
+		}
+		if h.errors[m.ID] != "" {
 			continue
 		}
 		p, err := h.ensureLocked(m)
