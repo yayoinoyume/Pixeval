@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"errors"
+	"io"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -336,6 +339,67 @@ func TestSetProxyRejectsInvalid(t *testing.T) {
 		if err != nil || got == nil || got.String() != "http://127.0.0.1:7890" {
 			t.Errorf("proxy after SetProxy(%q) = %v, %v, want the previous one", raw, got, err)
 		}
+	}
+}
+
+// TestIsNextURLExhausted checks only Pixiv's offset limit reads as the end of
+// the list; any other 400 body stays an ordinary error.
+func TestIsNextURLExhausted(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body string
+		want bool
+	}{
+		{"html", "<html><body>Bad Request</body></html>", false},
+		{"empty", "", false},
+		{"plain offset limit", `{"error":{"message":"offset must be no more than 5000"}}`, true},
+		{"nested offset limit", `{"error":{"message":"{\"offset\":[\"offset must be no more than 5000\"]}"}}`, true},
+		{"other message", `{"error":{"message":"invalid request"}}`, false},
+		{"other nested message", `{"error":{"message":"{\"offset\":[\"offset must be a number\"]}"}}`, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isNextURLExhausted([]byte(tt.body)); got != tt.want {
+				t.Errorf("isNextURLExhausted(%q) = %v, want %v", tt.body, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestBadRequestStatusClassification checks a 400 only becomes ErrNoMore for
+// the offset limit; other bodies keep the status and body in the error.
+func TestBadRequestStatusClassification(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body string
+		want error
+	}{
+		{"offset limit", `{"error":{"message":"{\"offset\":[\"offset must be no more than 5000\"]}"}}`, ErrNoMore},
+		{"html", "<html>bad request</html>", nil},
+		{"empty", "", nil},
+		{"other message", `{"error":{"message":"invalid request"}}`, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newWriteClient(t, func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusBadRequest)
+				io.WriteString(w, tt.body)
+			})
+			_, err := c.Recommended(context.Background())
+			if tt.want != nil {
+				if !errors.Is(err, tt.want) {
+					t.Fatalf("Recommended: err = %v, want %v", err, tt.want)
+				}
+				return
+			}
+			if err == nil || errors.Is(err, ErrNoMore) {
+				t.Fatalf("Recommended: err = %v, want an ordinary 400 error", err)
+			}
+			if !strings.Contains(err.Error(), "400 Bad Request") {
+				t.Errorf("err = %q, want the status", err)
+			}
+			if tt.body != "" && !strings.Contains(err.Error(), tt.body) {
+				t.Errorf("err = %q, want the body", err)
+			}
+		})
 	}
 }
 

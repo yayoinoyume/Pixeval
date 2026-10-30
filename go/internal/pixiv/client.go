@@ -529,8 +529,19 @@ var ErrForbidden = errors.New("pixiv: forbidden")
 var ErrNotFound = errors.New("pixiv: not found")
 
 func isNextURLExhausted(body []byte) bool {
-	// Pixiv answers 400 when next_url runs past the last page.
-	return len(body) > 0
+	// Pixiv answers 400 when next_url runs past the last page, but a 400 can
+	// also be a transient failure. Only the offset limit means the list ended.
+	var r struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &r); err != nil {
+		return false
+	}
+	// message is often a JSON string of field errors, e.g.
+	// {"offset":["offset must be no more than 5000"]}.
+	return strings.Contains(strings.ToLower(r.Error.Message), "offset must be no more")
 }
 
 func retryAfter(resp *http.Response) time.Duration {
