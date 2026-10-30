@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/yayoinoyume/pixeval-go/internal/pixiv"
 )
 
 // cursorTTL is how long a cursor a list tool handed out stays readable. A
@@ -19,14 +17,15 @@ const cursorTTL = 10 * time.Minute
 // the whole TTL. At the cap the entry that expires first is evicted.
 const cursorMaxEntries = 1024
 
-// cursorEntry is one paused work list: the next Pixiv page to fetch and the
-// works of the current page the caller has not seen yet. Keeping the tail of
-// the page means a limit smaller than Pixiv's page size skips nothing.
+// cursorEntry is one paused list: the next Pixiv page to fetch and the items
+// of the current page the caller has not seen yet. Keeping the tail of the
+// page means a limit smaller than Pixiv's page size skips nothing. pending is
+// the typed slice of the list's kind: works, users, novels or comments.
 type cursorEntry struct {
 	kind    string
 	account int64
 	nextURL string
-	pending []pixiv.Illustration
+	pending any
 	expires time.Time
 }
 
@@ -46,7 +45,7 @@ func newCursorStore() *cursorStore {
 // Put stores one paused list under a fresh token and returns it. Expired
 // entries are dropped on the way and the store never holds more than
 // cursorMaxEntries, so its memory is bounded even under a flood of cursors.
-func (s *cursorStore) Put(kind string, account int64, nextURL string, pending []pixiv.Illustration) string {
+func (s *cursorStore) Put(kind string, account int64, nextURL string, pending any) string {
 	token := rand.Text()
 	now := s.now()
 	s.mu.Lock()

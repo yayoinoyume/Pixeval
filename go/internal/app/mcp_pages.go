@@ -12,8 +12,11 @@ import (
 // server can hand the client a cursor and more can read the page after. The
 // unpaged Backend methods stay for the tools that only need one page.
 var (
-	_ mcp.PageBackend    = (*App)(nil)
-	_ mcp.AccountBackend = (*App)(nil)
+	_ mcp.PageBackend        = (*App)(nil)
+	_ mcp.UserPageBackend    = (*App)(nil)
+	_ mcp.NovelPageBackend   = (*App)(nil)
+	_ mcp.CommentPageBackend = (*App)(nil)
+	_ mcp.AccountBackend     = (*App)(nil)
 )
 
 // AccountID is the signed-in Pixiv account, or 0 when logged out; the MCP
@@ -82,4 +85,88 @@ func (a *App) MyPixivWorksPage(ctx context.Context, kind string) (*pixiv.Page[pi
 // tool.
 func (a *App) NextIllustsPage(ctx context.Context, nextURL string) (*pixiv.Page[pixiv.Illustration], error) {
 	return a.client.NextIllustrations(ctx, nextURL)
+}
+
+// SearchUsersPage returns the first page of a user search; the MCP paged user
+// search.
+func (a *App) SearchUsersPage(ctx context.Context, word string) (*pixiv.Page[pixiv.UserPreview], error) {
+	return a.client.SearchUsers(ctx, word)
+}
+
+// FollowingUsersPage returns a user's public follows; a zero userID means the
+// signed-in account.
+func (a *App) FollowingUsersPage(ctx context.Context, userID int64) (*pixiv.Page[pixiv.UserPreview], error) {
+	if userID <= 0 {
+		userID = a.signedInUserID()
+	}
+	if userID <= 0 {
+		return nil, errors.New("not signed in")
+	}
+	return a.client.UserFollowing(ctx, userID)
+}
+
+// FollowersPage returns the users following the signed-in account.
+func (a *App) FollowersPage(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error) {
+	userID := a.signedInUserID()
+	if userID <= 0 {
+		return nil, errors.New("not signed in")
+	}
+	return a.client.UserFollowers(ctx, userID)
+}
+
+// MyPixivUsersPage returns a user's MyPixiv users.
+func (a *App) MyPixivUsersPage(ctx context.Context, userID int64) (*pixiv.Page[pixiv.UserPreview], error) {
+	return a.client.UserMyPixiv(ctx, userID)
+}
+
+// RelatedUsersPage returns the users Pixiv lists beside userID.
+func (a *App) RelatedUsersPage(ctx context.Context, userID int64) (*pixiv.Page[pixiv.UserPreview], error) {
+	return a.client.RelatedUsers(ctx, userID)
+}
+
+// RecommendedUsersPage returns Pixiv's recommended users.
+func (a *App) RecommendedUsersPage(ctx context.Context) (*pixiv.Page[pixiv.UserPreview], error) {
+	return a.client.RecommendedUsers(ctx)
+}
+
+// NextUserPreviewsPage loads the next page of a user list.
+func (a *App) NextUserPreviewsPage(ctx context.Context, nextURL string) (*pixiv.Page[pixiv.UserPreview], error) {
+	return a.client.NextUserPreviews(ctx, nextURL)
+}
+
+// NextRecommendedUsersPage loads the next page of recommended users, whose
+// pages carry plain users instead of user previews.
+func (a *App) NextRecommendedUsersPage(ctx context.Context, nextURL string) (*pixiv.Page[pixiv.UserPreview], error) {
+	return a.client.NextRecommendedUsers(ctx, nextURL)
+}
+
+// SearchNovelsPage returns the first page of a novel search.
+func (a *App) SearchNovelsPage(ctx context.Context, word string) (*pixiv.Page[pixiv.Novel], error) {
+	return a.client.SearchNovels(ctx, pixiv.SearchOptions{Word: word})
+}
+
+// NextNovelsPage loads the next page of a novel list.
+func (a *App) NextNovelsPage(ctx context.Context, nextURL string) (*pixiv.Page[pixiv.Novel], error) {
+	return a.client.NextNovels(ctx, nextURL)
+}
+
+// CommentsPage returns the first page of comments on an illustration.
+func (a *App) CommentsPage(ctx context.Context, illustID int64) (*pixiv.Page[pixiv.Comment], error) {
+	if a.fetchCommentPage == nil {
+		return nil, errors.New("comments are unavailable")
+	}
+	return a.fetchCommentPage(ctx, illustID, 0)
+}
+
+// NovelCommentsPage returns the first page of comments on a novel.
+func (a *App) NovelCommentsPage(ctx context.Context, novelID int64) (*pixiv.Page[pixiv.Comment], error) {
+	if a.fetchNovelCommentPage == nil {
+		return nil, errors.New("novel comments are unavailable")
+	}
+	return a.fetchNovelCommentPage(ctx, novelID, 0)
+}
+
+// NextCommentsPage loads the next page of a comment list.
+func (a *App) NextCommentsPage(ctx context.Context, nextURL string) (*pixiv.Page[pixiv.Comment], error) {
+	return a.client.NextComments(ctx, nextURL)
 }
