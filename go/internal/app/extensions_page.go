@@ -22,8 +22,10 @@ func (a *App) openExtensions() {
 func (a *App) extensionsPage(c *ui.Context) {
 	t := themeOf(c)
 	var list []ext.Extension
+	var invalid []ext.InvalidExtension
 	if a.extensions != nil {
 		list = a.extensions.Extensions()
+		invalid = a.extensions.InvalidExtensions()
 	}
 	a.infoPage(c, func() {
 		ui.Row(c).FillWidth().Gap(t.SpaceS).Justify(ui.End).Children(func() {
@@ -40,13 +42,16 @@ func (a *App) extensionsPage(c *ui.Context) {
 			})
 			return
 		}
-		if len(list) == 0 {
+		if len(list) == 0 && len(invalid) == 0 {
 			a.infoCard(c, func() {
 				ui.Column(c).Gap(t.SpaceXS).Children(func() {
 					ui.Text(c, a.t("ext.empty")).FontSize(t.TextTitle).FontWeight(600).TextColor(t.Text)
 					ui.Text(c, a.t("ext.emptyHint")).FontSize(t.TextBody).LineHeight(1.6).TextColor(t.TextMuted)
 				})
 			})
+		}
+		for _, item := range invalid {
+			a.invalidExtensionCard(c, item)
 		}
 		for _, item := range list {
 			a.extensionCard(c, item)
@@ -70,6 +75,9 @@ func (a *App) extensionCard(c *ui.Context, item ext.Extension) {
 				ui.Text(c, item.Name).FontSize(t.TextBody).FontWeight(600).TextColor(t.Text).MaxLines(1)
 				ui.Text(c, a.tf("ext.version", item.Version)).FontSize(t.TextTiny).TextColor(t.TextMuted).MaxLines(1)
 			})
+			if ui.Button(c, a.tf("ext.reloadOne", item.Name)).Clicked() {
+				a.reloadExtension(c, item.ID)
+			}
 			a.extensionSwitch(c, item)
 		})
 		if item.Description != "" {
@@ -93,6 +101,23 @@ func (a *App) extensionCard(c *ui.Context, item ext.Extension) {
 		if item.Error != "" {
 			ui.Text(c, item.Error).FontSize(t.TextTiny).TextColor(t.Danger).MaxLines(3)
 		}
+	})
+}
+
+// invalidExtensionCard shows a folder whose manifest could not be read, so a
+// broken install is visible and can be retried after it is fixed.
+func (a *App) invalidExtensionCard(c *ui.Context, item ext.InvalidExtension) {
+	t := themeOf(c)
+	a.infoCard(c, func() {
+		ui.Row(c).FillWidth().Gap(t.SpaceM).AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Grow(1).MinWidth(0).Gap(2).Children(func() {
+				ui.Text(c, a.tf("ext.invalid", item.Folder)).FontSize(t.TextBody).FontWeight(600).TextColor(t.Danger).MaxLines(1)
+				ui.Text(c, item.Error).FontSize(t.TextTiny).TextColor(t.Danger).MaxLines(3)
+			})
+			if ui.Button(c, a.tf("ext.reloadOne", item.Folder)).Clicked() {
+				a.reloadExtension(c, item.Folder)
+			}
+		})
 	})
 }
 
@@ -144,6 +169,16 @@ func (a *App) reloadExtensions(c *ui.Context) {
 		return
 	}
 	if err := a.extensions.Reload(); err != nil {
+		c.Toast(a.tf("ext.reloadFailed", err.Error()))
+	}
+}
+
+// reloadExtension reads one folder again and stops its process.
+func (a *App) reloadExtension(c *ui.Context, id string) {
+	if a.extensions == nil {
+		return
+	}
+	if err := a.extensions.ReloadExtension(id); err != nil {
 		c.Toast(a.tf("ext.reloadFailed", err.Error()))
 	}
 }

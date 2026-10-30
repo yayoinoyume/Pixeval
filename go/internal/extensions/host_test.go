@@ -410,3 +410,176 @@ func TestOpenCreatesRoot(t *testing.T) {
 		t.Errorf("root mode %04o, want 0700", perm)
 	}
 }
+
+// TestHostInvalidManifests checks a folder without a usable manifest is shown
+// as an invalid extension instead of disappearing silently.
+func TestHostInvalidManifests(t *testing.T) {
+	root := t.TempDir()
+	installFakeExtension(t, root, "ok", "normal", nil)
+	if err := os.MkdirAll(filepath.Join(root, "missing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	badDir := filepath.Join(root, "bad")
+	if err := os.MkdirAll(badDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeManifest(t, badDir, Manifest{ID: "bad", Name: "n", Version: "v", Exec: "../escape"})
+
+	h := openTestHost(t, root)
+	if exts := h.Extensions(); len(exts) != 1 || exts[0].ID != "ok" {
+		t.Fatalf("extensions: %+v, want only ok", exts)
+	}
+	invalid := h.InvalidExtensions()
+	if len(invalid) != 2 || invalid[0].Folder != "bad" || invalid[1].Folder != "missing" {
+		t.Fatalf("invalid: %+v, want bad and missing", invalid)
+	}
+	for _, item := range invalid {
+		if item.Error == "" {
+			t.Errorf("invalid folder %q has no error", item.Folder)
+		}
+	}
+}
+
+// TestHostReloadExtension checks reloading one extension stops only its
+// process, clears its error and reads its new manifest.
+func TestHostReloadExtension(t *testing.T) {
+	root := t.TempDir()
+	installFakeExtension(t, root, "demo", "badhealth", nil)
+	installFakeExtension(t, root, "keep", "normal", nil)
+	h := openTestHost(t, root)
+	for _, id := range []string{"demo", "keep"} {
+		if err := h.SetEnabled(id, true); err != nil {
+			t.Fatalf("SetEnabled %s: %v", id, err)
+		}
+	}
+	if got := h.TransformDownloadName("name", DownloadContext{}); got != "x_name" {
+		t.Fatalf("transform %q, want x_name", got)
+	}
+	demo := h.Extensions()[0]
+	if demo.ID != "demo" || demo.Status != StatusError || demo.Error == "" {
+		t.Fatalf("demo after timeout: %+v", demo)
+	}
+	keepProc := h.procs["keep"]
+	if keepProc == nil {
+		t.Fatal("keep is not running")
+	}
+
+	dir := filepath.Join(root, "demo")
+	writeManifest(t, dir, Manifest{
+		ID: "demo", Name: "Demo demo", Version: "1.2.3", Description: "A fake extension",
+		Exec: "ext", Args: []string{"--mode=normal"}, Capabilities: []string{CapabilityDownloadName},
+	})
+	if err := h.ReloadExtension("demo"); err != nil {
+		t.Fatalf("ReloadExtension: %v", err)
+	}
+	if h.errors["demo"] != "" {
+		t.Errorf("error %q still set after reloading one extension", h.errors["demo"])
+	}
+	exts := h.Extensions()
+	if len(exts) != 2 || exts[0].ID != "demo" || exts[0].Status != StatusStopped {
+		t.Fatalf("extensions after ReloadExtension: %+v", exts)
+	}
+	if h.procs["keep"] != keepProc || keepProc.exited() {
+		t.Error("reloading demo stopped or replaced keep")
+	}
+
+	if got := h.TransformDownloadName("name", DownloadContext{}); got != "x_x_name" {
+		t.Fatalf("transform after reloading demo %q, want x_x_name", got)
+	}
+	demoProc := h.procs["demo"]
+	if demoProc == nil {
+		t.Fatal("demo did not start after it was fixed")
+	}
+	if err := h.ReloadExtension("demo"); err != nil {
+		t.Fatalf("ReloadExtension a running demo: %v", err)
+	}
+	if !demoProc.exited() {
+		t.Error("ReloadExtension did not stop demo's process")
+	}
+	if h.procs["keep"] != keepProc || keepProc.exited() {
+		t.Error("reloading demo stopped or replaced keep")
+	}
+	if got := h.TransformDownloadName("name", DownloadContext{}); got != "x_x_name" {
+		t.Errorf("transform after reloading a running demo %q, want x_x_name", got)
+	}
+}
+
+// TestHostReloadExtensionFixesInvalid checks a fixed manifest becomes a normal
+// extension and a deleted folder stops being listed.
+func TestHostReloadExtensionFixesInvalid(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "demo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeManifest(t, dir, Manifest{ID: "demo", Name: "Demo", Version: "1.0.0", Exec: "missing"})
+	h := openTestHost(t, root)
+	if invalid := h.InvalidExtensions(); len(invalid) != 1 || invalid[0].Folder != "demo" {
+		t.Fatalf("invalid before fixing: %+v", invalid)
+	}
+
+	installFakeExtension(t, root, "demo", "normal", nil)
+	if err := h.ReloadExtension("demo"); err != nil {
+		t.Fatalf("ReloadExtension after fixing: %v", err)
+	}
+	if invalid := h.InvalidExtensions(); len(invalid) != 0 {
+		t.Fatalf("invalid after fixing: %+v", invalid)
+	}
+	if exts := h.Extensions(); len(exts) != 1 || exts[0].ID != "demo" || exts[0].Enabled {
+		t.Fatalf("extensions after fixing: %+v", exts)
+	}
+
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.ReloadExtension("demo"); err != nil {
+		t.Fatalf("ReloadExtension after deleting: %v", err)
+	}
+	if exts := h.Extensions(); len(exts) != 0 {
+		t.Errorf("extensions after deleting: %+v", exts)
+	}
+	if invalid := h.InvalidExtensions(); len(invalid) != 0 {
+		t.Errorf("invalid after deleting: %+v", invalid)
+	}
+}
+
+// TestHostStopAllBudget checks StopAll caps each extension's shutdown, so a
+// few unresponsive extensions do not hold closing the window for seconds.
+func TestHostStopAllBudget(t *testing.T) {
+	root := t.TempDir()
+	ids := []string{"a", "b", "c"}
+	for _, id := range ids {
+		installFakeExtension(t, root, id, "hangshutdown", nil)
+	}
+	h := openTestHost(t, root)
+	for _, id := range ids {
+		if err := h.SetEnabled(id, true); err != nil {
+			t.Fatalf("SetEnabled %s: %v", id, err)
+		}
+	}
+	if got := h.TransformDownloadName("name", DownloadContext{}); got != "x_x_x_name" {
+		t.Fatalf("transform %q, want x_x_x_name", got)
+	}
+	procs := make([]*process, 0, len(ids))
+	for _, id := range ids {
+		p := h.procs[id]
+		if p == nil {
+			t.Fatalf("%s did not start", id)
+		}
+		procs = append(procs, p)
+	}
+
+	start := time.Now()
+	h.StopAll()
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("StopAll took %s, want under 3s", elapsed)
+	}
+	if len(h.procs) != 0 {
+		t.Errorf("%d processes left after StopAll", len(h.procs))
+	}
+	for _, p := range procs {
+		if !p.exited() {
+			t.Error("a process was not exited after StopAll")
+		}
+	}
+}

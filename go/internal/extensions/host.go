@@ -19,6 +19,12 @@ import (
 // initialize handshake and a download-name transform.
 const DefaultTimeout = 2 * time.Second
 
+// stopBudget bounds one extension's whole shutdown, request and wait, when
+// the host stops several at once. Three unresponsive extensions then delay
+// closing the window by about a second and a half, not by a full request
+// timeout each.
+const stopBudget = 500 * time.Millisecond
+
 // Status is what the host knows about one extension.
 type Status string
 
@@ -41,6 +47,14 @@ type Extension struct {
 	Error        string
 }
 
+// InvalidExtension is a folder under the extensions root that does not hold a
+// usable manifest. The page shows it, so a broken install is visible instead
+// of silently missing.
+type InvalidExtension struct {
+	Folder string
+	Error  string
+}
+
 // DownloadContext is what a download_name extension sees about the page it is
 // naming.
 type DownloadContext struct {
@@ -60,6 +74,7 @@ type Host struct {
 	statePath string
 	timeout   time.Duration
 	manifests []Manifest
+	invalid   []InvalidExtension
 	enabled   map[string]bool
 	procs     map[string]*process
 	errors    map[string]string
@@ -128,11 +143,12 @@ func (h *Host) reloadLocked() error {
 	h.stopAllLocked()
 	h.errors = map[string]string{}
 	h.enabled = loadEnabled(h.statePath)
-	manifests, err := discover(h.root)
+	manifests, invalid, err := discover(h.root)
 	if err != nil {
 		return err
 	}
 	h.manifests = manifests
+	h.invalid = invalid
 	known := make(map[string]bool, len(manifests))
 	for _, m := range manifests {
 		known[m.ID] = true
@@ -176,6 +192,47 @@ func (h *Host) Extensions() []Extension {
 		out = append(out, ext)
 	}
 	return out
+}
+
+// InvalidExtensions is the page's snapshot of folders that failed to load,
+// sorted by folder.
+func (h *Host) InvalidExtensions() []InvalidExtension {
+	if h == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]InvalidExtension(nil), h.invalid...)
+}
+
+// ReloadExtension stops id's process, clears its runtime error and reads its
+// folder again, leaving the other extensions alone. A manifest that is still
+// broken stays in InvalidExtensions; a folder that is gone disappears.
+func (h *Host) ReloadExtension(id string) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if id == "" || id == "." || id == ".." || filepath.Base(id) != id {
+		return fmt.Errorf("extensions: invalid folder %q", id)
+	}
+	if p := h.procs[id]; p != nil {
+		delete(h.procs, id)
+		p.stop(stopBudget)
+	}
+	delete(h.errors, id)
+	dir := filepath.Join(h.root, id)
+	m, err := loadManifest(dir)
+	if err != nil {
+		h.removeManifestLocked(id)
+		if _, statErr := os.Stat(dir); errors.Is(statErr, os.ErrNotExist) {
+			h.removeInvalidLocked(id)
+			return nil
+		}
+		h.setInvalidLocked(id, err)
+		return nil
+	}
+	h.removeInvalidLocked(id)
+	h.upsertManifestLocked(m)
+	return nil
 }
 
 // SetEnabled saves whether id runs on the next transform. Disabling stops a
@@ -280,7 +337,7 @@ func (h *Host) stopAllLocked() {
 	for _, id := range ids {
 		p := h.procs[id]
 		delete(h.procs, id)
-		p.stop(h.timeout)
+		p.stop(stopBudget)
 	}
 }
 
@@ -291,6 +348,48 @@ func (h *Host) manifestLocked(id string) (Manifest, bool) {
 		}
 	}
 	return Manifest{}, false
+}
+
+func (h *Host) upsertManifestLocked(m Manifest) {
+	for i := range h.manifests {
+		if h.manifests[i].ID == m.ID {
+			h.manifests[i] = m
+			return
+		}
+	}
+	h.manifests = append(h.manifests, m)
+	sort.Slice(h.manifests, func(i, j int) bool { return h.manifests[i].ID < h.manifests[j].ID })
+}
+
+func (h *Host) removeManifestLocked(id string) {
+	out := h.manifests[:0]
+	for _, m := range h.manifests {
+		if m.ID != id {
+			out = append(out, m)
+		}
+	}
+	h.manifests = out
+}
+
+func (h *Host) setInvalidLocked(folder string, err error) {
+	for i := range h.invalid {
+		if h.invalid[i].Folder == folder {
+			h.invalid[i].Error = err.Error()
+			return
+		}
+	}
+	h.invalid = append(h.invalid, InvalidExtension{Folder: folder, Error: err.Error()})
+	sort.Slice(h.invalid, func(i, j int) bool { return h.invalid[i].Folder < h.invalid[j].Folder })
+}
+
+func (h *Host) removeInvalidLocked(folder string) {
+	out := h.invalid[:0]
+	for _, item := range h.invalid {
+		if item.Folder != folder {
+			out = append(out, item)
+		}
+	}
+	h.invalid = out
 }
 
 func (h *Host) ensureLocked(m Manifest) (*process, error) {
@@ -315,6 +414,7 @@ func (h *Host) startLocked(m Manifest) (*process, error) {
 		return nil, err
 	}
 	cmd := exec.Command(execPath, m.Args...)
+	prepareProcess(cmd)
 	cmd.Dir = dir
 	cmd.Stderr = io.Discard
 	stdin, err := cmd.StdinPipe()

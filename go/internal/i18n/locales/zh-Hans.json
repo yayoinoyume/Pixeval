@@ -363,6 +363,8 @@
     "emptyHint": "把每个扩展放进这里单独的文件夹，并附上 extension.json。",
     "openFolder": "打开扩展文件夹",
     "reload": "重新加载",
+    "reloadOne": "重新加载 %s",
+    "invalid": "%s 中的扩展无效",
     "toggle": "启用 %s",
     "version": "版本 %s",
     "capabilities": "能力：%s",

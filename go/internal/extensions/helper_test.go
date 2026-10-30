@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -27,10 +29,18 @@ func TestMain(m *testing.M) {
 // comes from --mode=... in the manifest's args.
 func runExtensionHelper() {
 	mode := "normal"
+	pidFile := ""
 	for _, arg := range os.Args {
 		if strings.HasPrefix(arg, "--mode=") {
 			mode = strings.TrimPrefix(arg, "--mode=")
 		}
+		if strings.HasPrefix(arg, "--pidfile=") {
+			pidFile = strings.TrimPrefix(arg, "--pidfile=")
+		}
+	}
+	if mode == "hangchild" {
+		time.Sleep(10 * time.Second)
+		return
 	}
 	dec := json.NewDecoder(os.Stdin)
 	enc := json.NewEncoder(os.Stdout)
@@ -68,6 +78,22 @@ func runExtensionHelper() {
 			reply(req.ID, map[string]any{"ok": mode != "badhealth"})
 		case "transform_download_name":
 			switch mode {
+			case "spawnchild":
+				cmd := exec.Command(os.Args[0], "--mode=hangchild")
+				if err := cmd.Start(); err != nil {
+					fail(req.ID, err.Error())
+					continue
+				}
+				if pidFile == "" {
+					fail(req.ID, "missing --pidfile")
+					continue
+				}
+				if err := os.WriteFile(pidFile, []byte(strconv.Itoa(cmd.Process.Pid)), 0o600); err != nil {
+					fail(req.ID, err.Error())
+					continue
+				}
+				time.Sleep(10 * time.Second)
+				return
 			case "timeout":
 				time.Sleep(10 * time.Second)
 				return
@@ -105,6 +131,10 @@ func runExtensionHelper() {
 			}
 			reply(req.ID, map[string]any{"name": name})
 		case "shutdown":
+			if mode == "hangshutdown" {
+				time.Sleep(10 * time.Second)
+				return
+			}
 			reply(req.ID, map[string]any{})
 			return
 		default:
@@ -117,6 +147,12 @@ func runExtensionHelper() {
 // executable is a hard link (or copy) of this test binary, so no external
 // binary or network is involved.
 func installFakeExtension(t *testing.T, root, id, mode string, capabilities []string) string {
+	return installFakeExtensionArgs(t, root, id, mode, capabilities)
+}
+
+// installFakeExtensionArgs is installFakeExtension with extra command-line
+// arguments, such as a path the extension writes.
+func installFakeExtensionArgs(t *testing.T, root, id, mode string, capabilities []string, extra ...string) string {
 	t.Helper()
 	if capabilities == nil {
 		capabilities = []string{CapabilityDownloadName}
@@ -139,7 +175,7 @@ func installFakeExtension(t *testing.T, root, id, mode string, capabilities []st
 		Version:      "1.2.3",
 		Description:  "A fake extension",
 		Exec:         "ext",
-		Args:         []string{"--mode=" + mode},
+		Args:         append([]string{"--mode=" + mode}, extra...),
 		Capabilities: capabilities,
 	})
 	return dir

@@ -107,9 +107,7 @@ func (p *process) call(method string, params any, timeout time.Duration) (json.R
 	select {
 	case <-timer.C:
 		p.broken = true
-		if p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
-		}
+		killProcess(p.cmd.Process)
 		return nil, fmt.Errorf("extensions: %s timed out after %s", method, timeout)
 	case result := <-lines:
 		if result.err != nil {
@@ -126,34 +124,38 @@ func (p *process) call(method string, params any, timeout time.Duration) (json.R
 	}
 }
 
-// stop asks the extension to shut down, then waits for it to exit. A process
-// that does not answer or exit in time is killed, so closing the app cannot
-// leave it behind.
+// stop asks the extension to shut down, then waits for it to exit. timeout is
+// the whole budget for the request and the wait. On Linux a kill stops the
+// extension's process group, so a wrapper script's children do not outlive
+// it; other systems kill only the direct child.
 func (p *process) stop(timeout time.Duration) {
 	p.stopOnce.Do(func() {
+		deadline := time.Now().Add(timeout)
 		p.mu.Lock()
 		broken := p.broken
 		p.mu.Unlock()
 		if !broken {
-			_, _ = p.call("shutdown", nil, timeout)
+			_, _ = p.call("shutdown", nil, time.Until(deadline))
 		}
 		p.mu.Lock()
 		broken = p.broken
 		p.mu.Unlock()
-		if broken && p.cmd.Process != nil {
-			_ = p.cmd.Process.Kill()
+		if broken {
+			killProcess(p.cmd.Process)
 		}
 		done := make(chan struct{})
 		go func() {
 			_ = p.cmd.Wait()
 			close(done)
 		}()
+		remaining := time.Until(deadline)
+		if remaining < 0 {
+			remaining = 0
+		}
 		select {
 		case <-done:
-		case <-time.After(timeout):
-			if p.cmd.Process != nil {
-				_ = p.cmd.Process.Kill()
-			}
+		case <-time.After(remaining):
+			killProcess(p.cmd.Process)
 			<-done
 		}
 		_ = p.stdin.Close()

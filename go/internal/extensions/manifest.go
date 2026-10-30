@@ -119,15 +119,16 @@ func manifestExecPath(dir, exec string) (string, error) {
 	return target, nil
 }
 
-// discover reads the valid extensions under root, sorted by id. A folder with
-// no readable manifest, an invalid manifest or a manifest for another id is
-// skipped rather than stopping the host.
-func discover(root string) ([]Manifest, error) {
+// discover reads the valid extensions under root, sorted by id, and reports
+// every folder that has no usable manifest. A broken folder is listed rather
+// than stopping the host or silently disappearing.
+func discover(root string) ([]Manifest, []InvalidExtension, error) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var manifests []Manifest
+	var invalid []InvalidExtension
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
@@ -135,15 +136,21 @@ func discover(root string) ([]Manifest, error) {
 		dir := filepath.Join(root, entry.Name())
 		m, err := loadManifest(dir)
 		if err != nil {
+			invalid = append(invalid, InvalidExtension{Folder: entry.Name(), Error: err.Error()})
 			continue
 		}
 		if m.ID != entry.Name() {
+			invalid = append(invalid, InvalidExtension{
+				Folder: entry.Name(),
+				Error:  fmt.Sprintf("manifest: id %q does not match folder", m.ID),
+			})
 			continue
 		}
 		manifests = append(manifests, m)
 	}
 	sort.Slice(manifests, func(i, j int) bool { return manifests[i].ID < manifests[j].ID })
-	return manifests, nil
+	sort.Slice(invalid, func(i, j int) bool { return invalid[i].Folder < invalid[j].Folder })
+	return manifests, invalid, nil
 }
 
 // hasCapability reports whether m declares capability.
