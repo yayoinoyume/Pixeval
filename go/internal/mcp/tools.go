@@ -888,11 +888,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if strings.TrimSpace(args.Word) == "" {
 			return callResult{}, errors.New("word is required")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := userPageOf(b, func(ub UserPageBackend) (*pixiv.Page[pixiv.UserPreview], error) {
+			return ub.SearchUsersPage(ctx, args.Word)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedUsersResult(cursors, accountID, "search_users", page.Items, page.NextURL, limit), nil
+		}
 		users, err := b.SearchUsers(ctx, args.Word)
 		if err != nil {
 			return failure(err), nil
 		}
-		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+		return usersResult(limitItems(users, limit)), nil
 	case "user_detail":
 		var args struct {
 			ID int64 `json:"id"`
@@ -975,11 +984,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if strings.TrimSpace(args.Word) == "" {
 			return callResult{}, errors.New("word is required")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := novelPageOf(b, func(nb NovelPageBackend) (*pixiv.Page[pixiv.Novel], error) {
+			return nb.SearchNovelsPage(ctx, args.Word)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedNovelsResult(cursors, accountID, "search_novels", page.Items, page.NextURL, limit), nil
+		}
 		novels, err := b.SearchNovels(ctx, args.Word)
 		if err != nil {
 			return failure(err), nil
 		}
-		return novelsResult(limitItems(novels, clampListLimit(args.Limit))), nil
+		return novelsResult(limitItems(novels, limit)), nil
 	case "novel_comments":
 		var args struct {
 			ID    int64 `json:"id"`
@@ -991,11 +1009,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if args.ID <= 0 {
 			return callResult{}, errors.New("id is required")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := commentPageOf(b, func(cb CommentPageBackend) (*pixiv.Page[pixiv.Comment], error) {
+			return cb.NovelCommentsPage(ctx, args.ID)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedCommentsResult(cursors, accountID, "novel_comments", page.Items, page.NextURL, limit), nil
+		}
 		comments, err := b.NovelComments(ctx, args.ID)
 		if err != nil {
 			return failure(err), nil
 		}
-		return commentsResult(limitItems(comments, clampListLimit(args.Limit))), nil
+		return commentsResult(limitItems(comments, limit)), nil
 	case "watch_later":
 		var args struct {
 			Limit int `json:"limit"`
@@ -1153,11 +1180,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if args.ID < 0 {
 			return callResult{}, errors.New("id must not be negative")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := userPageOf(b, func(ub UserPageBackend) (*pixiv.Page[pixiv.UserPreview], error) {
+			return ub.FollowingUsersPage(ctx, args.ID)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedUsersResult(cursors, accountID, "following_users", page.Items, page.NextURL, limit), nil
+		}
 		users, err := b.FollowingUsers(ctx, args.ID)
 		if err != nil {
 			return failure(err), nil
 		}
-		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+		return usersResult(limitItems(users, limit)), nil
 	case "followers":
 		var args struct {
 			Limit int `json:"limit"`
@@ -1165,11 +1201,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if err := decodeArgs(raw, &args); err != nil {
 			return callResult{}, err
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := userPageOf(b, func(ub UserPageBackend) (*pixiv.Page[pixiv.UserPreview], error) {
+			return ub.FollowersPage(ctx)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedUsersResult(cursors, accountID, "followers", page.Items, page.NextURL, limit), nil
+		}
 		users, err := b.Followers(ctx)
 		if err != nil {
 			return failure(err), nil
 		}
-		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+		return usersResult(limitItems(users, limit)), nil
 	case "my_pixiv_users":
 		var args struct {
 			ID    int64 `json:"id"`
@@ -1181,11 +1226,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if args.ID <= 0 {
 			return callResult{}, errors.New("id is required")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := userPageOf(b, func(ub UserPageBackend) (*pixiv.Page[pixiv.UserPreview], error) {
+			return ub.MyPixivUsersPage(ctx, args.ID)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedUsersResult(cursors, accountID, "my_pixiv_users", page.Items, page.NextURL, limit), nil
+		}
 		users, err := b.MyPixivUsers(ctx, args.ID)
 		if err != nil {
 			return failure(err), nil
 		}
-		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+		return usersResult(limitItems(users, limit)), nil
 	case "related_users":
 		var args struct {
 			ID    int64 `json:"id"`
@@ -1197,11 +1251,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if args.ID <= 0 {
 			return callResult{}, errors.New("id is required")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := userPageOf(b, func(ub UserPageBackend) (*pixiv.Page[pixiv.UserPreview], error) {
+			return ub.RelatedUsersPage(ctx, args.ID)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedUsersResult(cursors, accountID, "related_users", page.Items, page.NextURL, limit), nil
+		}
 		users, err := b.RelatedUsers(ctx, args.ID)
 		if err != nil {
 			return failure(err), nil
 		}
-		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+		return usersResult(limitItems(users, limit)), nil
 	case "series_watchlist":
 		var args struct {
 			Kind  string `json:"kind"`
@@ -1331,11 +1394,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if err := decodeArgs(raw, &args); err != nil {
 			return callResult{}, err
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := userPageOf(b, func(ub UserPageBackend) (*pixiv.Page[pixiv.UserPreview], error) {
+			return ub.RecommendedUsersPage(ctx)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedUsersResult(cursors, accountID, "recommended_users", page.Items, page.NextURL, limit), nil
+		}
 		users, err := b.RecommendedUsers(ctx)
 		if err != nil {
 			return failure(err), nil
 		}
-		return usersResult(limitItems(users, clampListLimit(args.Limit))), nil
+		return usersResult(limitItems(users, limit)), nil
 	case "comments":
 		var args struct {
 			ID    int64 `json:"id"`
@@ -1347,11 +1419,20 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 		if args.ID <= 0 {
 			return callResult{}, errors.New("id is required")
 		}
+		limit := clampListLimit(args.Limit)
+		if page, ok, err := commentPageOf(b, func(cb CommentPageBackend) (*pixiv.Page[pixiv.Comment], error) {
+			return cb.CommentsPage(ctx, args.ID)
+		}); ok {
+			if err != nil {
+				return failure(err), nil
+			}
+			return pagedCommentsResult(cursors, accountID, "comments", page.Items, page.NextURL, limit), nil
+		}
 		comments, err := b.Comments(ctx, args.ID)
 		if err != nil {
 			return failure(err), nil
 		}
-		return commentsResult(limitItems(comments, clampListLimit(args.Limit))), nil
+		return commentsResult(limitItems(comments, limit)), nil
 	case "works":
 		var args struct {
 			IDs   []int64 `json:"ids"`
@@ -1598,20 +1679,61 @@ func runTool(ctx context.Context, b Backend, cursors *cursorStore, name string, 
 			return callResult{}, err
 		}
 		limit := clampListLimit(args.Count)
-		if len(entry.pending) > 0 {
-			return pagedWorksResult(cursors, accountID, entry.kind, entry.pending, entry.nextURL, limit), nil
+		switch entry.kind {
+		case "search_illustrations", "recommended", "ranking", "user_illusts",
+			"user_bookmarks", "related_illustrations", "new_works",
+			"following_works", "my_pixiv_works":
+			if works, _ := entry.pending.([]pixiv.Illustration); len(works) > 0 {
+				return pagedWorksResult(cursors, accountID, entry.kind, works, entry.nextURL, limit), nil
+			}
+			if entry.nextURL == "" {
+				return callResult{}, errors.New("cursor has no more results")
+			}
+			page, err := nextWorksPage(ctx, b, entry.nextURL)
+			if err != nil {
+				return nextPageFailure(cursors, token, entry, err), nil
+			}
+			return pagedWorksResult(cursors, accountID, entry.kind, page.Items, page.NextURL, limit), nil
+		case "search_users", "following_users", "followers", "my_pixiv_users",
+			"related_users", "recommended_users":
+			if users, _ := entry.pending.([]pixiv.UserPreview); len(users) > 0 {
+				return pagedUsersResult(cursors, accountID, entry.kind, users, entry.nextURL, limit), nil
+			}
+			if entry.nextURL == "" {
+				return callResult{}, errors.New("cursor has no more results")
+			}
+			page, err := nextUsersPage(ctx, b, entry.kind, entry.nextURL)
+			if err != nil {
+				return nextPageFailure(cursors, token, entry, err), nil
+			}
+			return pagedUsersResult(cursors, accountID, entry.kind, page.Items, page.NextURL, limit), nil
+		case "search_novels":
+			if novels, _ := entry.pending.([]pixiv.Novel); len(novels) > 0 {
+				return pagedNovelsResult(cursors, accountID, entry.kind, novels, entry.nextURL, limit), nil
+			}
+			if entry.nextURL == "" {
+				return callResult{}, errors.New("cursor has no more results")
+			}
+			page, err := nextNovelsPage(ctx, b, entry.nextURL)
+			if err != nil {
+				return nextPageFailure(cursors, token, entry, err), nil
+			}
+			return pagedNovelsResult(cursors, accountID, entry.kind, page.Items, page.NextURL, limit), nil
+		case "comments", "novel_comments":
+			if comments, _ := entry.pending.([]pixiv.Comment); len(comments) > 0 {
+				return pagedCommentsResult(cursors, accountID, entry.kind, comments, entry.nextURL, limit), nil
+			}
+			if entry.nextURL == "" {
+				return callResult{}, errors.New("cursor has no more results")
+			}
+			page, err := nextCommentsPage(ctx, b, entry.nextURL)
+			if err != nil {
+				return nextPageFailure(cursors, token, entry, err), nil
+			}
+			return pagedCommentsResult(cursors, accountID, entry.kind, page.Items, page.NextURL, limit), nil
+		default:
+			return callResult{}, fmt.Errorf("cursor belongs to unknown list %q", entry.kind)
 		}
-		if entry.nextURL == "" {
-			return callResult{}, errors.New("cursor has no more results")
-		}
-		page, err := nextWorksPage(ctx, b, entry.nextURL)
-		if err != nil {
-			// Put the cursor back so a network failure does not cost the caller
-			// its place in the list: the same token retries the same page.
-			cursors.Restore(token, entry)
-			return failure(fmt.Errorf("%w; retry with the same cursor", err)), nil
-		}
-		return pagedWorksResult(cursors, accountID, entry.kind, page.Items, page.NextURL, limit), nil
 	default:
 		return callResult{}, fmt.Errorf("unknown tool: %q", name)
 	}

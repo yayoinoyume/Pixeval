@@ -24,8 +24,12 @@ func TestCursorPutTake(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Take: %v", err)
 	}
-	if entry.nextURL != "https://api/next?offset=2" || len(entry.pending) != 1 || entry.pending[0].ID != 2 {
-		t.Errorf("entry %+v", entry)
+	if entry.nextURL != "https://api/next?offset=2" {
+		t.Errorf("nextURL = %q", entry.nextURL)
+	}
+	works, ok := entry.pending.([]pixiv.Illustration)
+	if !ok || len(works) != 1 || works[0].ID != 2 {
+		t.Errorf("pending %+v", entry.pending)
 	}
 	if _, err := s.Take(token, 7, "search_illustrations"); err == nil {
 		t.Error("a consumed cursor was read twice")
