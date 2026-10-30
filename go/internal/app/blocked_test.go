@@ -226,7 +226,7 @@ func TestSettingsPageUnblockUser(t *testing.T) {
 	a := New()
 	a.blocked.Add(BlockedUser{ID: 7, Name: "画师七"})
 	a.route = routeSettings
-	tt := ui.NewTester(a.View, 1000, 1800)
+	tt := ui.NewTester(a.View, 1000, 2000)
 	if !tt.HasText(a.tf("block.count", 1)) {
 		t.Fatalf("count missing: %q", tt.Texts())
 	}

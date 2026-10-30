@@ -180,6 +180,234 @@ func TestSettingsPageNetworkAdvanced(t *testing.T) {
 	}
 }
 
+// TestSettingsPageNetworkSummary checks the folded network card says which mode
+// is active, so the user does not have to open it to know, and that opening it
+// restores the original hint and controls.
+func TestSettingsPageNetworkSummary(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		proxy    string
+		fronting bool
+		mode     string
+		want     func(*App) string
+	}{
+		{
+			name: "direct",
+			want: func(a *App) string { return a.t("settings.networkSummaryDirect") },
+		},
+		{
+			name:  "proxy",
+			proxy: "http://127.0.0.1:7890",
+			want:  func(a *App) string { return a.t("settings.networkSummaryProxy") },
+		},
+		{
+			name:     "fronting resolver",
+			fronting: true,
+			mode:     pixiv.DomainFrontingResolver,
+			want: func(a *App) string {
+				return a.tf("settings.networkSummaryFronting", a.t("settings.frontingResolver"))
+			},
+		},
+		{
+			name:     "fronting fragmentation",
+			fronting: true,
+			mode:     pixiv.DomainFrontingFragmentation,
+			want: func(a *App) string {
+				return a.tf("settings.networkSummaryFronting", a.t("settings.frontingFragmentation"))
+			},
+		},
+		{
+			name:     "proxy wins over fronting",
+			proxy:    "socks5://127.0.0.1:1080",
+			fronting: true,
+			mode:     pixiv.DomainFrontingResolver,
+			want:     func(a *App) string { return a.t("settings.networkSummaryProxy") },
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			a := New()
+			a.settings.ProxyURL = tc.proxy
+			a.settings.PixivDomainFronting = tc.fronting
+			a.settings.PixivDomainFrontingType = tc.mode
+			a.route = routeSettings
+			tt := ui.NewTester(a.View, 1000, 1800)
+			tt.Frame()
+			want := tc.want(a)
+			if !tt.HasText(want) {
+				t.Fatalf("folded summary %q missing: %q", want, tt.Texts())
+			}
+			if tt.HasText(a.t("settings.appAPIResolver")) {
+				t.Fatalf("advanced fields are open by default: %q", tt.Texts())
+			}
+			if err := tt.Click(a.t("settings.networkAdvanced")); err != nil {
+				t.Fatalf("Click: %v", err)
+			}
+			tt.Frame()
+			if tt.HasText(want) {
+				t.Errorf("summary %q still shown after opening the card", want)
+			}
+			if !tt.HasText(a.t("settings.proxyHint")) {
+				t.Errorf("original proxy hint missing after opening: %q", tt.Texts())
+			}
+			if !tt.HasText(a.t("settings.appAPIResolver")) {
+				t.Errorf("advanced fields missing after opening: %q", tt.Texts())
+			}
+		})
+	}
+}
+
+// TestSettingsPageAboutOrder checks the About card reads top to bottom as the
+// shortcuts row, the Help/About/update row, its update status, then the
+// Extensions card on its own after it.
+func TestSettingsPageAboutOrder(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.updater = &fakeUpdater{enabled: false}
+	a.updateSt.off = true
+	a.route = routeSettings
+	const width, height = 1000, 2800
+	tt := ui.NewTester(a.View, width, height)
+	tt.Frame()
+
+	find := func(key string) ui.Rect {
+		t.Helper()
+		r, ok := tt.Find(a.t(key))
+		if !ok || r.W == 0 || r.H == 0 {
+			t.Fatalf("%q is not laid out: %q", key, tt.Texts())
+		}
+		if r.X < 0 || r.X+r.W > width || r.Y < 0 || r.Y+r.H > height {
+			t.Fatalf("%q at %v is outside the %d by %d window", key, r, width, height)
+		}
+		return r
+	}
+
+	shortcuts := find("settings.groupShortcuts")
+	updates := find("settings.updates")
+	help := find("help.title")
+	// The About button is labeled with its full name, so it is not confused
+	// with the About card's title.
+	aboutButton, ok := tt.Find(a.t("about.title") + " Pixeval Go")
+	if !ok || aboutButton.W == 0 || aboutButton.H == 0 {
+		t.Fatalf("the About button is not laid out: %q", tt.Texts())
+	}
+	check := find("settings.checkUpdate")
+	status := find("settings.updatesOff")
+	extensions := find("ext.settingsHint")
+
+	// The shortcuts row comes before the row of actions.
+	if shortcuts.Y+shortcuts.H > help.Y {
+		t.Errorf("shortcuts row at %v is not above the actions row at %v", shortcuts, help)
+	}
+	// Help, About and Check update share one row, with the row's label.
+	center := func(r ui.Rect) float32 { return r.Y + r.H/2 }
+	rowY := center(help)
+	for name, r := range map[string]ui.Rect{
+		"about":         aboutButton,
+		"check update":  check,
+		"updates label": updates,
+	} {
+		if abs32(center(r)-rowY) > 0.5 {
+			t.Errorf("%s at %v is not on the actions row at %v", name, r, rowY)
+		}
+	}
+	// The update status follows the row, and the Extensions card follows the
+	// About card.
+	if status.Y < help.Y+help.H {
+		t.Errorf("update status at %v is not below the actions row at %v", status, help)
+	}
+	if extensions.Y < status.Y+status.H {
+		t.Errorf("Extensions row at %v is not below the About status at %v", extensions, status)
+	}
+}
+
+// TestSettingsPageMCPRowFitsNarrowWindow checks the MCP token row in a 1024 by
+// 720 window: its label and both buttons stay inside the page, and Copy and
+// Regenerate still work there.
+func TestSettingsPageMCPRowFitsNarrowWindow(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.settings.MCPToken = "narrow-token"
+	var copied string
+	a.clipboardWriteText = func(text string) error {
+		copied = text
+		return nil
+	}
+	a.route = routeSettings
+	const width, height = 1024, 720
+	tt := ui.NewTester(a.View, width, height)
+	tt.Frame()
+	// The MCP card is near the bottom of the page; scroll there as a user
+	// would instead of growing the window.
+	tt.Scroll(width/2, height/2, 0, 4000)
+	tt.Frame()
+
+	for _, key := range []string{
+		"settings.groupMCP",
+		"settings.mcpToken",
+		"settings.mcpCopy",
+		"settings.mcpRegenerate",
+	} {
+		r, ok := tt.Find(a.t(key))
+		if !ok || r.W == 0 || r.H == 0 {
+			t.Fatalf("%q is not laid out in the narrow window: %q", key, tt.Texts())
+		}
+		if r.X < 0 || r.X+r.W > width-contentPadding || r.Y < 0 || r.Y+r.H > height {
+			t.Errorf("%q at %v is outside the %d by %d page", key, r, width, height)
+		}
+	}
+
+	if err := tt.Click(a.t("settings.mcpCopy")); err != nil {
+		t.Fatalf("Click copy: %v", err)
+	}
+	tt.Frame()
+	if copied != "narrow-token" {
+		t.Errorf("clipboard got %q, want the token", copied)
+	}
+	if err := tt.Click(a.t("settings.mcpRegenerate")); err != nil {
+		t.Fatalf("Click regenerate: %v", err)
+	}
+	tt.Frame()
+	if token := a.settings.MCPToken; token == "" || token == "narrow-token" {
+		t.Errorf("token %q after regenerating, want a new one", token)
+	}
+}
+
+// TestSettingsPageExtensionsCardFitsNarrowWindow checks the Extensions card
+// stays inside a 1024 by 720 window after the About card, and scrolling brings
+// it into view.
+func TestSettingsPageExtensionsCardFitsNarrowWindow(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	a := New()
+	a.route = routeSettings
+	const width, height = 1024, 720
+	tt := ui.NewTester(a.View, width, height)
+	tt.Frame()
+
+	about, ok := tt.Find(a.t("settings.groupAbout"))
+	if !ok {
+		t.Fatalf("the About card is not laid out: %q", tt.Texts())
+	}
+	hint, ok := tt.Find(a.t("ext.settingsHint"))
+	if !ok {
+		t.Fatalf("the Extensions row is not laid out: %q", tt.Texts())
+	}
+	if hint.Y < about.Y {
+		t.Errorf("Extensions row at %v is not below the About card at %v", hint, about)
+	}
+	// The card is below the fold at this height; scroll to it as a user would.
+	tt.Scroll(width/2, height/2, 0, hint.Y-200)
+	tt.Frame()
+	hint, ok = tt.Find(a.t("ext.settingsHint"))
+	if !ok || hint.W == 0 || hint.H == 0 {
+		t.Fatalf("the Extensions row did not come into view: %q", tt.Texts())
+	}
+	if hint.X < contentPadding || hint.X+hint.W > width-contentPadding ||
+		hint.Y < 0 || hint.Y+hint.H > height {
+		t.Errorf("the Extensions row at %v is outside the %d by %d page", hint, width, height)
+	}
+}
+
 // TestSettingsPageGroupTitles checks every card is titled, and that a card's
 // title reads as a heading for its rows: smaller than their labels, above
 // them, and inside the window.
