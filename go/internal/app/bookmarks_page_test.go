@@ -206,6 +206,56 @@ func TestBookmarksUnbookmarkFailureReloads(t *testing.T) {
 	}
 }
 
+// TestBookmarksUnbookmarkFailureReloadsItsTab checks a failed request reloads
+// the tab it removed the work from even after another tab took the page, and
+// leaves the tab now showing alone.
+func TestBookmarksUnbookmarkFailureReloadsItsTab(t *testing.T) {
+	a := newBookmarksApp(t)
+	a.bookmarksPageFn = func(context.Context, bool, string) (*pixiv.Page[pixiv.Illustration], error) {
+		return &pixiv.Page[pixiv.Illustration]{Items: fakeWorks(0, 2)}, nil
+	}
+	release := make(chan struct{})
+	a.bookmarkFn = func(context.Context, int64, bool) error {
+		<-release
+		return errors.New("网络错误")
+	}
+	tt := ui.NewTester(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() { a.bookmarksPage(c) })
+	}, 1000, 700)
+	waitBrowse(t, a.bookmarks, "load the works", func(v browseView) bool { return len(v.items) == 2 })
+	tt.Frame()
+	first := a.bookmarks
+
+	// A second tab opens the page, so the first tab's list is kept while
+	// another one shows.
+	a.newTab()
+	a.goRoute(routeBookmarks)
+	second := a.bookmarks
+	if second == first {
+		t.Fatal("the second tab reused the first tab's bookmarks feed")
+	}
+
+	a.switchTab(0)
+	tt.Frame()
+	if err := tt.RightClick("作品 1"); err != nil {
+		t.Fatalf("RightClick: %v", err)
+	}
+	if err := tt.ChooseMenuItem("取消收藏"); err != nil {
+		t.Fatalf("ChooseMenuItem: %v", err)
+	}
+	a.switchTab(1)
+	close(release)
+	waitBrowse(t, first, "reload the first tab's list", func(v browseView) bool {
+		return len(v.items) == 2
+	})
+	if got := first.snapshot().items; len(got) != 2 || got[1].ID != 1 {
+		t.Errorf("the restored work is missing: %+v", got)
+	}
+	if a.bookmarks != second {
+		t.Error("the failure took over the tab now showing")
+	}
+}
+
 // TestBookmarksDownloadLoaded checks the loaded bookmarks queue their pages
 // from the header button.
 func TestBookmarksDownloadLoaded(t *testing.T) {

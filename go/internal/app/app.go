@@ -469,6 +469,9 @@ func (a *App) loadLanguage() {
 	}
 	a.bundle = b
 	a.lang = b.Lang()
+	// Every tab's title is saved text, so the ones not showing must be
+	// translated too.
+	a.retitleTabs()
 }
 
 // t is the message for key in the current language.

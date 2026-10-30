@@ -220,18 +220,8 @@ func (a *App) blockedUsersSnapshot() []BlockedUser {
 // removeBlockedFromLists drops the user's works and entries from the feeds and
 // lists loaded already, so a block takes effect on the current page at once.
 func (a *App) removeBlockedFromLists(userID int64) {
-	feeds := []*browseState{a.newFeed, a.myPixivFeed, a.search, a.bookmarks}
+	feeds := a.tabFeeds()
 	feeds = append(feeds, a.homeCardFeeds()...)
-	if a.feed != nil {
-		feeds = append(feeds, a.feed.st)
-	}
-	if a.related != nil {
-		feeds = append(feeds, a.related.feed)
-	}
-	if a.userView != nil {
-		feeds = append(feeds, a.userView.feed, a.userView.mangaFeed,
-			a.userView.bookmarksFeed, a.userView.bookmarksPrivateFeed)
-	}
 	for _, st := range feeds {
 		if st != nil {
 			st.removeAuthor(userID)
