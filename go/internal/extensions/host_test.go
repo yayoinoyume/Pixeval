@@ -119,6 +119,48 @@ func TestHostTimeout(t *testing.T) {
 	}
 }
 
+// TestHostBrokenExtensionNotRestarted checks a broken extension is not started
+// again on every transform: only the first call waits for the timeout, later
+// calls fall back to the previous name immediately.
+func TestHostBrokenExtensionNotRestarted(t *testing.T) {
+	root := t.TempDir()
+	installFakeExtension(t, root, "demo", "timeout", nil)
+	h := openTestHost(t, root)
+	h.timeout = 300 * time.Millisecond
+	if err := h.SetEnabled("demo", true); err != nil {
+		t.Fatalf("SetEnabled: %v", err)
+	}
+	if got := h.TransformDownloadName("7_001.jpg", DownloadContext{}); got != "7_001.jpg" {
+		t.Fatalf("first transform %q, want the original name", got)
+	}
+	for i := 2; i <= 3; i++ {
+		start := time.Now()
+		if got := h.TransformDownloadName("7_001.jpg", DownloadContext{}); got != "7_001.jpg" {
+			t.Fatalf("transform %d %q, want the original name", i, got)
+		}
+		if elapsed := time.Since(start); elapsed > 50*time.Millisecond {
+			t.Errorf("transform %d took %s, want an immediate fallback", i, elapsed)
+		}
+	}
+	if exts := h.Extensions(); exts[0].Status != StatusError || exts[0].Error == "" {
+		t.Errorf("extension after repeated transforms: %+v", exts[0])
+	}
+	if len(h.procs) != 0 {
+		t.Errorf("%d processes left after repeated transforms", len(h.procs))
+	}
+
+	// Re-enabling still clears the error, so the user can retry a fixed extension.
+	if err := h.SetEnabled("demo", false); err != nil {
+		t.Fatalf("disable: %v", err)
+	}
+	if err := h.SetEnabled("demo", true); err != nil {
+		t.Fatalf("re-enable: %v", err)
+	}
+	if h.errors["demo"] != "" {
+		t.Errorf("error %q still set after re-enabling", h.errors["demo"])
+	}
+}
+
 // TestHostCrash checks an extension that exits mid-request falls back and is
 // marked as an error.
 func TestHostCrash(t *testing.T) {
